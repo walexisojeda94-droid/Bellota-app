@@ -47,13 +47,11 @@ public class MainActivity extends Activity {
         buildPetScreen();
         localVoice = new LocalVoice(this, (ready, detail) -> { });
         localVoice.setOnSpeechFinished(() -> {
-            if (!isFinishing() && voiceCommands != null && !voiceCommandsIsRunning()) voiceCommands.start();
+            if (!isFinishing() && voiceCommands != null) voiceCommands.start();
         });
         requestMicrophonePermission();
         handler.postDelayed(autonomousRoutine, 1800L);
     }
-
-    private boolean voiceCommandsIsRunning() { return false; }
 
     private void buildPetScreen() {
         FrameLayout root = new FrameLayout(this);
