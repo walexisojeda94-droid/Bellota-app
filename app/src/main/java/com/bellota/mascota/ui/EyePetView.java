@@ -56,6 +56,7 @@ public class EyePetView extends View {
         else if (choice == 5) setMood(Mood.CALM);
         else if (choice == 6) { setMood(Mood.CURIOUS); autonomousScene=1; }
         else if (choice == 7) { setMood(Mood.HAPPY); autonomousScene=2; }
+        else if(choice==8){ setMood(Mood.CURIOUS); autonomousScene=4; }
         else { setMood(Mood.SLEEPY); autonomousScene=3; }
         // La mirada descansa la mayor parte del tiempo y hace pequeños vistazos ocasionales.
         if (random.nextInt(3) == 0) {
@@ -116,11 +117,12 @@ public class EyePetView extends View {
         canvas.drawCircle(px, py, radius, pupil);
         canvas.drawCircle(px - radius * 0.32f, py - radius * 0.38f, radius * 0.22f, white);
         if (mood == Mood.SLEEPY || mood == Mood.CALM) {
-            lid.setColor(0xFF080D10);
+            lid.setColor(lightTheme?0xFFF2F5F3:0xFF080D10);
             canvas.drawRect(x, shape.top, x + eyeW, shape.top + height * 0.28f, lid);
         }
         if(autonomousScene==1){ Paint p=new Paint(Paint.ANTI_ALIAS_FLAG); p.setColor(lightTheme?0xFF8A6D2F:0xFFFFD166); canvas.drawCircle(x+eyeW*0.5f,centerY-eyeH*0.62f,eyeW*0.045f,p); }
         else if(autonomousScene==2){ Paint p=new Paint(Paint.ANTI_ALIAS_FLAG); p.setColor(0xFF00BFA6); float bx=x+eyeW*0.5f+(float)Math.sin(System.currentTimeMillis()/380.0)*eyeW*0.22f; canvas.drawCircle(bx,centerY+eyeH*0.67f,eyeW*0.10f,p); postInvalidateDelayed(180L); }
         else if(autonomousScene==3){ Paint p=new Paint(Paint.ANTI_ALIAS_FLAG); p.setColor(lightTheme?0xFF52616B:0xFFB7C8D0); p.setTextSize(eyeW*0.16f); canvas.drawText("z",x+eyeW*0.86f,centerY-eyeH*0.45f,p); }
+        else if(autonomousScene==4){ Paint p=new Paint(Paint.ANTI_ALIAS_FLAG); p.setColor(lightTheme?0xFF52616B:0xFFE7EDF0); float sy=centerY-eyeH*0.62f; canvas.drawCircle(x+eyeW*0.25f,sy,eyeW*0.055f,p); canvas.drawCircle(x+eyeW*0.38f,sy-eyeW*0.025f,eyeW*0.045f,p); canvas.drawCircle(x+eyeW*0.72f,sy+eyeW*0.025f,eyeW*0.05f,p); }
     }
 }
