@@ -117,7 +117,7 @@ public class MainActivity extends Activity {
             return;
         }
         eyes.reactToAttention();
-        String reply = offlineReplies.reply(text);
+        String reply = offlineReplies.reply(text, petLife);
         speakIfEnabled(reply);
     }
 
