@@ -10,7 +10,8 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;\nimport java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -66,7 +67,22 @@ public class XiaoZhiConnection {
         }
     }
 
-    private String createStableDeviceId(String source) {\n        try {\n            byte[] hash = MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8));\n            hash[0] = (byte) ((hash[0] & 0xFE) | 0x02);\n            StringBuilder mac = new StringBuilder();\n            for (int i = 0; i < 6; i++) {\n                if (i > 0) mac.append(":");\n                mac.append(String.format(java.util.Locale.US, "%02X", hash[i] & 0xFF));\n            }\n            return mac.toString();\n        } catch (Exception e) {\n            return "02:00:00:00:00:01";\n        }\n    }\n\n    private void activate(ActivationListener listener) {
+    private String createStableDeviceId(String source) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8));
+            hash[0] = (byte) ((hash[0] & 0xFE) | 0x02);
+            StringBuilder mac = new StringBuilder();
+            for (int i = 0; i < 6; i++) {
+                if (i > 0) mac.append(":");
+                mac.append(String.format(java.util.Locale.US, "%02X", hash[i] & 0xFF));
+            }
+            return mac.toString();
+        } catch (Exception e) {
+            return "02:00:00:00:00:01";
+        }
+    }
+
+    private void activate(ActivationListener listener) {
         try {
             JSONObject response = request("GET", OTA_URL, null);
             JSONObject activation = response.optJSONObject("activation");
