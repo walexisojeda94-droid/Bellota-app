@@ -2,6 +2,7 @@ package com.bellota.mascota;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,6 +19,8 @@ import android.os.Looper;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.EditText;
+import android.text.InputType;
 import android.widget.Toast;
 import com.bellota.mascota.core.PetLife;
 import com.bellota.mascota.local.OfflineReplies;
@@ -26,6 +29,9 @@ import com.bellota.mascota.voice.ContinuousVoiceCommands;
 import com.bellota.mascota.voice.LocalVoice;
 import com.bellota.mascota.weather.WeatherService;
 import com.bellota.mascota.xiaozhi.XiaoZhiConnection;
+import com.bellota.mascota.xiaozhi.McpConnection;
+import com.bellota.mascota.xiaozhi.McpCredentialStore;
+import org.json.JSONArray;
 import java.util.Locale;
 
 public class MainActivity extends Activity implements SensorEventListener {
@@ -39,6 +45,8 @@ public class MainActivity extends Activity implements SensorEventListener {
     private ContinuousVoiceCommands voiceCommands;
     private PetLife petLife;
     private XiaoZhiConnection xiaoZhiConnection;
+    private McpConnection mcpConnection;
+    private McpCredentialStore mcpCredentialStore;
     private String pendingXiaoZhiCode;
     private boolean soundEnabled = true;
     private boolean waitingForWeatherPermission;
@@ -67,6 +75,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         buildPetScreen();
         xiaoZhiConnection = new XiaoZhiConnection(this);
+        mcpCredentialStore = new McpCredentialStore(this);
+        connectMcpIfConfigured();
         localVoice = new LocalVoice(this, (ready, detail) -> {
             if (ready && pendingXiaoZhiCode != null) {
                 String code = pendingXiaoZhiCode;
@@ -95,6 +105,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         params.leftMargin = (getResources().getDisplayMetrics().widthPixels - width) / 2;
         params.topMargin = (getResources().getDisplayMetrics().heightPixels - height) / 2;
         root.addView(eyes, params);
+        // Acceso oculto: mantener pulsados los ojos para configurar MCP.
+        eyes.setOnLongClickListener(v -> { showMcpSetupDialog(); return true; });
         setContentView(root);
     }
 
@@ -189,6 +201,68 @@ public class MainActivity extends Activity implements SensorEventListener {
         });
     }
 
+    private void showMcpSetupDialog() {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setTextSize(12f);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        input.setHint("wss://api.xiaozhi.me/mcp/?token=...");
+        try {
+            String saved = mcpCredentialStore.read();
+            if (saved != null) input.setText(saved);
+        } catch (Exception ignored) { }
+        new AlertDialog.Builder(this)
+                .setTitle("Conexión privada de Bellota")
+                .setMessage("Pegá la dirección MCP de XiaoZhi. Se guardará cifrada en este teléfono y no se enviará a GitHub.")
+                .setView(input)
+                .setNegativeButton("Cancelar", (dialog, which) -> dialog.dismiss())
+                .setNeutralButton("Borrar", (dialog, which) -> {
+                    getSharedPreferences("bellota_private_mcp", MODE_PRIVATE).edit().clear().apply();
+                    if (mcpConnection != null) mcpConnection.disconnect();
+                    Toast.makeText(this, "Configuración MCP borrada del teléfono.", Toast.LENGTH_SHORT).show();
+                })
+                .setPositiveButton("Guardar y conectar", (dialog, which) -> {
+                    String endpoint = input.getText().toString().trim();
+                    if (!endpoint.startsWith("wss://") || !endpoint.contains("xiaozhi.me/mcp/")) {
+                        Toast.makeText(this, "La dirección no parece ser el endpoint MCP de XiaoZhi.", Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    try {
+                        mcpCredentialStore.save(endpoint);
+                        connectMcpIfConfigured();
+                    } catch (Exception e) {
+                        Toast.makeText(this, "No pude guardar la configuración segura.", Toast.LENGTH_LONG).show();
+                    }
+                }).show();
+    }
+
+    private void connectMcpIfConfigured() {
+        if (mcpCredentialStore == null) return;
+        try {
+            String endpoint = mcpCredentialStore.read();
+            if (endpoint == null || endpoint.isEmpty()) return;
+            if (mcpConnection == null) mcpConnection = new McpConnection();
+            mcpConnection.connect(endpoint, new McpConnection.Listener() {
+                @Override public void onStatus(String status) {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, status, Toast.LENGTH_SHORT).show());
+                }
+                @Override public void onTools(JSONArray tools) {
+                    StringBuilder names = new StringBuilder();
+                    for (int i = 0; i < tools.length(); i++) {
+                        org.json.JSONObject tool = tools.optJSONObject(i);
+                        if (tool != null) {
+                            if (names.length() > 0) names.append(", ");
+                            names.append(tool.optString("name", "herramienta"));
+                        }
+                    }
+                    android.util.Log.i("BellotaMCP", "Herramientas disponibles: " + names);
+                }
+            });
+        } catch (Exception e) {
+            android.util.Log.e("BellotaMCP", "No se pudo recuperar la configuración MCP cifrada.");
+        }
+    }
+
     private void setupAmbientTheme(){ sensorManager=(SensorManager)getSystemService(SENSOR_SERVICE); if(sensorManager!=null){ lightSensor=sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT); if(lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL); } }
     @Override public void onSensorChanged(SensorEvent event){ if(event.sensor.getType()!=Sensor.TYPE_LIGHT||petRoot==null)return; long now=System.currentTimeMillis(); if(now-lastThemeChange<15000L)return; float lux=event.values[0]; boolean next=lightTheme?lux<85f:lux<25f; if(next!=lightTheme){lightTheme=next;lastThemeChange=now;petRoot.setBackgroundColor(lightTheme?0xFFF2F5F3:0xFF080D10);if(eyes!=null)eyes.setLightTheme(lightTheme);} }
     @Override public void onAccuracyChanged(Sensor sensor,int accuracy){}
@@ -247,6 +321,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         handler.removeCallbacksAndMessages(null);
         if (voiceCommands != null) { voiceCommands.stop(); voiceCommands = null; }
         if (localVoice != null) { localVoice.stop(); localVoice.release(); localVoice = null; }
+        if (mcpConnection != null) { mcpConnection.disconnect(); mcpConnection = null; }
         super.onDestroy();
     }
 }
