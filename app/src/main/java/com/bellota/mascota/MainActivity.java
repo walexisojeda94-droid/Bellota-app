@@ -36,8 +36,12 @@ public class MainActivity extends Activity {
     private boolean waitingForWeatherPermission;
     private final Runnable autonomousRoutine = new Runnable() {
         @Override public void run() {
-            if (eyes != null) { eyes.performAutonomousBehavior(); moveEyesAroundScreen(); }
-            handler.postDelayed(this, 4500L + (long)(Math.random() * 6500L));
+            if (eyes != null) {
+                eyes.performAutonomousBehavior();
+                // El cuerpo cambia de lugar ocasionalmente, no en cada ciclo.
+                if (Math.random() < 0.12d) moveEyesAroundScreen();
+            }
+            handler.postDelayed(this, 15000L + (long)(Math.random() * 10000L));
         }
     };
 
