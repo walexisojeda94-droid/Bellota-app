@@ -16,7 +16,8 @@ import com.bellota.mascota.local.OfflineReplies;
 import com.bellota.mascota.ui.EyePetView;
 import com.bellota.mascota.voice.ContinuousVoiceCommands;
 import com.bellota.mascota.voice.LocalVoice;
-import com.bellota.mascota.weather.WeatherService;\nimport com.bellota.mascota.xiaozhi.XiaoZhiConnection;
+import com.bellota.mascota.weather.WeatherService;
+import com.bellota.mascota.xiaozhi.XiaoZhiConnection;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
@@ -28,7 +29,9 @@ public class MainActivity extends Activity {
     private FrameLayout petRoot;
     private LocalVoice localVoice;
     private ContinuousVoiceCommands voiceCommands;
-    private PetLife petLife;\n    private XiaoZhiConnection xiaoZhiConnection;\n    private String pendingXiaoZhiCode;
+    private PetLife petLife;
+    private XiaoZhiConnection xiaoZhiConnection;
+    private String pendingXiaoZhiCode;
     private boolean soundEnabled = true;
     private boolean waitingForWeatherPermission;
     private final Runnable autonomousRoutine = new Runnable() {
@@ -45,11 +48,19 @@ public class MainActivity extends Activity {
         enterImmersiveMode();
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         buildPetScreen();
-        xiaoZhiConnection = new XiaoZhiConnection(this);\n        localVoice = new LocalVoice(this, (ready, detail) -> {\n            if (ready && pendingXiaoZhiCode != null) {\n                String code = pendingXiaoZhiCode;\n                pendingXiaoZhiCode = null;\n                speakIfEnabled(code);\n            }\n        });
+        xiaoZhiConnection = new XiaoZhiConnection(this);
+        localVoice = new LocalVoice(this, (ready, detail) -> {
+            if (ready && pendingXiaoZhiCode != null) {
+                String code = pendingXiaoZhiCode;
+                pendingXiaoZhiCode = null;
+                speakIfEnabled(code);
+            }
+        });
         localVoice.setOnSpeechFinished(() -> {
             if (!isFinishing() && voiceCommands != null) voiceCommands.start();
         });
         requestMicrophonePermission();
+        requestXiaoZhiActivation();
         handler.postDelayed(autonomousRoutine, 1800L);
     }
 
@@ -128,7 +139,62 @@ public class MainActivity extends Activity {
         if (reply != null) speakIfEnabled(reply);
     }
 
-    private void requestXiaoZhiActivation() {\n        if (xiaoZhiConnection == null || xiaoZhiConnection.isConfigured()) return;\n        xiaoZhiConnection.requestActivationCode(new XiaoZhiConnection.ActivationListener() {\n            @Override public void onCodeReceived(String code, String message) {\n                runOnUiThread(() -> {\n                    StringBuilder spokenCode = new StringBuilder();\n                    for (int i = 0; i < code.length(); i++) {\n                        if (Character.isDigit(code.charAt(i))) {\n                            if (spokenCode.length() > 0) spokenCode.append(" ");\n                            spokenCode.append(code.charAt(i));\n                        }\n                    }\n                    String announcement = "Código de vinculación de XiaoZhi: " + spokenCode + ".\n"\n                            + "Ingresalo en xiaozhi punto eme, en tu cuenta, para vincular a Bellota.";\n                    if (localVoice != null && localVoice.isReady()) speakIfEnabled(announcement);\n                    else pendingXiaoZhiCode = announcement;\n                });\n            }\n            @Override public void onActivated() {\n                runOnUiThread(() -> speakIfEnabled("Bellota ya está vinculada con XiaoZhi."));\n            }\n            @Override public void onError(String message) {\n                runOnUiThread(() -> speakIfEnabled("Todavía no pude obtener el código de XiaoZhi. " + message));\n            }\n        });\n    }\n\n    private void requestWeather() {
+    private void requestXiaoZhiActivation() {
+        if (xiaoZhiConnection == null || xiaoZhiConnection.isConfigured()) return;
+        xiaoZhiConnection.requestActivationCode(new XiaoZhiConnection.ActivationListener() {
+            @Override public void onCodeReceived(String code, String message) {
+                runOnUiThread(() -> {
+                    StringBuilder spokenCode = new StringBuilder();
+                    for (int i = 0; i < code.length(); i++) {
+                        if (Character.isDigit(code.charAt(i))) {
+                            if (spokenCode.length() > 0) spokenCode.append(" ");
+                            spokenCode.append(code.charAt(i));
+                        }
+                    }
+                    String announcement = "Código de vinculación de XiaoZhi: " + spokenCode + ".
+"
+                            + "Ingresalo en xiaozhi punto eme, en tu cuenta, para vincular a Bellota.";
+                    if (localVoice != null && localVoice.isReady()) speakIfEnabled(announcement);
+                    else pendingXiaoZhiCode = announcement;
+                });
+            }
+            @Override public void onActivated() {
+                runOnUiThread(() -> speakIfEnabled("Bellota ya está vinculada con XiaoZhi."));
+            }
+            @Override public void onError(String message) {
+                runOnUiThread(() -> speakIfEnabled("Todavía no pude obtener el código de XiaoZhi. " + message));
+            }
+        });
+    }
+
+    private void requestXiaoZhiActivation() {
+        if (xiaoZhiConnection == null || xiaoZhiConnection.isConfigured()) return;
+        xiaoZhiConnection.requestActivationCode(new XiaoZhiConnection.ActivationListener() {
+            @Override public void onCodeReceived(String code, String message) {
+                runOnUiThread(() -> {
+                    StringBuilder spokenCode = new StringBuilder();
+                    for (int i = 0; i < code.length(); i++) {
+                        if (Character.isDigit(code.charAt(i))) {
+                            if (spokenCode.length() > 0) spokenCode.append(" ");
+                            spokenCode.append(code.charAt(i));
+                        }
+                    }
+                    String announcement = "Código de vinculación de XiaoZhi: " + spokenCode
+                            + ". Ingresalo en xiaozhi punto eme, en tu cuenta, para vincular a Bellota.";
+                    if (localVoice != null && localVoice.isReady()) speakIfEnabled(announcement);
+                    else pendingXiaoZhiCode = announcement;
+                });
+            }
+            @Override public void onActivated() {
+                runOnUiThread(() -> speakIfEnabled("Bellota ya está vinculada con XiaoZhi."));
+            }
+            @Override public void onError(String message) {
+                runOnUiThread(() -> speakIfEnabled("Todavía no pude obtener el código de XiaoZhi. " + message));
+            }
+        });
+    }
+
+    private void requestWeather() {
         if (Build.VERSION.SDK_INT >= 23 &&
                 checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
                 checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
