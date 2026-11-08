@@ -29,6 +29,8 @@ public class EyePetView extends View {
         setLayerType(View.LAYER_TYPE_SOFTWARE, null);
     }
 
+    public Mood getMood() { return mood; }
+
     public void setMood(Mood next) {
         mood = next == null ? Mood.NEUTRAL : next;
         invalidate();
