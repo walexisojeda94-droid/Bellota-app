@@ -5,6 +5,14 @@ import android.app.Activity;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.media.AudioManager;
+import android.os.BatteryManager;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
@@ -20,7 +28,7 @@ import com.bellota.mascota.weather.WeatherService;
 import com.bellota.mascota.xiaozhi.XiaoZhiConnection;
 import java.util.Locale;
 
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements SensorEventListener {
     private static final int MICROPHONE_PERMISSION = 41;
     private static final int LOCATION_PERMISSION = 42;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -34,6 +42,10 @@ public class MainActivity extends Activity {
     private String pendingXiaoZhiCode;
     private boolean soundEnabled = true;
     private boolean waitingForWeatherPermission;
+    private SensorManager sensorManager;
+    private Sensor lightSensor;
+    private boolean lightTheme;
+    private long lastThemeChange;
     private final Runnable autonomousRoutine = new Runnable() {
         @Override public void run() {
             if (eyes != null) {
@@ -63,6 +75,7 @@ public class MainActivity extends Activity {
         localVoice.setOnSpeechFinished(() -> {
             if (!isFinishing() && voiceCommands != null) voiceCommands.start();
         });
+        setupAmbientTheme();
         requestMicrophonePermission();
         requestXiaoZhiActivation();
         handler.postDelayed(autonomousRoutine, 1800L);
@@ -73,6 +86,7 @@ public class MainActivity extends Activity {
         petRoot = root;
         root.setBackgroundColor(0xFF080D10);
         eyes = new EyePetView(this);
+        eyes.setLightTheme(false);
         int width = (int)(getResources().getDisplayMetrics().widthPixels * 0.42f);
         int height = (int)(getResources().getDisplayMetrics().heightPixels * 0.34f);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
@@ -132,6 +146,9 @@ public class MainActivity extends Activity {
             return;
         }
         if (eyes != null) eyes.reactToAttention();
+        if(text.contains("bateria") || text.contains("carga del telefono")){ BatteryManager b=(BatteryManager)getSystemService(BATTERY_SERVICE); int level=b.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY); speakIfEnabled(level>=0?"El teléfono tiene "+level+" por ciento de batería.":"No pude consultar la batería."); return; }
+        if(text.contains("que hora") || text.equals("hora") || text.contains("que dia es") || text.contains("fecha de hoy")){ Date now=new Date(); speakIfEnabled("Son las "+new SimpleDateFormat("HH:mm",new Locale("es","AR")).format(now)+". Hoy es "+new SimpleDateFormat("EEEE d 'de' MMMM",new Locale("es","AR")).format(now)+"."); return; }
+        if(text.contains("volumen actual")){ AudioManager a=(AudioManager)getSystemService(AUDIO_SERVICE); speakIfEnabled("El volumen multimedia está al "+Math.round(a.getStreamVolume(AudioManager.STREAM_MUSIC)*100f/a.getStreamMaxVolume(AudioManager.STREAM_MUSIC))+" por ciento."); return; }
 
         if (offlineReplies.isWeatherQuestion(text)) {
             requestWeather();
@@ -170,6 +187,10 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void setupAmbientTheme(){ sensorManager=(SensorManager)getSystemService(SENSOR_SERVICE); if(sensorManager!=null){ lightSensor=sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT); if(lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL); } }
+    @Override public void onSensorChanged(SensorEvent event){ if(event.sensor.getType()!=Sensor.TYPE_LIGHT||petRoot==null)return; long now=System.currentTimeMillis(); if(now-lastThemeChange<15000L)return; float lux=event.values[0]; boolean next=lightTheme?lux<85f:lux<25f; if(next!=lightTheme){lightTheme=next;lastThemeChange=now;petRoot.setBackgroundColor(lightTheme?0xFFF2F5F3:0xFF080D10);if(eyes!=null)eyes.setLightTheme(lightTheme);} }
+    @Override public void onAccuracyChanged(Sensor sensor,int accuracy){}
+
     private void requestWeather() {
         if (Build.VERSION.SDK_INT >= 23 &&
                 checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
@@ -207,6 +228,7 @@ public class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         enterImmersiveMode();
+        if(sensorManager!=null&&lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (voiceCommands != null) voiceCommands.start();
         if (eyes != null) eyes.resumeAnimation();
@@ -215,6 +237,7 @@ public class MainActivity extends Activity {
     @Override protected void onPause() {
         if (voiceCommands != null) voiceCommands.stop();
         if (eyes != null) eyes.pauseAnimation();
+        if(sensorManager!=null)sensorManager.unregisterListener(this);
         super.onPause();
     }
 
