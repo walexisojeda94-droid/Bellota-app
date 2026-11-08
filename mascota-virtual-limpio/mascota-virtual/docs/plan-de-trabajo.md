@@ -1,57 +1,62 @@
-# Plan de trabajo
+# Plan de trabajo: Bellota híbrida en Samsung J7
 
-## Etapa 0. Orden y diagnóstico
-- [x] Crear una rama separada para el trabajo del J7 offline.
-- [x] Documentar el requisito de independencia total.
-- [x] Separar conceptualmente recursos reutilizables y referencias ESP32/XiaoZhi.
-- [ ] Verificar el modelo exacto del teléfono y su arquitectura.
+## Etapa 0. Organización y diagnóstico
+- [x] Crear una rama separada para el trabajo del J7.
+- [x] Inventariar recursos visuales, sonidos y documentación de referencia.
+- [ ] Verificar modelo exacto, ABI, espacio libre y estado del J7.
 - [ ] Comprobar conexión USB y transferencia de archivos.
-- [ ] Comprobar espacio libre y estado general del J7.
+- [ ] Definir el servicio XiaoZhi y el modo de conexión.
 
-## Etapa 1. Prototipo visual offline
-- [ ] Crear la primera pantalla de la mascota.
-- [ ] Mostrar una expresión inicial.
-- [ ] Cambiar de expresión al tocar la mascota.
-- [ ] Probar las 21 caras y seleccionar las más útiles.
-- [ ] Añadir estados visuales básicos y transiciones sencillas.
-- [ ] Probar en el J7 y medir fluidez y memoria.
+## Etapa 1. Prototipo visual local
+- [ ] Crear pantalla principal de Bellota.
+- [ ] Mostrar una expresión inicial y cambiarla al tocar.
+- [ ] Probar y seleccionar GIFs.
+- [ ] Añadir estados visuales básicos.
+- [ ] Guardar preferencias localmente.
+- [ ] Instalar y medir fluidez y memoria en el J7.
 
-Criterio para avanzar: la pantalla debe abrir y funcionar en modo avión, sin errores ni pausas molestas.
+Criterio: la interfaz debe funcionar en modo avión.
 
-## Etapa 2. Persistencia y personalidad
-- [ ] Guardar configuración local.
-- [ ] Guardar estado de ánimo y energía.
-- [ ] Crear respuestas locales basadas en reglas.
-- [ ] Definir personalidad y nombre con el usuario.
+## Etapa 2. Núcleo local y voz de respaldo
+- [ ] Implementar personalidad y respuestas locales básicas.
+- [ ] Guardar estado y memoria sencilla.
+- [ ] Comprobar TTS español sin conexión.
+- [ ] Probar respuestas habladas en modo avión.
+- [ ] Evaluar reconocimiento local de comandos, si el rendimiento lo permite.
 
-Criterio para avanzar: cerrar y abrir la aplicación no debe borrar los datos locales.
+Criterio: Bellota debe poder responder oralmente sin internet.
 
-## Etapa 3. Voz de salida
-- [ ] Comprobar Text-to-Speech español offline de Android.
-- [ ] Probar pronunciación y velocidad.
-- [ ] Medir memoria y tiempo de respuesta.
-- [ ] Evaluar motor alternativo solo si el motor Android no sirve.
+## Etapa 3. Integración XiaoZhi online
+- [ ] Identificar servicio/servidor XiaoZhi elegido.
+- [ ] Confirmar protocolo, autenticación y formato de audio.
+- [ ] Crear adaptador de conexión separado del núcleo local.
+- [ ] Conectar y realizar una conversación de prueba.
+- [ ] Gestionar errores y tiempos de espera.
 
-Criterio para avanzar: hablar correctamente en modo avión.
+Criterio: conversación online funcional sin que la interfaz dependa de la sesión.
 
-## Etapa 4. Reconocimiento de voz
-- [ ] Comprobar micrófono y permisos.
-- [ ] Evaluar Vosk u otro motor offline compatible.
-- [ ] Probar comandos breves en español.
-- [ ] Medir RAM, batería y velocidad.
-- [ ] Elegir botón para hablar o escucha limitada según resultados.
+## Etapa 4. Respaldo y reconexión
+- [ ] Detectar pérdida de internet.
+- [ ] Distinguir falta de red de caída del servicio.
+- [ ] Cambiar a respuestas y voz locales.
+- [ ] Reconectar automáticamente al volver el servicio.
+- [ ] Evitar mensajes duplicados y bloqueos.
+- [ ] Probar cortes durante una conversación.
 
-Criterio para avanzar: reconocer comandos útiles sin internet y sin bloquear la interfaz.
+Criterio: nunca quedarse muda ni exigir reinicio.
 
-## Etapa 5. Funciones de mascota
-- [ ] Recordatorios y temporizador locales.
-- [ ] Minijuegos sencillos.
+## Etapa 5. Funciones adicionales
+- [ ] Temporizador, reloj y Pomodoro.
+- [ ] Recordatorios locales.
+- [ ] Minijuegos.
 - [ ] Comentarios espontáneos configurables.
-- [ ] Memoria local ampliada.
+- [ ] Ampliar memoria y personalización.
 
-## Reglas para todas las etapas
-- No agregar servicios en la nube.
-- No requerir una conexión a la PC.
-- No comprar hardware para resolver una limitación antes de agotar las opciones existentes.
-- No incorporar una biblioteca sin comprobar compatibilidad con Android 8.1.
-- Medir el consumo en el J7 real antes de dar una función por terminada.
+## Reglas del proyecto
+- No comprar hardware para esta primera etapa.
+- La PC solo se usa para desarrollar, compilar e instalar.
+- El teléfono no depende de la PC para funcionar.
+- XiaoZhi mejora la conversación, pero no sustituye el núcleo local.
+- No elegir motores de voz sin probarlos en el J7 real.
+- No incorporar dependencias pesadas sin medir RAM, almacenamiento y batería.
+- No fusionar la rama de trabajo con main sin revisión y autorización.
