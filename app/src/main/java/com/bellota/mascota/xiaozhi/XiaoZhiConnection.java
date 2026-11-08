@@ -10,7 +10,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.StandardCharsets;\nimport java.security.MessageDigest;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -63,11 +63,11 @@ public class XiaoZhiConnection {
         if (!preferences.contains(KEY_DEVICE_ID)) {
             String androidId = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID);
             if (androidId == null || androidId.trim().isEmpty()) androidId = UUID.randomUUID().toString();
-            preferences.edit().putString(KEY_DEVICE_ID, "android-" + androidId).apply();
+            preferences.edit().putString(KEY_DEVICE_ID, createStableDeviceId(androidId)).apply();
         }
     }
 
-    private void activate(ActivationListener listener) {
+    private String createStableDeviceId(String source) {\n        try {\n            byte[] hash = MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8));\n            hash[0] = (byte) ((hash[0] & 0xFE) | 0x02);\n            StringBuilder mac = new StringBuilder();\n            for (int i = 0; i < 6; i++) {\n                if (i > 0) mac.append(":");\n                mac.append(String.format(java.util.Locale.US, "%02X", hash[i] & 0xFF));\n            }\n            return mac.toString();\n        } catch (Exception e) {\n            return "02:00:00:00:00:01";\n        }\n    }\n\n    private void activate(ActivationListener listener) {
         try {
             JSONObject response = request("GET", OTA_URL, null);
             JSONObject activation = response.optJSONObject("activation");
