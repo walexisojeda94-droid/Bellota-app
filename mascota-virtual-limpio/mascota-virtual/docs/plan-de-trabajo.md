@@ -1,47 +1,46 @@
 # Plan de trabajo: Bellota híbrida en Samsung J7
 
 ## Etapa 0. Organización y diagnóstico
-- [x] Crear una rama separada para el trabajo del J7.
-- [x] Inventariar recursos visuales, sonidos y documentación de referencia.
+- [x] Crear rama de trabajo separada.
+- [x] Inventariar recursos y documentación.
+- [x] Definir arquitectura local-first híbrida.
+- [x] Elegir XiaoZhi oficial (`https://xiaozhi.me`) como servicio predeterminado.
 - [ ] Verificar modelo exacto, ABI, espacio libre y estado del J7.
-- [ ] Comprobar conexión USB y transferencia de archivos.
-- [ ] Definir el servicio XiaoZhi y el modo de conexión.
+- [ ] Comprobar USB y transferencia de archivos.
 
 ## Etapa 1. Prototipo visual local
-- [ ] Crear pantalla principal de Bellota.
-- [ ] Mostrar una expresión inicial y cambiarla al tocar.
-- [ ] Probar y seleccionar GIFs.
-- [ ] Añadir estados visuales básicos.
+- [ ] Crear pantalla principal.
+- [ ] Mostrar expresión inicial y cambiarla al tocar.
+- [ ] Seleccionar GIFs y estados visuales.
 - [ ] Guardar preferencias localmente.
 - [ ] Instalar y medir fluidez y memoria en el J7.
 
-Criterio: la interfaz debe funcionar en modo avión.
+Criterio: interfaz funcional en modo avión.
 
 ## Etapa 2. Núcleo local y voz de respaldo
-- [ ] Implementar personalidad y respuestas locales básicas.
+- [ ] Implementar personalidad y respuestas locales.
 - [ ] Guardar estado y memoria sencilla.
 - [ ] Comprobar TTS español sin conexión.
 - [ ] Probar respuestas habladas en modo avión.
-- [ ] Evaluar reconocimiento local de comandos, si el rendimiento lo permite.
+- [ ] Evaluar reconocimiento local de comandos.
 
-Criterio: Bellota debe poder responder oralmente sin internet.
+Criterio: Bellota responde oralmente sin internet.
 
-## Etapa 3. Integración XiaoZhi online
-- [ ] Identificar servicio/servidor XiaoZhi elegido.
-- [ ] Confirmar protocolo, autenticación y formato de audio.
-- [ ] Crear adaptador de conexión separado del núcleo local.
-- [ ] Conectar y realizar una conversación de prueba.
-- [ ] Gestionar errores y tiempos de espera.
+## Etapa 3. Integración XiaoZhi oficial
+- [ ] Verificar protocolo y flujo de cliente Android compatibles con xiaozhi.me.
+- [ ] Implementar activación/autenticación segura.
+- [ ] Crear adaptador separado del núcleo local.
+- [ ] Realizar conversación de prueba.
+- [ ] Gestionar errores, timeouts y cierre de sesión.
 
-Criterio: conversación online funcional sin que la interfaz dependa de la sesión.
+Criterio: conversación online real y estable.
 
 ## Etapa 4. Respaldo y reconexión
-- [ ] Detectar pérdida de internet.
-- [ ] Distinguir falta de red de caída del servicio.
+- [ ] Detectar pérdida de red y caída del servicio.
 - [ ] Cambiar a respuestas y voz locales.
-- [ ] Reconectar automáticamente al volver el servicio.
-- [ ] Evitar mensajes duplicados y bloqueos.
-- [ ] Probar cortes durante una conversación.
+- [ ] Reconectar automáticamente.
+- [ ] Evitar duplicados y bloqueos.
+- [ ] Probar cortes durante conversaciones.
 
 Criterio: nunca quedarse muda ni exigir reinicio.
 
@@ -49,14 +48,14 @@ Criterio: nunca quedarse muda ni exigir reinicio.
 - [ ] Temporizador, reloj y Pomodoro.
 - [ ] Recordatorios locales.
 - [ ] Minijuegos.
-- [ ] Comentarios espontáneos configurables.
+- [ ] Comentarios espontáneos.
 - [ ] Ampliar memoria y personalización.
 
-## Reglas del proyecto
-- No comprar hardware para esta primera etapa.
-- La PC solo se usa para desarrollar, compilar e instalar.
-- El teléfono no depende de la PC para funcionar.
-- XiaoZhi mejora la conversación, pero no sustituye el núcleo local.
-- No elegir motores de voz sin probarlos en el J7 real.
-- No incorporar dependencias pesadas sin medir RAM, almacenamiento y batería.
-- No fusionar la rama de trabajo con main sin revisión y autorización.
+## Reglas
+- No comprar hardware en esta etapa.
+- La PC solo se usa para desarrollo, compilación e instalación.
+- El teléfono no depende de la PC.
+- XiaoZhi mejora la conversación, no sustituye el núcleo local.
+- No inventar endpoints ni credenciales.
+- No integrar motores pesados sin medir rendimiento.
+- No marcar una integración como terminada sin probarla en el J7.
