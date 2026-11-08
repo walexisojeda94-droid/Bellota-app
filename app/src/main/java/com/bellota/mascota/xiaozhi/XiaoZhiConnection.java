@@ -84,7 +84,7 @@ public class XiaoZhiConnection {
 
     private void activate(ActivationListener listener) {
         try {
-            JSONObject response = request("GET", OTA_URL, null);
+            JSONObject response = request("POST", OTA_URL, buildDeviceReport());
             JSONObject activation = response.optJSONObject("activation");
             if (activation == null) {
                 throw new IllegalStateException("XiaoZhi no devolvió una solicitud de vinculación. Revisá la respuesta del servidor.");
@@ -122,6 +122,28 @@ public class XiaoZhiConnection {
         }
     }
 
+    private String buildDeviceReport() throws Exception {
+        String deviceId = preferences.getString(KEY_DEVICE_ID, "");
+        String clientId = preferences.getString(KEY_CLIENT_ID, "");
+        JSONObject report = new JSONObject();
+        report.put("version", 2);
+        report.put("language", "es-AR");
+        report.put("mac_address", deviceId);
+        report.put("uuid", clientId);
+        report.put("chip_model_name", "Android");
+        JSONObject application = new JSONObject();
+        application.put("name", "Bellota");
+        application.put("version", "0.1.0");
+        application.put("idf_version", "Android");
+        application.put("elf_sha256", "");
+        report.put("application", application);
+        JSONObject board = new JSONObject();
+        board.put("type", "android");
+        board.put("name", "Bellota");
+        report.put("board", board);
+        return report.toString();
+    }
+
     private JSONObject request(String method, String endpoint, String body) throws Exception {
         HttpURLConnection connection = open(endpoint, method);
         if (body != null) {
@@ -133,7 +155,8 @@ public class XiaoZhiConnection {
         int status = connection.getResponseCode();
         String response = readBody(connection, status);
         connection.disconnect();
-        if (status != 200) throw new IllegalStateException("No se pudo solicitar el código a XiaoZhi (HTTP " + status + ").");
+        if (status != 200) throw new IllegalStateException("No se pudo solicitar el código a XiaoZhi (HTTP " + status + "): " + response);
+        if (response == null || response.trim().isEmpty()) throw new IllegalStateException("XiaoZhi respondió sin contenido.");
         return new JSONObject(response);
     }
 
