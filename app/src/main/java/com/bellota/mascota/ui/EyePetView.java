@@ -51,8 +51,12 @@ public class EyePetView extends View {
         else if (choice == 3) setMood(Mood.HAPPY);
         else if (choice == 4) setMood(Mood.SLEEPY);
         else setMood(Mood.CALM);
-        animateGaze(random.nextFloat() * 0.9f - 0.45f, random.nextFloat() * 0.65f - 0.32f, 650 + random.nextInt(1000));
-        if (random.nextInt(3) == 0) blinkOnce();
+        // La mirada descansa la mayor parte del tiempo y hace pequeños vistazos ocasionales.
+        if (random.nextInt(3) == 0) {
+            animateGaze(random.nextFloat() * 0.7f - 0.35f,
+                    random.nextFloat() * 0.45f - 0.22f, 1400 + random.nextInt(1000));
+        }
+        if (random.nextInt(2) == 0) blinkOnce();
     }
 
     private void animateGaze(float x, float y, long duration) {
