@@ -79,7 +79,7 @@ public final class WeatherService {
                 if (candidate != null && (best == null || candidate.getTime() > best.getTime())) best = candidate;
             }
             return best;
-        } catch (SecurityException | Exception ignored) {
+        } catch (Exception ignored) {
             return null;
         }
     }
