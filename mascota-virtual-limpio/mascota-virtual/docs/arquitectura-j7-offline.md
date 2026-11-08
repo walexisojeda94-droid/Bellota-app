@@ -2,118 +2,84 @@
 
 ## Principio
 
-Bellota es una aplicación Android autónoma que conserva localmente su interfaz, identidad, personalidad, estado y memoria. Cuando hay conexión disponible, delega la conversación avanzada en XiaoZhi. Si internet o el servicio fallan, cambia a respuestas locales y voz offline.
+Bellota es una aplicación Android autónoma. Conserva localmente interfaz, identidad, personalidad, estado, memoria y funciones básicas. Cuando internet y el servicio oficial XiaoZhi están disponibles, delega allí la conversación avanzada. Si falla la conexión o el servicio, cambia a respuestas y voz offline.
 
-XiaoZhi es una capacidad online opcional, no el punto único de falla de la aplicación.
+**Servicio online predeterminado:** `https://xiaozhi.me`.
 
-## Esquema general
+XiaoZhi es una capacidad online, no un punto único de falla.
+
+## Esquema
 
 ```
 Aplicación Android Bellota (J7)
-  |
-  +-- Interfaz, GIFs, sonidos y estados visuales locales
-  |
-  +-- Núcleo local de Bellota
+  +-- Interfaz, GIFs, sonidos y estados locales
+  +-- Núcleo local
   |     +-- identidad y personalidad
-  |     +-- estado de ánimo y energía
-  |     +-- memoria y configuración local
+  |     +-- estado de ánimo y memoria local
   |     +-- comandos y respuestas de respaldo
-  |     +-- voz TTS offline, si está disponible
-  |
-  +-- Gestor de conexión y sesiones
-        +-- comprueba conectividad
-        +-- comprueba disponibilidad del servicio
-        +-- gestiona conexión, errores y reconexión
-        |
-        +-- Adaptador XiaoZhi (solo online)
-              +-- protocolo y autenticación por definir
+  |     +-- TTS offline
+  +-- Gestor de conectividad y sesiones
+        +-- comprueba red y disponibilidad del servicio
+        +-- controla timeout, errores y reconexión
+        +-- Adaptador XiaoZhi oficial (https://xiaozhi.me)
+              +-- activación/autenticación por implementar
+              +-- protocolo y formato de audio por verificar
               +-- conversación avanzada
-              +-- recepción de respuestas y audio
 ```
 
-## Separación de responsabilidades
+## Núcleo local
 
-### Núcleo local
-Debe poder ejecutarse sin permisos de red y sin inicializar el cliente XiaoZhi. Controla:
-- pantalla y expresiones;
-- identidad y personalidad base;
-- memoria local y preferencias;
-- comandos esenciales;
-- respuestas de contingencia;
-- avisos de estado de conexión;
-- voz local de respaldo.
+Debe funcionar aunque el adaptador XiaoZhi no se pueda inicializar. Controla la interfaz, identidad, personalidad base, memoria, comandos esenciales, respuestas de contingencia, estados de conexión y voz local.
 
-### Adaptador online XiaoZhi
-Se encarga de:
-- iniciar y cerrar sesiones;
-- autenticar de forma segura según el servicio elegido;
-- enviar entradas y recibir respuestas;
-- gestionar audio o texto según el protocolo disponible;
-- informar errores al gestor de conexión.
+## Adaptador XiaoZhi
 
-No debe controlar directamente la pantalla ni almacenar la única copia de la memoria de Bellota.
+Debe encapsular inicio/cierre de sesión, autenticación, envío de entradas, recepción de respuestas y audio. No debe controlar directamente la pantalla ni almacenar la única copia de la memoria.
 
-## Estados de conectividad
+La URL del panel `https://xiaozhi.me` es el destino oficial elegido, pero no se debe asumir que es también el endpoint WebSocket del cliente. El endpoint, el flujo de activación, las credenciales y el protocolo se deben obtener de documentación vigente y comprobar para el tipo de cliente Android que implementemos.
 
-1. **LOCAL:** sin red disponible. La app usa únicamente funciones locales.
-2. **CONECTANDO:** hay red, pero todavía no se confirmó una sesión XiaoZhi operativa.
-3. **ONLINE:** el servicio responde y la conversación avanzada está disponible.
-4. **RECUPERANDO:** se perdió una sesión y se está intentando reconectar.
+## Estados
 
-Tener Wi-Fi o datos móviles no significa necesariamente que XiaoZhi esté disponible. El cambio de estado debe comprobar también el servicio.
+1. **LOCAL:** no hay red o el servicio no está disponible.
+2. **CONECTANDO:** hay red, se está comprobando el servicio o iniciando sesión.
+3. **ONLINE:** sesión XiaoZhi operativa.
+4. **RECUPERANDO:** sesión perdida; se intenta reconectar.
 
-## Cambio de modo sin interrupción
+## Cambio de modo
 
-- Si una petición online falla, la app debe ofrecer una respuesta local breve en lugar de dejar al usuario esperando indefinidamente.
-- Las peticiones deben tener tiempo límite.
-- La reconexión debe usar espera progresiva para evitar consumir batería.
-- No se deben enviar mensajes duplicados al recuperar una sesión.
-- La interfaz debe seguir respondiendo durante los intentos de conexión.
-- El usuario debe poder seguir usando comandos locales aunque el servicio online esté caído.
+- Toda solicitud online tiene timeout.
+- Si falla, responder localmente en vez de dejar a la mascota muda.
+- Reintentos con espera progresiva.
+- Evitar mensajes duplicados al reconectar.
+- La interfaz y los comandos locales no deben bloquearse por la red.
 
 ## Voz
 
-### Salida
-- Online: usar el audio devuelto por XiaoZhi si el protocolo elegido lo permite.
-- Offline: usar un motor TTS español descargado y probado en el J7.
-- Si el audio online falla, intentar la respuesta local y reproducirla con TTS local.
-
-### Entrada
-- Online: capturar y enviar audio solo conforme al protocolo y permisos del servicio elegido.
-- Offline: reconocer comandos locales si un motor compatible supera las pruebas.
-- Primera versión: priorizar pulsar para hablar; escucha permanente queda sujeta a pruebas de batería y memoria.
+- Online: audio de XiaoZhi según el protocolo implementado.
+- Offline: TTS español instalado y probado en el J7.
+- Si falla el audio online, usar TTS local.
+- Reconocimiento local de voz solo si supera pruebas de compatibilidad y rendimiento. Pulsar para hablar será la primera opción.
 
 ## Memoria y privacidad
 
 - Guardar localmente preferencias, identidad, estado y recuerdos simples.
-- No hacer que la memoria dependa exclusivamente del historial remoto.
-- Definir qué fragmentos de conversación se envían a XiaoZhi y qué información se conserva.
-- No almacenar credenciales en texto plano.
-- Informar al usuario cuándo se utiliza el servicio online.
+- No depender exclusivamente del historial remoto.
+- Definir qué fragmentos se envían a XiaoZhi.
+- No guardar credenciales en texto plano.
+- Informar cuándo se utiliza el servicio online.
 
-## Compatibilidad y rendimiento
+## Rendimiento
 
-El J7 informado tiene Android 8.1 y 2 GB de RAM. Por ello:
-- no se ejecutará un LLM grande en el teléfono;
-- el cliente de red y la interfaz deben ser livianos;
-- evitar procesos de audio simultáneos innecesarios;
-- medir RAM, batería, temperatura y fluidez;
-- verificar compatibilidad de bibliotecas con la ABI real del equipo.
+El J7 informado tiene Android 8.1 y 2 GB de RAM. No se ejecutará un LLM grande localmente. Medir RAM, batería, temperatura y fluidez. Verificar ABI y compatibilidad de bibliotecas.
 
 ## Pruebas de aceptación
 
-1. Abrir la app sin internet y usar la interfaz.
-2. Confirmar que Bellota responde con voz local en modo avión.
-3. Con internet, establecer sesión con el servicio XiaoZhi elegido.
-4. Cortar la conexión durante una conversación y verificar el paso a modo local.
-5. Restaurar internet y verificar reconexión sin reiniciar.
-6. Simular internet disponible pero servicio XiaoZhi caído.
-7. Confirmar que memoria, identidad y preferencias se mantienen entre modos.
-8. Confirmar que una falla de red no bloquea la interfaz.
+1. Abrir y usar la interfaz en modo avión.
+2. Confirmar voz local en modo avión.
+3. Establecer sesión real con XiaoZhi oficial.
+4. Cortar conexión durante una conversación y comprobar el modo local.
+5. Restaurar conexión y verificar reconexión sin reinicio.
+6. Simular red disponible con servicio XiaoZhi caído.
+7. Confirmar persistencia de memoria e identidad.
+8. Confirmar que la app nunca se bloquea por una falla de red.
 
-## Decisiones aún abiertas
-
-- Servicio XiaoZhi: hospedado oficial, instancia propia u otro servicio compatible.
-- Protocolo concreto y mecanismo de autenticación.
-- Formato de audio y estrategia de streaming.
-- Motor TTS offline y reconocimiento local compatible con Android 8.1.
+Ver [Integración con xiaozhi.me](integracion-xiaozhi-me.md).
