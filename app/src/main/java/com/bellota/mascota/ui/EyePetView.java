@@ -19,17 +19,20 @@ public class EyePetView extends View {
     private Mood mood = Mood.NEUTRAL;
     private float gazeX, gazeY, blink = 1f;
     private boolean active = true;
+    private boolean lightTheme;
+    private int autonomousScene;
     private ValueAnimator blinkAnimator;
 
     public EyePetView(Context context) {
         super(context);
         white.setColor(0xFFF4F7F5);
         pupil.setColor(0xFF10191B);
-        lid.setColor(0xFF080D10);
+        lid.setColor(lightTheme?0xFFF2F5F3:0xFF080D10);
         setLayerType(View.LAYER_TYPE_SOFTWARE, null);
     }
 
     public Mood getMood() { return mood; }
+    public void setLightTheme(boolean light) { lightTheme=light; lid.setColor(light?0xFFF2F5F3:0xFF080D10); invalidate(); }
 
     public void setMood(Mood next) {
         mood = next == null ? Mood.NEUTRAL : next;
@@ -44,19 +47,23 @@ public class EyePetView extends View {
 
     public void performAutonomousBehavior() {
         if (!active) return;
-        int choice = random.nextInt(6);
+        int choice = random.nextInt(10);
         if (choice == 0) setMood(Mood.NEUTRAL);
         else if (choice == 1) setMood(Mood.CURIOUS);
         else if (choice == 2) setMood(Mood.THINKING);
         else if (choice == 3) setMood(Mood.HAPPY);
         else if (choice == 4) setMood(Mood.SLEEPY);
-        else setMood(Mood.CALM);
+        else if (choice == 5) setMood(Mood.CALM);
+        else if (choice == 6) { setMood(Mood.CURIOUS); autonomousScene=1; }
+        else if (choice == 7) { setMood(Mood.HAPPY); autonomousScene=2; }
+        else { setMood(Mood.SLEEPY); autonomousScene=3; }
         // La mirada descansa la mayor parte del tiempo y hace pequeños vistazos ocasionales.
         if (random.nextInt(3) == 0) {
             animateGaze(random.nextFloat() * 0.7f - 0.35f,
                     random.nextFloat() * 0.45f - 0.22f, 1400 + random.nextInt(1000));
         }
         if (random.nextInt(2) == 0) blinkOnce();
+        postDelayed(() -> { if(active){autonomousScene=0;invalidate();} },6500L);
     }
 
     private void animateGaze(float x, float y, long duration) {
@@ -112,5 +119,8 @@ public class EyePetView extends View {
             lid.setColor(0xFF080D10);
             canvas.drawRect(x, shape.top, x + eyeW, shape.top + height * 0.28f, lid);
         }
+        if(autonomousScene==1){ Paint p=new Paint(Paint.ANTI_ALIAS_FLAG); p.setColor(lightTheme?0xFF8A6D2F:0xFFFFD166); canvas.drawCircle(x+eyeW*0.5f,centerY-eyeH*0.62f,eyeW*0.045f,p); }
+        else if(autonomousScene==2){ Paint p=new Paint(Paint.ANTI_ALIAS_FLAG); p.setColor(0xFF00BFA6); float bx=x+eyeW*0.5f+(float)Math.sin(System.currentTimeMillis()/380.0)*eyeW*0.22f; canvas.drawCircle(bx,centerY+eyeH*0.67f,eyeW*0.10f,p); postInvalidateDelayed(180L); }
+        else if(autonomousScene==3){ Paint p=new Paint(Paint.ANTI_ALIAS_FLAG); p.setColor(lightTheme?0xFF52616B:0xFFB7C8D0); p.setTextSize(eyeW*0.16f); canvas.drawText("z",x+eyeW*0.86f,centerY-eyeH*0.45f,p); }
     }
 }
