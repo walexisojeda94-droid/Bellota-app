@@ -49,7 +49,9 @@ public class MainActivity extends Activity implements SensorEventListener {
     private final Runnable autonomousRoutine = new Runnable() {
         @Override public void run() {
             if (eyes != null) {
-                eyes.performAutonomousBehavior();
+                int hour=java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+                if(hour>=0 && hour<7) eyes.setMood(EyePetView.Mood.SLEEPY);
+                else eyes.performAutonomousBehavior();
                 // El cuerpo cambia de lugar ocasionalmente, no en cada ciclo.
                 if (Math.random() < 0.12d) moveEyesAroundScreen();
             }
