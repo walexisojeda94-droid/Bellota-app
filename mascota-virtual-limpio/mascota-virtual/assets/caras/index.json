@@ -1,0 +1,102 @@
+{
+    "version": 1,
+    "srmodels": "srmodels.bin",
+    "emoji_collection": [
+        {
+            "name": "kissy",
+            "file": "kissy.gif"
+        },
+        {
+            "name": "sleepy",
+            "file": "sleepy.gif"
+        },
+        {
+            "name": "angry",
+            "file": "angry.gif"
+        },
+        {
+            "name": "thinking",
+            "file": "thinking.gif"
+        },
+        {
+            "name": "funny",
+            "file": "funny.gif"
+        },
+        {
+            "name": "cool",
+            "file": "cool.gif"
+        },
+        {
+            "name": "shocked",
+            "file": "shocked.gif"
+        },
+        {
+            "name": "laughing",
+            "file": "laughing.gif"
+        },
+        {
+            "name": "happy",
+            "file": "happy.gif"
+        },
+        {
+            "name": "delicious",
+            "file": "delicious.gif"
+        },
+        {
+            "name": "neutral",
+            "file": "neutral.gif"
+        },
+        {
+            "name": "crying",
+            "file": "crying.gif"
+        },
+        {
+            "name": "silly",
+            "file": "silly.gif"
+        },
+        {
+            "name": "sad",
+            "file": "sad.gif"
+        },
+        {
+            "name": "surprised",
+            "file": "surprised.gif"
+        },
+        {
+            "name": "confident",
+            "file": "confident.gif"
+        },
+        {
+            "name": "winking",
+            "file": "winking.gif"
+        },
+        {
+            "name": "relaxed",
+            "file": "relaxed.gif"
+        },
+        {
+            "name": "embarrassed",
+            "file": "embarrassed.gif"
+        },
+        {
+            "name": "confused",
+            "file": "confused.gif"
+        },
+        {
+            "name": "loving",
+            "file": "loving.gif"
+        }
+    ],
+    "multinet_model": {
+        "language": "en",
+        "duration": 3000,
+        "threshold": 0.1,
+        "commands": [
+            {
+                "command": "troko",
+                "text": "Troko",
+                "action": "wake"
+            }
+        ]
+    }
+}
