@@ -1,39 +1,37 @@
-# Mascota virtual offline para Samsung J7
+# Bellota: mascota virtual híbrida para Samsung J7
 
-Proyecto para transformar un Samsung Galaxy J7 en una mascota virtual independiente: tendrá una cara animada, personalidad, estados de ánimo, voz, reconocimiento de comandos y memoria local.
+Bellota será una mascota virtual Android con funcionamiento **local-first**: conectada a XiaoZhi cuando haya internet y con un modo local de respaldo cuando la conexión o el servicio no estén disponibles.
 
-**Regla principal:** después de instalarla, debe funcionar sin internet y sin depender de la PC ni de otro dispositivo. La PC se utiliza solamente para preparar los archivos, compilar si hace falta y transferir la aplicación al teléfono.
+## Cómo debe comportarse
 
-## Estado del proyecto
+- **Con conexión:** utilizar XiaoZhi para conversaciones más completas y capacidades avanzadas.
+- **Sin conexión:** seguir mostrando expresiones, conservar su personalidad y memoria local, ejecutar comandos básicos y responder con voz local.
+- **Al recuperar internet:** intentar reconectarse automáticamente, sin reiniciar la aplicación.
+- **En todo momento:** mantener la identidad, la interfaz y el estado de Bellota dentro de la aplicación Android.
 
-Estamos en la etapa de organización y validación técnica. Todavía no se debe dar por confirmado que el reconocimiento de voz o una voz sintética concreta funcionen en este modelo de J7. Primero se comprobarán las capacidades reales del teléfono y luego se elegirá la implementación más liviana.
+La PC se usa para preparar, compilar e instalar. No debe ser necesaria para el funcionamiento diario.
 
-## Estructura
+## Dispositivo inicial
 
-- `assets/caras/`: expresiones animadas GIF para la interfaz.
-- `assets/sonidos/`: efectos de interfaz OGG. Son opcionales y se podrán desactivar.
-- `docs/resumen-del-proyecto.md`: objetivo, dispositivos, decisiones y funciones previstas.
-- `docs/arquitectura-j7-offline.md`: arquitectura técnica objetivo y límites.
-- `docs/plan-de-trabajo.md`: etapas, pruebas y criterios para avanzar.
-- `docs/xiaozhi/`: documentación original conservada como referencia. No implica que vayamos a usar sus servidores o protocolos.
-- `reference/troko-esp32/`: material específico de la alternativa ESP32, separado del desarrollo Android.
-- `LICENSE-XIAOZHI`: licencia del proyecto XiaoZhi. No debe interpretarse como licencia automática de todos los recursos gráficos o sonidos.
+- Samsung Galaxy J7, variante informada SM-J710SS.
+- Android 8.1.
+- 2 GB de RAM y 16 GB de almacenamiento interno.
+- microSD de 8 GB.
 
-## Principios de desarrollo
+La compatibilidad de motores de voz y bibliotecas debe probarse en el teléfono real antes de elegirlos.
 
-1. Priorizar Android nativo y funciones locales compatibles con el teléfono.
-2. No incluir conexiones obligatorias a servidores, cuentas, APIs o servicios en la nube.
-3. No depender de la PC durante el uso cotidiano.
-4. Diseñar para memoria y almacenamiento limitados.
-5. Mantener los recursos gráficos y sonoros locales dentro de la aplicación.
-6. Implementar primero una mascota visual funcional; después sumar voz, comandos y memoria.
-7. No borrar referencias originales hasta comprobar que no se necesitan.
+## Recursos del repositorio
 
-## Primer objetivo técnico
+- `assets/caras/`: expresiones GIF locales.
+- `assets/sonidos/`: efectos OGG opcionales.
+- `docs/resumen-del-proyecto.md`: alcance y decisiones.
+- `docs/arquitectura-j7-offline.md`: arquitectura local-first e integración online.
+- `docs/plan-de-trabajo.md`: etapas y pruebas.
+- `docs/xiaozhi/`: documentación de referencia.
+- `reference/troko-esp32/`: material de hardware ESP32, no instalable en Android.
 
-Crear una pantalla de mascota que funcione sin conexión, muestre las expresiones disponibles, reaccione al toque y conserve una configuración básica local. La voz y el reconocimiento offline se incorporarán después de probar compatibilidad y consumo de memoria en el J7.
+La procedencia y licencia específica de los recursos gráficos y sonoros todavía debe verificarse.
 
-Ver también:
-- [Arquitectura offline](docs/arquitectura-j7-offline.md)
-- [Plan de trabajo](docs/plan-de-trabajo.md)
-- [Resumen del proyecto](docs/resumen-del-proyecto.md)
+## Regla de diseño
+
+La caída de internet, del servidor o de la sesión de XiaoZhi nunca debe cerrar la aplicación ni dejar a Bellota sin una respuesta local. La voz offline y el reconocimiento local se validarán en el J7 antes de considerarlos funciones terminadas.
