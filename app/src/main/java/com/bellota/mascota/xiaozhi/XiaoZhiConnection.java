@@ -44,8 +44,7 @@ public class XiaoZhiConnection {
     }
 
     public boolean isConfigured() {
-        return preferences.getBoolean(KEY_ACTIVATED, false)
-                && !preferences.getString(KEY_ACCESS_TOKEN, "").isEmpty();
+        return preferences.getBoolean(KEY_ACTIVATED, false);
     }
 
     public void requestActivationCode(ActivationListener listener) {
@@ -92,9 +91,7 @@ public class XiaoZhiConnection {
                 HttpResult result = postActivation(activateUrl);
                 if (result.status == 200) {
                     String token = result.json.optString("access_token", "");
-                    if (!token.isEmpty()) {
-                        preferences.edit().putString(KEY_ACCESS_TOKEN, token).putBoolean(KEY_ACTIVATED, true).apply();
-                    }
+                    preferences.edit().putString(KEY_ACCESS_TOKEN, token).putBoolean(KEY_ACTIVATED, true).apply();
                     if (listener != null) listener.onActivated();
                     return;
                 }
