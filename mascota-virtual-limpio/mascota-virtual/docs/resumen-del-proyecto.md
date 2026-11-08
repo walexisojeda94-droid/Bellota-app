@@ -1,72 +1,101 @@
-# Mascota virtual para el Samsung J7
+# Resumen del proyecto: Bellota híbrida para Samsung J7
 
 ## Objetivo
-Convertir un Samsung J7 sin uso en una mascota virtual de escritorio, para dejarla al lado de la PC. Que hable, reaccione, tenga ánimo propio y haga compañía. Se prefiere que todo sea local. La idea es algo propio, inspirado en XiaoZhi, y decidir qué funciones agregarle.
 
-## Equipo
-- Teléfono: Samsung J7 (Android viejo, poca RAM, procesador flojo). No puede correr IA local, pero sirve de pantalla, parlante, micrófono y táctil.
-- PC: Windows 10 Pro, AMD A8-7600 con gráficos Radeon R7, 8 GB de RAM, sin placa dedicada.
-- Lo que aguanta la PC en local: reconocimiento de voz chico (Whisper tiny/base o Vosk) y voz sintética (Piper). Un modelo de lenguaje chico (1B a 3B) funcionaría muy lento.
+Convertir un Samsung Galaxy J7 en Bellota, una mascota virtual conectada por defecto al servicio oficial XiaoZhi (`https://xiaozhi.me`) y con funcionamiento local de respaldo.
 
-## Decisiones tomadas
-- La mascota se hace para el J7 como página web o app propia, no para ESP32.
-- El ESP32 queda como alternativa si más adelante se quiere un objeto físico (haría falta una placa ESP32-S3, micrófono I2S, amplificador y parlante).
+La experiencia debe sentirse como una sola mascota. La interfaz, identidad, personalidad, expresiones y memoria principal pertenecen a la aplicación Android. XiaoZhi aporta conversación avanzada online, pero no debe ser indispensable para que Bellota siga viva y responda.
 
-## Material de referencia
-- Proyecto XiaoZhi (código fuente en C++ para ESP32, licencia MIT): https://github.com/78/xiaozhi-esp32
-  - Reutilizable: el protocolo de comunicación (docs/websocket.md), los servidores para la PC y las ideas de diseño de emociones.
-  - Clientes que no son ESP32: xiaozhi-android-client (TOM88812) y py-xiaozhi (huangjunsen0406). No se verificó si funcionan en el J7.
-  - Servidor para la PC: xinnan-tech/xiaozhi-esp32-server (Python).
-  - Generador de emojis, fuentes y palabras de activación propias: 78/xiaozhi-assets-generator.
-- Repo https://github.com/walexisojeda94-droid/Bellota-app: contiene solo un firmware ya compilado (troko-wk-esp32s3-dev-es.bin) para ESP32-S3, una guía en HTML, LEEME, licencia MIT y checksums. No hay código fuente.
+## Comportamiento esperado
 
-## Lo reutilizable del firmware troko-wk-esp32s3-dev-es.bin
-- 21 caras animadas en GIF de 240x240, ojos blancos sobre fondo negro, entre 40 y 80 cuadros, en bucle: angry, confident, confused, cool, crying, delicious, embarrassed, funny, happy, kissy, laughing, loving, neutral, relaxed, sad, shocked, silly, sleepy, surprised, thinking, winking.
-- El index.json que las lista.
-- Todo está en el archivo caras-troko.zip.
+### Con internet y XiaoZhi disponible
+- Conectarse al servicio oficial XiaoZhi en `https://xiaozhi.me`.
+- Enviar interacción de voz o texto según el protocolo que se implemente.
+- Reproducir la respuesta recibida.
+- Mantener identidad y presentación visual de Bellota en la app local.
 
-## Lo que no sirve para el J7
-- srmodels.bin: el modelo de la palabra de activación "Troko", hecho para el chip ESP32-S3.
-- El firmware en sí.
+### Sin internet o sin servicio
+- No cerrar ni bloquear la aplicación.
+- Seguir mostrando animaciones y expresiones.
+- Responder a comandos y frases locales acotadas.
+- Hablar con una voz española instalada y comprobada para uso offline.
+- Conservar estado, configuración y memoria local.
+- Informar de forma natural que está usando su modo local, si corresponde.
 
-## Datos del LEEME.txt del firmware (referencia para la ruta ESP32)
-- El firmware es de la marca "Troko", versión en español, basado en XiaoZhi ESP32. Se graba completo en la dirección 0x0.
-- Hardware que pide: ESP32-S3-N16R8 (16 MB de flash, 8 MB de PSRAM), pantalla ST7789 de 240x240 por SPI, micrófono I2S tipo INMP441 y amplificador I2S tipo MAX98357A con altavoz.
-- Conexiones (GPIO): pantalla MOSI 8, CLK 9, CS 11, DC 12, RST 13, BLK 10; micrófono SCK 42, WS 40, SD 41; amplificador BCLK 47, LRC 48, DIN 21; botones BOOT 0 (hablar), volumen+ 38, volumen- 39; LED 14. Si la placa está cableada distinto, ese firmware no funciona.
-- Cómo se instala: con esptool-js desde Chrome/Edge o con esptool por línea de comandos.
-- Importante para el objetivo "todo local": este firmware usa el servidor xiaozhi.me, que es un servicio de terceros en la nube. Para que sea local hay que usar un servidor propio (por ejemplo xiaozhi-esp32-server).
-- El archivo SHA256SUMS solo verifica el .bin. El hash coincide con el archivo que se subió.
+### Al recuperar conexión
+- Detectar disponibilidad de red y comprobar el servicio.
+- Reconectar automáticamente con límites y reintentos razonables.
+- Volver al modo online sin reiniciar la app.
+- No perder contexto local ni duplicar mensajes.
 
-## Pendiente de resolver
-- Quién dibujó las caras: el repo es MIT con copyright de la empresa de XiaoZhi, pero no está confirmado el autor de los GIFs. Decidir si se usan o se hacen caras propias.
-- Si el cliente Android de XiaoZhi funciona en el J7.
+## Dispositivo inicial
 
-## Ideas de funciones (de más simple a más complejo)
-Base:
-- Cara con emociones y parpadeo aleatorio
-- Se duerme cuando no hay nadie y se despierta al volver
-- Ánimo y energía que cambian con el día y con el trato
+- Samsung Galaxy J7, variante informada: SM-J710SS.
+- Android 8.1, 2 GB de RAM, 16 GB internos y microSD de 8 GB.
+- Procesador y ABI exactos pendientes de verificación.
 
-Interacción:
-- Reacciona al toque
-- Voz propia con Piper
-- Comentarios espontáneos (tomar agua, llevás horas sentado)
-- Saludo a la mañana y despedida al apagar la PC
+## PC de preparación
 
-Útiles:
-- Pomodoro, recordatorios, alarmas
-- Reloj, clima, agenda
-- Música o ruido de fondo
+Windows 10 Pro, AMD A8-7600 Radeon R7, 8 GB RAM. Se usa para desarrollo, compilación y transferencia. No debe alojar servicios obligatorios.
 
-De mascota:
-- Minijuegos simples
-- Nivel de cariño que crece con el uso
-- Personalidad propia (nombre, forma de hablar, manías)
-- Memoria de cosas que se le contaron
+## Otros dispositivos
 
-Conexión con la PC (más avanzado):
-- Saber si estás jugando, trabajando o ausente
-- Leer notificaciones en voz alta
+Samsung Galaxy S5 G900H y tablet H863H03 disponibles para posibles etapas futuras, sin formar parte de la primera versión.
 
-## Próximo paso propuesto
-Armar una página web de prueba que muestre una cara según el estado de ánimo y cambie al tocarla, probarla en el navegador del J7, y después sumar voz. Falta definir la personalidad de la mascota (tierna, sarcástica, perezosa, otra).
+## Recursos reutilizables
+
+- 21 expresiones GIF de 240 x 240.
+- Un `index.json` asociado.
+- Cinco efectos OGG.
+
+La procedencia y licencia específica de GIF y sonidos debe verificarse. La licencia MIT de XiaoZhi no implica que todos los recursos tengan automáticamente esa licencia.
+
+## Límites técnicos
+
+- El J7 con 2 GB de RAM no es adecuado para ejecutar un modelo de lenguaje grande.
+- La conversación avanzada se procesa en XiaoZhi cuando hay conexión.
+- El modo local será más acotado: comandos, respuestas basadas en reglas, estado de ánimo y memoria sencilla.
+- La voz offline debe comprobarse con TTS español disponible en Android o alternativa liviana.
+- El reconocimiento offline es una función a evaluar, no una capacidad garantizada.
+- Tener internet no garantiza que el servicio XiaoZhi esté disponible.
+- No se instalará firmware Troko/ESP32 en Android.
+
+## Funciones previstas
+
+### Base visual y personalidad
+- Cara animada y expresiones.
+- Reacción al toque.
+- Estados de ánimo y energía.
+- Identidad consistente entre modo online y offline.
+- Preferencias y memoria local persistente.
+
+### Voz e interacción
+- Conversación online con XiaoZhi oficial.
+- Voz local de respaldo sin internet.
+- Comandos locales básicos.
+- Reconocimiento offline si el J7 lo soporta.
+- Activación manual como primera opción; escucha permanente sujeta a pruebas de batería y memoria.
+
+### Funciones adicionales
+- Reloj, temporizador y Pomodoro.
+- Recordatorios y alarmas locales.
+- Minijuegos.
+- Comentarios espontáneos configurables.
+
+## Decisiones confirmadas
+
+1. Dispositivo inicial: Samsung Galaxy J7 SM-J710SS, Android 8.1.
+2. Arquitectura local-first híbrida.
+3. Servicio online predeterminado: XiaoZhi oficial, `https://xiaozhi.me`.
+4. El núcleo local no depende de XiaoZhi ni de internet.
+5. No comprar hardware en esta etapa.
+
+## Pendiente de implementación
+
+- Verificar protocolo, activación y autenticación para un cliente Android.
+- Implementar el adaptador de XiaoZhi y probar una conversación real.
+- Verificar TTS español offline y reconocimiento local.
+- Medir RAM, batería, almacenamiento y fluidez.
+- Definir qué datos de conversación se envían al servicio y qué memoria queda local.
+
+Ver [Integración con xiaozhi.me](integracion-xiaozhi-me.md) y [arquitectura híbrida](arquitectura-j7-offline.md).
