@@ -151,34 +151,6 @@ public class MainActivity extends Activity {
                             spokenCode.append(code.charAt(i));
                         }
                     }
-                    String announcement = "Código de vinculación de XiaoZhi: " + spokenCode + ".
-"
-                            + "Ingresalo en xiaozhi punto eme, en tu cuenta, para vincular a Bellota.";
-                    if (localVoice != null && localVoice.isReady()) speakIfEnabled(announcement);
-                    else pendingXiaoZhiCode = announcement;
-                });
-            }
-            @Override public void onActivated() {
-                runOnUiThread(() -> speakIfEnabled("Bellota ya está vinculada con XiaoZhi."));
-            }
-            @Override public void onError(String message) {
-                runOnUiThread(() -> speakIfEnabled("Todavía no pude obtener el código de XiaoZhi. " + message));
-            }
-        });
-    }
-
-    private void requestXiaoZhiActivation() {
-        if (xiaoZhiConnection == null || xiaoZhiConnection.isConfigured()) return;
-        xiaoZhiConnection.requestActivationCode(new XiaoZhiConnection.ActivationListener() {
-            @Override public void onCodeReceived(String code, String message) {
-                runOnUiThread(() -> {
-                    StringBuilder spokenCode = new StringBuilder();
-                    for (int i = 0; i < code.length(); i++) {
-                        if (Character.isDigit(code.charAt(i))) {
-                            if (spokenCode.length() > 0) spokenCode.append(" ");
-                            spokenCode.append(code.charAt(i));
-                        }
-                    }
                     String announcement = "Código de vinculación de XiaoZhi: " + spokenCode
                             + ". Ingresalo en xiaozhi punto eme, en tu cuenta, para vincular a Bellota.";
                     if (localVoice != null && localVoice.isReady()) speakIfEnabled(announcement);
