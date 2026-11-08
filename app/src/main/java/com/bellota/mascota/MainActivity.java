@@ -23,6 +23,7 @@ public class MainActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final OfflineReplies offlineReplies = new OfflineReplies();
     private EyePetView eyes;
+    private FrameLayout petRoot;
     private LocalVoice localVoice;
     private ContinuousVoiceCommands voiceCommands;
     private PetLife petLife;
@@ -30,7 +31,7 @@ public class MainActivity extends Activity {
     private long lastSpokenAt;
     private final Runnable autonomousRoutine = new Runnable() {
         @Override public void run() {
-            if (eyes != null) eyes.performAutonomousBehavior();
+            if (eyes != null) { eyes.performAutonomousBehavior(); moveEyesAroundScreen(); }
             handler.postDelayed(this, 4500L + (long)(Math.random() * 6500L));
         }
     };
@@ -49,6 +50,7 @@ public class MainActivity extends Activity {
 
     private void buildPetScreen() {
         FrameLayout root = new FrameLayout(this);
+        petRoot = root;
         root.setBackgroundColor(0xFF080D10);
         eyes = new EyePetView(this);
         int width = (int)(getResources().getDisplayMetrics().widthPixels * 0.42f);
@@ -58,6 +60,17 @@ public class MainActivity extends Activity {
         params.topMargin = (getResources().getDisplayMetrics().heightPixels - height) / 2;
         root.addView(eyes, params);
         setContentView(root);
+    }
+
+    private void moveEyesAroundScreen() {
+        if (petRoot == null || eyes == null || petRoot.getWidth() == 0 || petRoot.getHeight() == 0) return;
+        float maxX = Math.max(0, petRoot.getWidth() - eyes.getWidth());
+        float maxY = Math.max(0, petRoot.getHeight() - eyes.getHeight());
+        float targetX = (float)(Math.random() * maxX);
+        float targetY = (float)(Math.random() * maxY);
+        eyes.animate().cancel();
+        eyes.animate().x(targetX).y(targetY).setDuration(1300L + (long)(Math.random() * 1700L))
+                .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator()).start();
     }
 
     private void enterImmersiveMode() {
