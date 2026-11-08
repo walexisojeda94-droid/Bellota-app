@@ -1,89 +1,119 @@
-# Arquitectura objetivo: J7 completamente offline
+# Arquitectura híbrida local-first para Samsung J7
 
-## Regla de funcionamiento
+## Principio
 
-La aplicación debe ejecutarse dentro del Samsung J7. Durante el uso normal no debe realizar solicitudes de red ni depender de un servidor local o remoto.
+Bellota es una aplicación Android autónoma que conserva localmente su interfaz, identidad, personalidad, estado y memoria. Cuando hay conexión disponible, delega la conversación avanzada en XiaoZhi. Si internet o el servicio fallan, cambia a respuestas locales y voz offline.
 
-La PC es una herramienta de desarrollo e instalación, no una pieza de la arquitectura de ejecución.
+XiaoZhi es una capacidad online opcional, no el punto único de falla de la aplicación.
 
-## Diseño por capas
+## Esquema general
 
 ```
-Interfaz de mascota
-  ├─ GIFs y sonidos incluidos en la aplicación
-  ├─ animaciones, toque y estados visuales
-  └─ controles de voz y configuración
-          |
-Lógica local de la mascota
-  ├─ personalidad basada en reglas
-  ├─ estado de ánimo y energía
-  ├─ comandos reconocidos
-  └─ respuestas y eventos
-          |
-Servicios Android locales
-  ├─ almacenamiento privado / SQLite
-  ├─ Text-to-Speech offline, si está disponible
-  └─ reconocimiento offline, si supera las pruebas
+Aplicación Android Bellota (J7)
+  |
+  +-- Interfaz, GIFs, sonidos y estados visuales locales
+  |
+  +-- Núcleo local de Bellota
+  |     +-- identidad y personalidad
+  |     +-- estado de ánimo y energía
+  |     +-- memoria y configuración local
+  |     +-- comandos y respuestas de respaldo
+  |     +-- voz TTS offline, si está disponible
+  |
+  +-- Gestor de conexión y sesiones
+        +-- comprueba conectividad
+        +-- comprueba disponibilidad del servicio
+        +-- gestiona conexión, errores y reconexión
+        |
+        +-- Adaptador XiaoZhi (solo online)
+              +-- protocolo y autenticación por definir
+              +-- conversación avanzada
+              +-- recepción de respuestas y audio
 ```
 
-No hay servidor, nube, API externa ni conexión con la PC en esta arquitectura.
+## Separación de responsabilidades
 
-## Plataforma a evaluar
+### Núcleo local
+Debe poder ejecutarse sin permisos de red y sin inicializar el cliente XiaoZhi. Controla:
+- pantalla y expresiones;
+- identidad y personalidad base;
+- memoria local y preferencias;
+- comandos esenciales;
+- respuestas de contingencia;
+- avisos de estado de conexión;
+- voz local de respaldo.
 
-Primera opción: aplicación Android nativa compatible con Android 8.1. Esto permite integrar de forma más directa el almacenamiento local, el audio y las funciones de accesibilidad del dispositivo.
+### Adaptador online XiaoZhi
+Se encarga de:
+- iniciar y cerrar sesiones;
+- autenticar de forma segura según el servicio elegido;
+- enviar entradas y recibir respuestas;
+- gestionar audio o texto según el protocolo disponible;
+- informar errores al gestor de conexión.
 
-Una página HTML local puede utilizarse como prototipo visual, pero no se debe elegir como solución definitiva para voz hasta comprobar las limitaciones del navegador Android y su funcionamiento sin red.
+No debe controlar directamente la pantalla ni almacenar la única copia de la memoria de Bellota.
 
-## Reconocimiento de voz
+## Estados de conectividad
 
-Requisito: procesar el audio en el propio teléfono, sin enviar grabaciones a internet.
+1. **LOCAL:** sin red disponible. La app usa únicamente funciones locales.
+2. **CONECTANDO:** hay red, pero todavía no se confirmó una sesión XiaoZhi operativa.
+3. **ONLINE:** el servicio responde y la conversación avanzada está disponible.
+4. **RECUPERANDO:** se perdió una sesión y se está intentando reconectar.
 
-Candidato a investigar: Vosk con un modelo español pequeño. No se considera aprobado hasta comprobar:
-- Compatibilidad con Android 8.1 y la arquitectura del J7.
-- Memoria libre durante la carga y el reconocimiento.
-- Tiempo de respuesta aceptable.
-- Calidad suficiente con el micrófono del teléfono.
-- Funcionamiento en modo avión.
+Tener Wi-Fi o datos móviles no significa necesariamente que XiaoZhi esté disponible. El cambio de estado debe comprobar también el servicio.
 
-Si el reconocimiento continuo consume demasiados recursos, se usará activación por botón y escucha por intervalos breves.
+## Cambio de modo sin interrupción
 
-## Voz de salida
+- Si una petición online falla, la app debe ofrecer una respuesta local breve en lugar de dejar al usuario esperando indefinidamente.
+- Las peticiones deben tener tiempo límite.
+- La reconexión debe usar espera progresiva para evitar consumir batería.
+- No se deben enviar mensajes duplicados al recuperar una sesión.
+- La interfaz debe seguir respondiendo durante los intentos de conexión.
+- El usuario debe poder seguir usando comandos locales aunque el servicio online esté caído.
 
-Primera prueba: motor Text-to-Speech de Android con una voz española descargada previamente. Se debe activar el modo avión y confirmar que sigue hablando.
+## Voz
 
-Si esa voz no está disponible offline, evaluar una alternativa local compatible con ARM y Android 8.1. No se incorporará un motor pesado sin medir RAM, almacenamiento y velocidad.
+### Salida
+- Online: usar el audio devuelto por XiaoZhi si el protocolo elegido lo permite.
+- Offline: usar un motor TTS español descargado y probado en el J7.
+- Si el audio online falla, intentar la respuesta local y reproducirla con TTS local.
 
-## Memoria
+### Entrada
+- Online: capturar y enviar audio solo conforme al protocolo y permisos del servicio elegido.
+- Offline: reconocer comandos locales si un motor compatible supera las pruebas.
+- Primera versión: priorizar pulsar para hablar; escucha permanente queda sujeta a pruebas de batería y memoria.
 
-La memoria será local:
-- Preferencias y configuración en almacenamiento privado.
-- Datos estructurados y recuerdos simples en SQLite.
-- Sin sincronización ni copia automática en la nube.
-- Opción futura de exportación manual, si el usuario la solicita.
+## Memoria y privacidad
 
-## Recursos gráficos y sonoros
+- Guardar localmente preferencias, identidad, estado y recuerdos simples.
+- No hacer que la memoria dependa exclusivamente del historial remoto.
+- Definir qué fragmentos de conversación se envían a XiaoZhi y qué información se conserva.
+- No almacenar credenciales en texto plano.
+- Informar al usuario cuándo se utiliza el servicio online.
 
-- Copiar los GIF seleccionados dentro de los recursos de la aplicación.
-- Evitar cargar las 21 animaciones a la vez si aumenta el consumo.
-- Cargar solo la expresión activa y liberar recursos anteriores cuando corresponda.
-- Mantener los efectos de sonido opcionales y permitir silenciarlos.
-- Verificar licencias y atribuciones antes de distribuir públicamente los recursos.
+## Compatibilidad y rendimiento
 
-## Restricciones de rendimiento
+El J7 informado tiene Android 8.1 y 2 GB de RAM. Por ello:
+- no se ejecutará un LLM grande en el teléfono;
+- el cliente de red y la interfaz deben ser livianos;
+- evitar procesos de audio simultáneos innecesarios;
+- medir RAM, batería, temperatura y fluidez;
+- verificar compatibilidad de bibliotecas con la ABI real del equipo.
 
-El J7 informado tiene 2 GB de RAM y almacenamiento limitado. Por eso:
-- No se planifica ejecutar un LLM de 1B a 3B en el teléfono.
-- La primera personalidad será un sistema de reglas y respuestas locales.
-- No se ejecutarán reconocimiento de voz, animaciones pesadas y procesos innecesarios en segundo plano simultáneamente.
-- Se medirán memoria, batería, temperatura y fluidez en cada etapa.
+## Pruebas de aceptación
 
-## Pruebas obligatorias
+1. Abrir la app sin internet y usar la interfaz.
+2. Confirmar que Bellota responde con voz local en modo avión.
+3. Con internet, establecer sesión con el servicio XiaoZhi elegido.
+4. Cortar la conexión durante una conversación y verificar el paso a modo local.
+5. Restaurar internet y verificar reconexión sin reiniciar.
+6. Simular internet disponible pero servicio XiaoZhi caído.
+7. Confirmar que memoria, identidad y preferencias se mantienen entre modos.
+8. Confirmar que una falla de red no bloquea la interfaz.
 
-1. Instalar y abrir la aplicación sin conexión.
-2. Usar la interfaz y cambiar expresiones durante varios minutos.
-3. Cerrar y volver a abrir, verificando que se conserva la configuración.
-4. Probar voz de salida en modo avión.
-5. Probar reconocimiento de voz en modo avión.
-6. Confirmar que la aplicación sigue funcionando tras reiniciar el teléfono.
+## Decisiones aún abiertas
 
-Una función que no supere la prueba offline no se considerará implementada.
+- Servicio XiaoZhi: hospedado oficial, instancia propia u otro servicio compatible.
+- Protocolo concreto y mecanismo de autenticación.
+- Formato de audio y estrategia de streaming.
+- Motor TTS offline y reconocimiento local compatible con Android 8.1.
