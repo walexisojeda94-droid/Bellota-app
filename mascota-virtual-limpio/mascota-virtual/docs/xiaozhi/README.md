@@ -1,14 +1,23 @@
 # Referencia XiaoZhi
 
-Esta carpeta conserva documentación original del proyecto XiaoZhi para consulta técnica y conceptual.
+Esta carpeta conserva documentación del protocolo y del ecosistema XiaoZhi para consulta técnica. No es código ejecutable de la aplicación Android.
 
-**No forma parte de la arquitectura de ejecución del J7.** El proyecto de la mascota no debe conectarse a xiaozhi.me, a servidores de terceros ni a un servidor alojado en la PC.
+## Decisión del proyecto
 
-Se puede consultar este material para estudiar:
-- Organización de estados y emociones.
-- Formatos de mensajes y conceptos de interacción.
-- Ideas de interfaz y notificaciones.
+Bellota utilizará XiaoZhi oficial mediante `https://xiaozhi.me` como servicio online predeterminado, una vez verificados e implementados el registro, la autenticación y el protocolo compatibles con un cliente Android propio.
 
-No implementar WebSocket, MQTT, MCP ni protocolos de servidor salvo que en el futuro exista una necesidad local concreta y compatible con el requisito offline. La primera versión no los necesita.
+La URL del panel no debe asumirse como endpoint de comunicación. Los detalles de conexión deben confirmarse con documentación vigente y pruebas reales.
 
-Los documentos originales se mantienen separados para no confundir referencia con código activo.
+## Uso de esta documentación
+
+Puede consultarse para estudiar:
+- Formatos de mensajes y transporte.
+- Audio bidireccional.
+- Estados, emociones y notificaciones.
+- Integración de funciones y herramientas.
+
+El núcleo local de Bellota seguirá funcionando sin XiaoZhi. Estos documentos son referencias y no sustituyen la implementación del adaptador Android.
+
+Ver también:
+- [Integración con xiaozhi.me](../integracion-xiaozhi-me.md)
+- [Arquitectura híbrida](../arquitectura-j7-offline.md)

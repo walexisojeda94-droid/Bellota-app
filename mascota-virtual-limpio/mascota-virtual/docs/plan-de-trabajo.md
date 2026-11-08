@@ -1,19 +1,32 @@
 # Plan de trabajo: Bellota híbrida en Samsung J7
 
+## Reglas de trabajo
+- Trabajar directamente sobre la rama principal `main`.
+- No crear ramas de desarrollo ni Pull Requests.
+- Revisar los cambios y verificar el contenido de `main` después de cada etapa.
+- No comprar hardware en esta etapa.
+- La PC solo se usa para desarrollo, compilación e instalación.
+- El teléfono no depende de la PC.
+- XiaoZhi mejora la conversación, no sustituye el núcleo local.
+- No inventar endpoints, credenciales ni identidades de dispositivo.
+- No integrar motores pesados sin medir rendimiento.
+- No marcar una integración como terminada sin probarla en el J7.
+
 ## Etapa 0. Organización y diagnóstico
-- [x] Crear rama de trabajo separada.
 - [x] Inventariar recursos y documentación.
 - [x] Definir arquitectura local-first híbrida.
 - [x] Elegir XiaoZhi oficial (`https://xiaozhi.me`) como servicio predeterminado.
+- [x] Crear estructura inicial del proyecto Android.
 - [ ] Verificar modelo exacto, ABI, espacio libre y estado del J7.
 - [ ] Comprobar USB y transferencia de archivos.
 
 ## Etapa 1. Prototipo visual local
-- [ ] Crear pantalla principal.
-- [ ] Mostrar expresión inicial y cambiarla al tocar.
-- [ ] Seleccionar GIFs y estados visuales.
+- [x] Crear pantalla principal inicial.
+- [ ] Integrar los GIF reales de expresiones.
+- [ ] Cambiar expresiones según estado e interacción.
+- [ ] Integrar efectos de sonido con control de volumen/silencio.
 - [ ] Guardar preferencias localmente.
-- [ ] Instalar y medir fluidez y memoria en el J7.
+- [ ] Compilar, instalar y medir fluidez y memoria en el J7.
 
 Criterio: interfaz funcional en modo avión.
 
@@ -50,12 +63,3 @@ Criterio: nunca quedarse muda ni exigir reinicio.
 - [ ] Minijuegos.
 - [ ] Comentarios espontáneos.
 - [ ] Ampliar memoria y personalización.
-
-## Reglas
-- No comprar hardware en esta etapa.
-- La PC solo se usa para desarrollo, compilación e instalación.
-- El teléfono no depende de la PC.
-- XiaoZhi mejora la conversación, no sustituye el núcleo local.
-- No inventar endpoints ni credenciales.
-- No integrar motores pesados sin medir rendimiento.
-- No marcar una integración como terminada sin probarla en el J7.
