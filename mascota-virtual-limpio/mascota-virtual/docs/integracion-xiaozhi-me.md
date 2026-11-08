@@ -2,39 +2,49 @@
 
 ## Servicio predeterminado
 
-Bellota utilizará el servicio oficial de XiaoZhi asociado al panel:
+Bellota utilizará el servicio oficial asociado al panel https://xiaozhi.me. El panel y la cuenta no deben confundirse con el endpoint de comunicación del dispositivo.
 
-- Panel y cuenta: https://xiaozhi.me
-- Estado: elegido como predeterminado; cliente Android todavía no implementado.
-- La aplicación debe permitir que el usuario configure el servicio más adelante, pero esta primera configuración apunta al servicio oficial.
+## Protocolo oficial revisado
 
-## Importante: panel web no equivale al endpoint de comunicación
+La documentación vigente de desarrollo de XiaoZhi describe un protocolo WebSocket de dispositivo:
 
-La dirección del panel no debe tratarse automáticamente como endpoint WebSocket. El cliente debe implementar el protocolo de dispositivo compatible con el servicio y usar los endpoints, encabezados, autenticación y formato de audio definidos por documentación vigente.
+- Handshake con cabeceras `Authorization`, `Protocol-Version`, `Device-Id` y `Client-Id`.
+- Mensaje inicial JSON `hello`, con versión, transporte y parámetros de audio.
+- Respuesta `hello` del servidor con transporte y, potencialmente, `session_id`.
+- Mensajes JSON de control como `listen`, `stt`, `llm`, `tts`, `mcp` y `alert`.
+- Audio bidireccional en tramas binarias Opus. El formato, la frecuencia de muestreo y la variante de trama deben negociarse y respetarse.
 
-No copiar endpoints de clientes de terceros sin verificar su compatibilidad con el servicio oficial actual.
+La documentación también describe una alternativa MQTT para control más UDP cifrado para audio. No vamos a implementar ambos transportes en paralelo: primero se evaluará el WebSocket por ser el camino más directo para el cliente Android.
 
-## Activación y vinculación
+Referencias técnicas oficiales:
+- Guía de desarrollo: https://xiaozhi.dev/en/docs/development/
+- Protocolo WebSocket: https://xiaozhi.dev/en/docs/development/websocket/
+- Protocolo MQTT + UDP: https://xiaozhi.dev/en/docs/development/mqtt-udp/
+- Firmware oficial abierto: https://github.com/78/xiaozhi-esp32
 
-El flujo documentado para dispositivos XiaoZhi compatibles incluye conectividad, solicitud de activación, código de verificación y vinculación de ese dispositivo a una cuenta desde la consola. El procedimiento exacto puede variar según firmware, servidor y tipo de dispositivo.
+## Lo que está validado y lo que falta
 
-Para Bellota en Android se debe verificar si xiaozhi.me admite el alta de un cliente Android genérico o si exige identidad/firmware de dispositivo específico. No se debe fingir un código de activación ni reutilizar la identidad de otro dispositivo.
+**Validado documentalmente:** formato general del protocolo WebSocket, cabeceras, handshake, tipos de mensajes y transporte de audio Opus.
 
-## Trabajo de implementación
+**Todavía no validado para Bellota Android:** que el servicio alojado en xiaozhi.me admita el alta de un cliente Android genérico, el flujo de activación que le corresponde, el endpoint de sesión que debe recibir, la forma autorizada de obtener el token y la identidad de dispositivo aceptada.
 
-1. Revisar documentación vigente del protocolo XiaoZhi y del servicio oficial.
-2. Confirmar si el servicio permite un cliente Android propio y cuál es el procedimiento legítimo de registro.
-3. Definir identidad única de instalación y almacenamiento seguro de credenciales.
-4. Implementar cliente de red en un módulo aislado.
-5. Probar conexión, audio bidireccional, cierre de sesión y reconexión en Android 8.1.
-6. Integrar el cliente con el gestor de estados sin permitir que una falla online bloquee el núcleo local.
+No se debe asumir que el panel web es un endpoint WebSocket. Tampoco se deben inventar endpoints, tokens, MAC, Client-ID ni reutilizar identidades de hardware ajeno.
 
-## Referencias
+## Arquitectura de voz
 
-- Panel oficial: https://xiaozhi.me
-- Guía de activación y vinculación del ecosistema XiaoZhi: https://xiaozhi.dev/en/docs/usage/activation/
-- Repositorio abierto XiaoZhi y documentación de desarrollo: https://github.com/78/xiaozhi-esp32
+- La voz local Android TextToSpeech permanece disponible como respaldo.
+- La voz remota, una vez validada, se implementará detrás de un adaptador independiente.
+- La interfaz y el núcleo local no deben bloquearse por conexión, audio o autenticación remotos.
+- Si falla XiaoZhi, Bellota vuelve a las respuestas y voz locales.
+
+## Próximos pasos
+
+1. Verificar en el J7 que el motor TTS tenga datos españoles instalados y funcione sin internet.
+2. Confirmar con documentación y flujo oficial si se puede registrar un cliente Android propio.
+3. Obtener endpoint y credenciales mediante el procedimiento legítimo de activación.
+4. Implementar WebSocket, handshake, negociación de audio y decodificación Opus en un módulo aislado.
+5. Probar conversación real, desconexión, fallback y reconexión en Android 8.1.
 
 ## Estado
 
-La selección de xiaozhi.me como destino predeterminado está decidida. La conexión real no está implementada ni probada. Antes de declararla funcional hay que confirmar compatibilidad del cliente Android, completar el alta autorizada y probar una conversación real.
+La base del protocolo está revisada documentalmente. La compatibilidad de la cuenta/servicio oficial con un cliente Android propio todavía no está confirmada. No existe conexión remota funcional en esta versión.

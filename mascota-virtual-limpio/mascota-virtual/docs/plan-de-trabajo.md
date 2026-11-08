@@ -1,65 +1,53 @@
 # Plan de trabajo: Bellota híbrida en Samsung J7
 
-## Reglas de trabajo
-- Trabajar directamente sobre la rama principal `main`.
-- No crear ramas de desarrollo ni Pull Requests.
-- Revisar los cambios y verificar el contenido de `main` después de cada etapa.
+## Reglas
+- Trabajar directamente en `main`, sin ramas ni Pull Requests.
+- Revisar el contenido de `main` después de cada etapa.
 - No comprar hardware en esta etapa.
-- La PC solo se usa para desarrollo, compilación e instalación.
-- El teléfono no depende de la PC.
-- XiaoZhi mejora la conversación, no sustituye el núcleo local.
-- No inventar endpoints, credenciales ni identidades de dispositivo.
-- No integrar motores pesados sin medir rendimiento.
-- No marcar una integración como terminada sin probarla en el J7.
+- No inventar endpoints, credenciales ni identidades.
+- No declarar una función terminada sin probarla en el J7.
 
-## Etapa 0. Organización y diagnóstico
-- [x] Inventariar recursos y documentación.
-- [x] Definir arquitectura local-first híbrida.
-- [x] Elegir XiaoZhi oficial (`https://xiaozhi.me`) como servicio predeterminado.
-- [x] Crear estructura inicial del proyecto Android.
-- [ ] Verificar modelo exacto, ABI, espacio libre y estado del J7.
-- [ ] Comprobar USB y transferencia de archivos.
+## Etapa 0. Organización
+- [x] Arquitectura híbrida local-first.
+- [x] Proyecto Android inicial.
+- [x] Módulos internos core, ui, local, voice y xiaozhi.
+- [x] Incorporar 21 GIF reales en assets Android.
+- [ ] Verificar modelo exacto, ABI y espacio libre del J7.
 
-## Etapa 1. Prototipo visual local
-- [x] Crear pantalla principal inicial.
-- [ ] Integrar los GIF reales de expresiones.
-- [ ] Cambiar expresiones según estado e interacción.
-- [ ] Integrar efectos de sonido con control de volumen/silencio.
-- [ ] Guardar preferencias localmente.
-- [ ] Compilar, instalar y medir fluidez y memoria en el J7.
+## Etapa 1. Interfaz
+- [x] Pantalla principal.
+- [x] Reproducción local de GIF y selector de expresiones.
+- [ ] Integrar efectos de sonido con control de volumen.
+- [ ] Compilar e instalar en el J7.
+- [ ] Medir fluidez y memoria.
 
-Criterio: interfaz funcional en modo avión.
+## Etapa 2. Voz y núcleo local
+- [x] Integrar Android TextToSpeech.
+- [x] Selección de español Argentina con fallback a español genérico.
+- [x] Botones para saludar y repetir el mensaje hablado.
+- [ ] Verificar paquete de voz español y funcionamiento sin internet en el J7.
+- [ ] Añadir captura de voz / reconocimiento local de comandos.
+- [ ] Persistir preferencias y memoria sencilla.
 
-## Etapa 2. Núcleo local y voz de respaldo
-- [ ] Implementar personalidad y respuestas locales.
-- [ ] Guardar estado y memoria sencilla.
-- [ ] Comprobar TTS español sin conexión.
-- [ ] Probar respuestas habladas en modo avión.
-- [ ] Evaluar reconocimiento local de comandos.
+Criterio: Bellota puede responder oralmente sin internet y sin bloquear la interfaz.
 
-Criterio: Bellota responde oralmente sin internet.
+## Etapa 3. XiaoZhi oficial
+- [x] Revisar documentación oficial del protocolo WebSocket y MQTT/UDP.
+- [ ] Confirmar que xiaozhi.me admite un cliente Android genérico y documentar su alta.
+- [ ] Obtener endpoint, identidad y autenticación por el flujo oficial.
+- [ ] Implementar cliente WebSocket y negociación de audio Opus.
+- [ ] Probar una conversación real en Android 8.1.
 
-## Etapa 3. Integración XiaoZhi oficial
-- [ ] Verificar protocolo y flujo de cliente Android compatibles con xiaozhi.me.
-- [ ] Implementar activación/autenticación segura.
-- [ ] Crear adaptador separado del núcleo local.
-- [ ] Realizar conversación de prueba.
-- [ ] Gestionar errores, timeouts y cierre de sesión.
+Criterio: sesión online real, autenticada y estable.
 
-Criterio: conversación online real y estable.
-
-## Etapa 4. Respaldo y reconexión
-- [ ] Detectar pérdida de red y caída del servicio.
+## Etapa 4. Fallback y reconexión
+- [ ] Detectar pérdida de red o caída del servicio.
 - [ ] Cambiar a respuestas y voz locales.
-- [ ] Reconectar automáticamente.
-- [ ] Evitar duplicados y bloqueos.
+- [ ] Reconectar automáticamente sin reiniciar.
+- [ ] Evitar mensajes duplicados.
 - [ ] Probar cortes durante conversaciones.
-
-Criterio: nunca quedarse muda ni exigir reinicio.
 
 ## Etapa 5. Funciones adicionales
 - [ ] Temporizador, reloj y Pomodoro.
 - [ ] Recordatorios locales.
-- [ ] Minijuegos.
-- [ ] Comentarios espontáneos.
-- [ ] Ampliar memoria y personalización.
+- [ ] Minijuegos y personalización.

@@ -14,18 +14,26 @@ import com.bellota.mascota.core.BellotaState;
 import com.bellota.mascota.core.PetExpression;
 import com.bellota.mascota.local.OfflineReplies;
 import com.bellota.mascota.ui.GifFaceView;
+import com.bellota.mascota.voice.LocalVoice;
 
 public class MainActivity extends Activity {
     private final BellotaState state = new BellotaState();
     private final OfflineReplies offlineReplies = new OfflineReplies();
     private GifFaceView faceView;
     private TextView message;
+    private TextView voiceStatus;
+    private LocalVoice localVoice;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         buildHomeScreen();
         showExpression(PetExpression.HAPPY);
+        localVoice = new LocalVoice(this, new LocalVoice.Listener() {
+            @Override public void onVoiceReady(boolean ready, String detail) {
+                if (voiceStatus != null) voiceStatus.setText(detail);
+            }
+        });
     }
 
     private void buildHomeScreen() {
@@ -57,14 +65,14 @@ public class MainActivity extends Activity {
         message.setGravity(Gravity.CENTER);
         root.addView(message, matchWrap());
 
-        TextView status = new TextView(this);
-        status.setText("Modo local preparado");
-        status.setTextColor(0xFF9FB3C8);
-        status.setTextSize(13);
-        status.setGravity(Gravity.CENTER);
+        voiceStatus = new TextView(this);
+        voiceStatus.setText("Iniciando voz local...");
+        voiceStatus.setTextColor(0xFF9FB3C8);
+        voiceStatus.setTextSize(13);
+        voiceStatus.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams statusParams = matchWrap();
         statusParams.topMargin = dp(8);
-        root.addView(status, statusParams);
+        root.addView(voiceStatus, statusParams);
 
         HorizontalScrollView scroll = new HorizontalScrollView(this);
         scroll.setHorizontalScrollBarEnabled(false);
@@ -93,11 +101,25 @@ public class MainActivity extends Activity {
         greet.setAllCaps(false);
         greet.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                message.setText(offlineReplies.reply("hola"));
+                String reply = offlineReplies.reply("hola");
+                message.setText(reply);
                 showExpression(PetExpression.HAPPY);
+                if (localVoice != null) localVoice.speak(reply);
             }
         });
         root.addView(greet, matchWrap());
+
+        Button speak = new Button(this);
+        speak.setText("Repetir mensaje en voz alta");
+        speak.setAllCaps(false);
+        speak.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                if (localVoice != null && message != null) {
+                    localVoice.speak(message.getText().toString());
+                }
+            }
+        });
+        root.addView(speak, matchWrap());
 
         setContentView(root);
     }
@@ -105,6 +127,16 @@ public class MainActivity extends Activity {
     private void showExpression(PetExpression expression) {
         state.setExpression(expression);
         faceView.loadAsset(this, expression.asset + ".gif");
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (localVoice != null) {
+            localVoice.stop();
+            localVoice.release();
+            localVoice = null;
+        }
+        super.onDestroy();
     }
 
     private LinearLayout.LayoutParams matchWrap() {
