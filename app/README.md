@@ -1,28 +1,27 @@
 # Aplicación Android Bellota
 
-Proyecto inicial orientado al Samsung Galaxy J7 (Android 8.1, API 27).
+Proyecto Android orientado al Samsung Galaxy J7 con Android 8.1 (API 27).
 
-## Módulos internos
+## Funciones presentes en esta etapa
 
-- `core/`: estado y expresiones de Bellota.
-- `ui/`: pantalla y reproducción de GIF.
-- `local/`: respuestas de respaldo sin conexión.
-- `voice/`: voz local Android TTS y estado de voz.
-- `xiaozhi/`: adaptador reservado para la integración oficial, pendiente de validar.
-- `assets/faces/`: 21 expresiones GIF empaquetadas dentro de la aplicación.
+- Pantalla principal con expresiones GIF.
+- Pantalla siempre encendida mientras la actividad está visible.
+- Edad virtual persistente: un año de Bellota equivale a 30 días reales desde el primer inicio.
+- Estado básico de energía y diversión guardado localmente.
+- Comportamientos autónomos sencillos durante los períodos de inactividad.
+- Solicitud de permisos de micrófono y cámara.
+- Reconocimiento de voz por sesiones consecutivas mediante el servicio instalado en Android.
+- Comandos iniciales: «Silencio, Bellota» y «Sonido, Bellota».
+- Voz local Android TextToSpeech como respuesta de respaldo.
 
-## Voz local
+## Limitaciones pendientes
 
-La aplicación usa el motor TextToSpeech instalado en Android, intenta primero español de Argentina y luego español genérico. No incorpora bibliotecas pesadas ni necesita internet si el dispositivo ya tiene instalados los datos de voz correspondientes. La disponibilidad y calidad del paquete español deben comprobarse en el J7.
+- El reconocimiento continuo depende del proveedor de voz instalado y puede tener pausas o requerir conectividad. No equivale todavía a la escucha de baja latencia integrada con XiaoZhi.
+- «Mira esto, Bellota» y la captura real de cámara frontal con análisis visual todavía no están conectados.
+- La activación OTA, autenticación, WebSocket y audio Opus de XiaoZhi todavía no están implementados.
+- La memoria de esta etapa guarda edad y necesidades básicas; todavía no conserva recuerdos semánticos de conversaciones.
+- Los comportamientos autónomos iniciales usan reglas y frases locales, no decisiones de un modelo de IA.
 
-La pantalla incluye los botones «Saludar» y «Repetir mensaje en voz alta». La voz se libera al cerrar la actividad.
+## Compilación
 
-## XiaoZhi
-
-La integración remota no está activada. Antes hay que validar el registro de un cliente Android en el servicio oficial, el endpoint de sesión, la autenticación, los identificadores requeridos y el flujo de audio. No se deben reutilizar credenciales o identidades de otro dispositivo.
-
-## Abrir y ejecutar
-
-Abrir la carpeta raíz del repositorio en Android Studio, sincronizar Gradle y ejecutar el módulo `app` en un dispositivo Android 8.1 o superior.
-
-La voz depende del motor TTS y de sus datos instalados en el teléfono. La integración XiaoZhi y el reconocimiento de voz todavía no están implementados.
+El workflow de GitHub Actions compila la aplicación con Java 17 y Gradle 8.7 y publica el APK de depuración como artefacto de la ejecución.
