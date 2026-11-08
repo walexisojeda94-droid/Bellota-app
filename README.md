@@ -1,17 +1,17 @@
 # Bellota-app
 
-Repositorio de trabajo para organizar y desarrollar una mascota virtual **offline para Samsung Galaxy J7**.
+Proyecto de mascota virtual para Samsung Galaxy J7, con arquitectura **local-first e híbrida**.
 
-El proyecto activo está en [mascota-virtual-limpio/mascota-virtual](mascota-virtual-limpio/mascota-virtual/README.md).
+La aplicación vive en el teléfono y conserva su interfaz, personalidad, memoria y funciones básicas localmente. Cuando hay internet, puede conectarse a XiaoZhi para conversaciones avanzadas. Si la conexión falla, activa respuestas y voz locales para que Bellota no quede muda.
 
-## Regla central
+## Principio central
 
-La mascota debe funcionar en el teléfono sin internet, sin servidor y sin depender de la PC. La PC solo se usa para preparar e instalar el proyecto.
+**XiaoZhi mejora la experiencia, pero no debe ser un punto único de falla.** La aplicación Android mantiene el control de la mascota y debe seguir funcionando sin conexión. La PC se utiliza para desarrollar, compilar e instalar, no durante el uso cotidiano.
 
-## Documentación principal
+## Documentación
 
 - [Resumen del proyecto](mascota-virtual-limpio/mascota-virtual/docs/resumen-del-proyecto.md)
-- [Arquitectura offline](mascota-virtual-limpio/mascota-virtual/docs/arquitectura-j7-offline.md)
+- [Arquitectura híbrida J7](mascota-virtual-limpio/mascota-virtual/docs/arquitectura-j7-offline.md)
 - [Plan de trabajo](mascota-virtual-limpio/mascota-virtual/docs/plan-de-trabajo.md)
 
-El material XiaoZhi y Troko/ESP32 se conserva como referencia, no como dependencia de ejecución.
+El material de XiaoZhi y Troko/ESP32 se conserva como referencia. La integración real con XiaoZhi y el servidor compatible se definirá y probará antes de implementarla.
