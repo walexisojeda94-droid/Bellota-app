@@ -28,6 +28,8 @@ public class XiaoZhiConnection {
     private static final String KEY_DEVICE_ID = "device_id";
     private static final String KEY_ACTIVATED = "activated";
     private static final String KEY_ACCESS_TOKEN = "access_token";
+    private static final String KEY_WEBSOCKET_CONFIG = "websocket_config";
+    private static final String KEY_MQTT_CONFIG = "mqtt_config";
     private final Context context;
     private final SharedPreferences preferences;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -46,6 +48,36 @@ public class XiaoZhiConnection {
 
     public boolean isConfigured() {
         return preferences.getBoolean(KEY_ACTIVATED, false);
+    }
+
+    /** Configuración de transporte entregada por el OTA oficial. */
+    public JSONObject getWebSocketConfig() {
+        try { String raw = preferences.getString(KEY_WEBSOCKET_CONFIG, null); return raw == null ? null : new JSONObject(raw); }
+        catch (Exception ignored) { return null; }
+    }
+    public JSONObject getMqttConfig() {
+        try { String raw = preferences.getString(KEY_MQTT_CONFIG, null); return raw == null ? null : new JSONObject(raw); }
+        catch (Exception ignored) { return null; }
+    }
+    public String getTransport() {
+        if (getWebSocketConfig() != null) return "websocket";
+        if (getMqttConfig() != null) return "mqtt";
+        return null;
+    }
+    public boolean hasVoiceConfiguration() {
+        JSONObject ws = getWebSocketConfig();
+        if (ws != null && !ws.optString("url", "").isEmpty()) return true;
+        JSONObject mqtt = getMqttConfig();
+        return mqtt != null && !mqtt.optString("endpoint", "").isEmpty();
+    }
+    private void saveServerConfiguration(JSONObject response) {
+        if (response == null) return;
+        SharedPreferences.Editor editor = preferences.edit();
+        JSONObject ws = response.optJSONObject("websocket");
+        JSONObject mqtt = response.optJSONObject("mqtt");
+        if (ws != null) editor.putString(KEY_WEBSOCKET_CONFIG, ws.toString());
+        if (mqtt != null) editor.putString(KEY_MQTT_CONFIG, mqtt.toString());
+        editor.apply();
     }
 
     public void requestActivationCode(ActivationListener listener) {
@@ -94,6 +126,7 @@ public class XiaoZhiConnection {
     private void activate(ActivationListener listener) {
         try {
             JSONObject response = request("POST", OTA_URL, buildDeviceReport());
+            saveServerConfiguration(response);
             JSONObject activation = response.optJSONObject("activation");
             if (activation == null) {
                 throw new IllegalStateException("XiaoZhi no devolvió una solicitud de vinculación. Revisá la respuesta del servidor.");
@@ -106,16 +139,14 @@ public class XiaoZhiConnection {
             }
             if (listener != null) listener.onCodeReceived(code, message);
 
-            String challenge = activation.optString("challenge", "");
-            if (challenge.isEmpty()) {
-                throw new IllegalStateException("XiaoZhi entregó el código, pero no incluyó el desafío de activación.");
-            }
+            // Activation-Version 1 confirma el alta de seis dígitos con un objeto vacío.
 
             String activateUrl = OTA_URL.endsWith("/") ? OTA_URL + "activate" : OTA_URL + "/activate";
             for (int attempt = 0; attempt < 40; attempt++) {
                 HttpResult result = postActivation(activateUrl);
                 if (result.status == 200) {
                     String token = result.json.optString("access_token", "");
+                    saveServerConfiguration(result.json);
                     preferences.edit().putString(KEY_ACCESS_TOKEN, token).putBoolean(KEY_ACTIVATED, true).apply();
                     if (listener != null) listener.onActivated();
                     return;
@@ -136,13 +167,13 @@ public class XiaoZhiConnection {
         String clientId = preferences.getString(KEY_CLIENT_ID, "");
         JSONObject report = new JSONObject();
         report.put("version", 2);
-        report.put("language", "es-AR");
+        report.put("language", "es-ES");
         report.put("mac_address", deviceId);
         report.put("uuid", clientId);
         report.put("chip_model_name", "Android");
         JSONObject application = new JSONObject();
         application.put("name", "Bellota");
-        application.put("version", "0.1.0");
+        application.put("version", "0.2.0");
         application.put("idf_version", "Android");
         application.put("elf_sha256", "");
         report.put("application", application);
@@ -192,8 +223,8 @@ public class XiaoZhiConnection {
         connection.setRequestProperty("Activation-Version", "1");
         connection.setRequestProperty("Device-Id", preferences.getString(KEY_DEVICE_ID, ""));
         connection.setRequestProperty("Client-Id", preferences.getString(KEY_CLIENT_ID, ""));
-        connection.setRequestProperty("User-Agent", "Bellota-Android/0.1.0");
-        connection.setRequestProperty("Accept-Language", "es-AR");
+        connection.setRequestProperty("User-Agent", "Bellota-Android/0.2.0");
+        connection.setRequestProperty("Accept-Language", "es-ES");
         connection.setRequestProperty("Content-Type", "application/json");
         connection.setRequestProperty("Accept", "application/json");
         return connection;
