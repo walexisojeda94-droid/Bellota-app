@@ -86,15 +86,13 @@ public final class XiaoZhiVoiceSession {
         }
 
         try {
-            if (!cfg.has("version")) {
-                reportError("La configuración de XiaoZhi no informa la versión del protocolo. Bellota no enviará audio sin poder verificar su formato.");
-                return;
-            }
-            int protocolVersion = cfg.optInt("version", -1);
+            // El OTA oficial suele no mandar "version": el protocolo por defecto es 1.
+            int protocolVersion = cfg.optInt("version", 1);
             if (protocolVersion != 1) {
                 reportError("XiaoZhi solicitó el protocolo binario " + protocolVersion + ". Esta versión de Bellota implementa Opus v1 y no enviará audio incompatible.");
                 return;
             }
+            negotiatedProtocolVersion = protocolVersion; // FIX: antes quedaba en 0 y rechazaba el hello / descartaba todo el audio
             encoder = new OpusEncoder(UPLINK_RATE, 1, OpusApplication.OPUS_APPLICATION_VOIP);
             int rate = cfg.optInt("sample_rate", 24000);
             if (rate != 8000 && rate != 12000 && rate != 16000 && rate != 24000 && rate != 48000) rate = 24000;
@@ -260,9 +258,12 @@ public final class XiaoZhiVoiceSession {
             short[] readBuffer = new short[UPLINK_FRAME];
             byte[] opus = new byte[4000];
             int filled = 0;
-            while (capturing.get() && running.get() && !serverSpeaking) {
+            while (capturing.get() && running.get() && !serverSpeaking && recorder == activeRecorder) {
                 int count = activeRecorder.read(readBuffer, 0, readBuffer.length);
-                if (count == AudioRecord.ERROR_INVALID_OPERATION || count == AudioRecord.ERROR_BAD_VALUE) {
+                // FIX: al llegar tts/start se libera el recorder a propósito; ese error no es fatal.
+                if (!capturing.get() || recorder != activeRecorder) break;
+                if (count == AudioRecord.ERROR_INVALID_OPERATION || count == AudioRecord.ERROR_BAD_VALUE
+                        || count == AudioRecord.ERROR_DEAD_OBJECT) {
                     fail("Android interrumpió la captura del micrófono.");
                     break;
                 }
