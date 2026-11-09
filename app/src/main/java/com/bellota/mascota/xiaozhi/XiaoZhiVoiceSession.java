@@ -85,6 +85,10 @@ public final class XiaoZhiVoiceSession {
 
         try {
             int protocolVersion = cfg.optInt("version", 1);
+            if (protocolVersion != 1) {
+                reportError("XiaoZhi solicitó el protocolo binario " + protocolVersion + ". Esta versión de Bellota implementa Opus v1 y no enviará audio incompatible.");
+                return;
+            }
             encoder = new OpusEncoder(UPLINK_RATE, 1, OpusApplication.OPUS_APPLICATION_VOIP);
             int rate = cfg.optInt("sample_rate", 24000);
             if (rate != 8000 && rate != 12000 && rate != 16000 && rate != 24000 && rate != 48000) rate = 24000;
