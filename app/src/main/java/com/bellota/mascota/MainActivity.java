@@ -156,6 +156,8 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void startVoiceCommands() {
+        if (Build.VERSION.SDK_INT >= 23
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         if (xiaoZhiVoiceSession != null) return;
         if (!xiaoZhiVoiceFailed && xiaoZhiConnection != null && xiaoZhiConnection.isConfigured()
                 && xiaoZhiConnection.hasVoiceConfiguration()) {
@@ -171,7 +173,9 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void startXiaoZhiVoice() {
-        if (xiaoZhiVoiceSession != null || xiaoZhiVoiceFailed || xiaoZhiConnection == null) return;
+        if (Build.VERSION.SDK_INT >= 23
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+        if (xiaoZhiVoiceSession != null || xiaoZhiVoiceFailed || xiaoZhiConnection == null || isFinishing()) return;
         if (voiceCommands != null) voiceCommands.stop();
         xiaoZhiVoiceSession = new XiaoZhiVoiceSession(xiaoZhiConnection, new XiaoZhiVoiceSession.Listener() {
             @Override public void onStatus(String status) {
