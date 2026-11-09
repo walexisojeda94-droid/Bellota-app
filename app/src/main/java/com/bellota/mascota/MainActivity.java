@@ -384,7 +384,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         enterImmersiveMode();
         if(sensorManager!=null&&lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        if (voiceCommands != null) voiceCommands.start();
+        startVoiceCommands();
         if (eyes != null) eyes.resumeAnimation();
     }
 
