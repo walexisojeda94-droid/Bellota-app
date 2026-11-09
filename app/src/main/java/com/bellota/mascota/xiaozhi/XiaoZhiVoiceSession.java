@@ -52,6 +52,8 @@ public final class XiaoZhiVoiceSession {
     private volatile WebSocket socket;
     private volatile String sessionId;
     private volatile boolean serverSpeaking;
+    private volatile boolean audioNegotiated;
+    private volatile int negotiatedProtocolVersion;
     private volatile int downlinkRate = 24000;
     private AudioRecord recorder;
     private AudioTrack player;
@@ -84,7 +86,11 @@ public final class XiaoZhiVoiceSession {
         }
 
         try {
-            int protocolVersion = cfg.optInt("version", 1);
+            if (!cfg.has("version")) {
+                reportError("La configuración de XiaoZhi no informa la versión del protocolo. Bellota no enviará audio sin poder verificar su formato.");
+                return;
+            }
+            int protocolVersion = cfg.optInt("version", -1);
             if (protocolVersion != 1) {
                 reportError("XiaoZhi solicitó el protocolo binario " + protocolVersion + ". Esta versión de Bellota implementa Opus v1 y no enviará audio incompatible.");
                 return;
@@ -147,19 +153,44 @@ public final class XiaoZhiVoiceSession {
             String type = msg.optString("type", "");
             if ("hello".equals(type)) {
                 if (!"websocket".equals(msg.optString("transport", ""))) {
-                    fail("XiaoZhi respondió con un transporte distinto de WebSocket.");
+                    fail("XiaoZhi respondió con un transporte distinto de WebSocket. Bellota no enviará audio.");
+                    return;
+                }
+                int serverVersion = msg.optInt("version", -1);
+                if (serverVersion != 1) {
+                    fail("XiaoZhi negoció el protocolo " + serverVersion + ". Bellota solo puede transmitir Opus v1 y no enviará paquetes incompatibles.");
+                    return;
+                }
+                JSONObject params = msg.optJSONObject("audio_params");
+                if (params == null || !"opus".equalsIgnoreCase(params.optString("format", ""))) {
+                    fail("XiaoZhi no confirmó audio Opus. Bellota no iniciará la transmisión.");
+                    return;
+                }
+                int channels = params.optInt("channels", -1);
+                if (channels != 1) {
+                    fail("XiaoZhi solicitó audio de " + channels + " canales. Bellota solo tiene implementado Opus mono y no enviará audio incompatible.");
+                    return;
+                }
+                int rate = params.optInt("sample_rate", -1);
+                if (rate != 8000 && rate != 12000 && rate != 16000 && rate != 24000 && rate != 48000) {
+                    fail("XiaoZhi solicitó una frecuencia de audio no compatible. Bellota no enviará audio.");
+                    return;
+                }
+                int frameDuration = params.optInt("frame_duration", FRAME_MS);
+                if (frameDuration != FRAME_MS) {
+                    fail("XiaoZhi solicitó paquetes de " + frameDuration + " ms. Bellota solo tiene implementados paquetes de " + FRAME_MS + " ms y no enviará audio incompatible.");
                     return;
                 }
                 sessionId = msg.optString("session_id", "");
-                JSONObject params = msg.optJSONObject("audio_params");
-                if (params != null) {
-                    int rate = params.optInt("sample_rate", downlinkRate);
-                    if (rate == 8000 || rate == 12000 || rate == 16000 || rate == 24000 || rate == 48000) {
-                        downlinkRate = rate;
-                        decoder = new OpusDecoder(downlinkRate, 1);
-                        recreatePlayer();
-                    }
+                if (sessionId.isEmpty()) {
+                    fail("XiaoZhi no entregó un identificador de sesión. Bellota no iniciará la transmisión.");
+                    return;
                 }
+                negotiatedProtocolVersion = serverVersion;
+                downlinkRate = rate;
+                decoder = new OpusDecoder(downlinkRate, 1);
+                recreatePlayer();
+                audioNegotiated = true;
                 running.set(true);
                 reportStatus("Bellota está conectada a XiaoZhi.");
                 startListening();
@@ -251,7 +282,8 @@ public final class XiaoZhiVoiceSession {
     }
 
     private void handleAudio(byte[] packet) {
-        if (!running.get() || !serverSpeaking || packet.length == 0) return;
+        if (!running.get() || !audioNegotiated || negotiatedProtocolVersion != 1
+                || !serverSpeaking || packet.length == 0) return;
         try {
             if (player == null) createPlayer();
             short[] pcm = new short[5760];
@@ -286,6 +318,7 @@ public final class XiaoZhiVoiceSession {
     }
 
     private void stopAudio() {
+        audioNegotiated = false;
         stopCapture();
         releasePlayer();
     }
