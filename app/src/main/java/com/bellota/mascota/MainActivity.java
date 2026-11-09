@@ -33,6 +33,7 @@ import com.bellota.mascota.voice.LocalVoice;
 import com.bellota.mascota.weather.WeatherService;
 import com.bellota.mascota.xiaozhi.XiaoZhiConnection;
 import com.bellota.mascota.xiaozhi.XiaoZhiVoiceSession;
+import com.bellota.mascota.xiaozhi.XiaoZhiMqttUdpSession;
 import com.bellota.mascota.xiaozhi.McpConnection;
 import com.bellota.mascota.xiaozhi.McpCredentialStore;
 import org.json.JSONArray;
