@@ -225,6 +225,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 runOnUiThread(() -> {
                     if (autonomy != null) autonomy.onInteraction(petLife,"attention");
                     if (petMemory != null) petMemory.remember("conversacion_usuario", transcript);
+                    if (conversationEngine != null) conversationEngine.rememberOnlineMessage(transcript);
                     if (eyes != null) eyes.reactToAttention();
                     android.util.Log.i("BellotaXiaoZhi", "Usuario: " + transcript);
                 });
@@ -267,6 +268,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 runOnUiThread(() -> {
                     if (autonomy != null) autonomy.onInteraction(petLife,"attention");
                     if (petMemory != null) petMemory.remember("conversacion_usuario", transcript);
+                    if (conversationEngine != null) conversationEngine.rememberOnlineMessage(transcript);
                     if (eyes != null) eyes.reactToAttention();
                 });
             }
