@@ -57,14 +57,23 @@ public class XiaoZhiConnection {
     }
 
     private void ensureIdentity() {
+        // ANDROID_ID permanece estable para la misma app/dispositivo entre actualizaciones
+        // y reinstalaciones normales. No generar un Client-Id nuevo en cada instalación.
+        String androidId = Settings.Secure.getString(
+                context.getContentResolver(), Settings.Secure.ANDROID_ID);
+        if (androidId == null || androidId.trim().isEmpty()) {
+            androidId = "bellota-device-" + BuildConfig.APPLICATION_ID;
+        }
+        SharedPreferences.Editor editor = preferences.edit();
         if (!preferences.contains(KEY_CLIENT_ID)) {
-            preferences.edit().putString(KEY_CLIENT_ID, UUID.randomUUID().toString()).apply();
+            String stableClientId = UUID.nameUUIDFromBytes(
+                    ("Bellota:" + androidId).getBytes(StandardCharsets.UTF_8)).toString();
+            editor.putString(KEY_CLIENT_ID, stableClientId);
         }
         if (!preferences.contains(KEY_DEVICE_ID)) {
-            String androidId = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID);
-            if (androidId == null || androidId.trim().isEmpty()) androidId = UUID.randomUUID().toString();
-            preferences.edit().putString(KEY_DEVICE_ID, createStableDeviceId(androidId)).apply();
+            editor.putString(KEY_DEVICE_ID, createStableDeviceId(androidId));
         }
+        editor.apply();
     }
 
     private String createStableDeviceId(String source) {
