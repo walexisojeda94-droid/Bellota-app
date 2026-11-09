@@ -2,6 +2,12 @@ plugins {
     id 'com.android.application'
 }
 
+def signingStoreFile = System.getenv('BELLOTA_KEYSTORE_FILE')
+def signingStorePassword = System.getenv('BELLOTA_KEYSTORE_PASSWORD')
+def signingKeyAlias = System.getenv('BELLOTA_KEY_ALIAS')
+def signingKeyPassword = System.getenv('BELLOTA_KEY_PASSWORD')
+def hasReleaseSigning = signingStoreFile && signingStorePassword && signingKeyAlias && signingKeyPassword
+
 android {
     namespace 'com.bellota.mascota'
     compileSdk 35
@@ -12,6 +18,26 @@ android {
         targetSdk 28
         versionCode 2
         versionName '0.2.0'
+    }
+
+    if (hasReleaseSigning) {
+        signingConfigs {
+            release {
+                storeFile file(signingStoreFile)
+                storePassword signingStorePassword
+                keyAlias signingKeyAlias
+                keyPassword signingKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled false
+        }
     }
 
     compileOptions {
