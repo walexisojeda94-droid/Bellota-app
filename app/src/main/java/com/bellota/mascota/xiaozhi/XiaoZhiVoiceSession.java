@@ -156,29 +156,35 @@ public final class XiaoZhiVoiceSession {
                     fail("XiaoZhi respondió con un transporte distinto de WebSocket. Bellota no enviará audio.");
                     return;
                 }
-                int serverVersion = msg.optInt("version", -1);
-                if (serverVersion != 1) {
-                    fail("XiaoZhi negoció el protocolo " + serverVersion + ". Bellota solo puede transmitir Opus v1 y no enviará paquetes incompatibles.");
+                // La respuesta hello del servidor no está obligada a repetir version ni
+                // todos los campos de audio_params. Si los omite, se conservan los
+                // valores que Bellota anunció en su propio hello.
+                int serverVersion = msg.has("version")
+                        ? msg.optInt("version", -1) : negotiatedProtocolVersion;
+                if (serverVersion != negotiatedProtocolVersion) {
+                    fail("XiaoZhi negoció el protocolo " + serverVersion
+                            + ", pero Bellota inició con v" + negotiatedProtocolVersion + ".");
                     return;
                 }
                 JSONObject params = msg.optJSONObject("audio_params");
-                if (params == null || !"opus".equalsIgnoreCase(params.optString("format", ""))) {
-                    fail("XiaoZhi no confirmó audio Opus. Bellota no iniciará la transmisión.");
+                String format = params == null ? "opus" : params.optString("format", "opus");
+                if (!"opus".equalsIgnoreCase(format)) {
+                    fail("XiaoZhi solicitó el formato de audio " + format + ". Bellota solo tiene implementado Opus.");
                     return;
                 }
-                int channels = params.optInt("channels", -1);
+                int channels = params == null ? 1 : params.optInt("channels", 1);
                 if (channels != 1) {
-                    fail("XiaoZhi solicitó audio de " + channels + " canales. Bellota solo tiene implementado Opus mono y no enviará audio incompatible.");
+                    fail("XiaoZhi solicitó audio de " + channels + " canales. Bellota solo tiene implementado Opus mono.");
                     return;
                 }
-                int rate = params.optInt("sample_rate", -1);
+                int rate = params == null ? UPLINK_RATE : params.optInt("sample_rate", UPLINK_RATE);
                 if (rate != 8000 && rate != 12000 && rate != 16000 && rate != 24000 && rate != 48000) {
-                    fail("XiaoZhi solicitó una frecuencia de audio no compatible. Bellota no enviará audio.");
+                    fail("XiaoZhi solicitó una frecuencia de audio no compatible: " + rate + " Hz.");
                     return;
                 }
-                int frameDuration = params.optInt("frame_duration", FRAME_MS);
+                int frameDuration = params == null ? FRAME_MS : params.optInt("frame_duration", FRAME_MS);
                 if (frameDuration != FRAME_MS) {
-                    fail("XiaoZhi solicitó paquetes de " + frameDuration + " ms. Bellota solo tiene implementados paquetes de " + FRAME_MS + " ms y no enviará audio incompatible.");
+                    fail("XiaoZhi solicitó paquetes de " + frameDuration + " ms. Bellota solo tiene implementados paquetes de " + FRAME_MS + " ms.");
                     return;
                 }
                 sessionId = msg.optString("session_id", "");
