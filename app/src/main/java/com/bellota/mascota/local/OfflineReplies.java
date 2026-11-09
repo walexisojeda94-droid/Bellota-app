@@ -40,10 +40,22 @@ public class OfflineReplies {
             return choose("Estaba mirando alrededor y pensando en cosas.", "Acá ando, explorando un poquito.", "Me entretengo observando y moviendo los ojos.");
         if (text.contains("quien sos") || text.contains("quien eres"))
             return "Soy Bellota, tu compañera virtual. Estoy acá para conversar y descubrir cosas.";
+        if (text.startsWith("me gusta") || text.startsWith("me encanta")) {
+            return choose("¡Qué bueno! ¿Qué es lo que más te gusta de eso?", "Se nota que te interesa. Contame un poco más.");
+        }
+        if (text.startsWith("estoy ") || text.startsWith("hoy ") || text.startsWith("me siento")) {
+            return choose("¿Y cómo viene eso? Si querés, contame un poco más.", "Te leo. ¿Pasó algo que te dejó así?");
+        }
+        if (text.endsWith("por que") || text.startsWith("por que ")) {
+            return choose("No quiero inventarte una explicación. ¿Me das un poco más de contexto?", "Puede depender de varias cosas. ¿A qué situación te referís?");
+        }
+        if (text.contains(" podes ") || text.startsWith("podes ") || text.contains(" puedes ")) {
+            return choose("Puedo intentarlo desde lo que tengo disponible acá. ¿Qué parte querés resolver primero?", "Veamos cómo hacerlo. Contame un poquito más de lo que necesitás.");
+        }
         return choose(
-                "Te escuché. Todavía estoy aprendiendo a conversar mejor cuando no tengo conexión.",
-                "Quiero seguir hablando de eso, pero todavía no tengo una respuesta local preparada.",
-                "Esa pregunta me deja pensando. Cuando esté conectada voy a poder responder mejor."
+                "No estoy segura de haber entendido bien. ¿Me lo explicás de otra manera?",
+                "Quiero seguirte la conversación, pero necesito un poquito más de contexto. ¿A qué te referís?",
+                "Eso me dejó pensando. ¿Me contás un detalle más para poder responderte mejor?"
         );
     }
 
