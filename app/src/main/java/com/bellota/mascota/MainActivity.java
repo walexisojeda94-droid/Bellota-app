@@ -411,22 +411,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             String endpoint = mcpCredentialStore.read();
             if (endpoint == null || endpoint.isEmpty()) return;
             if (mcpConnection == null) mcpConnection = new McpConnection();
-            mcpConnection.connect(endpoint, new McpConnection.Listener() {
-                @Override public void onStatus(String status) {
-                    runOnUiThread(() -> Toast.makeText(MainActivity.this, status, Toast.LENGTH_SHORT).show());
-                }
-                @Override public void onTools(JSONArray tools) {
-                    StringBuilder names = new StringBuilder();
-                    for (int i = 0; i < tools.length(); i++) {
-                        org.json.JSONObject tool = tools.optJSONObject(i);
-                        if (tool != null) {
-                            if (names.length() > 0) names.append(", ");
-                            names.append(tool.optString("name", "herramienta"));
-                        }
-                    }
-                    android.util.Log.i("BellotaMCP", "Herramientas disponibles: " + names);
-                }
-            });
+            mcpConnection.connect(endpoint, new JSONArray(), null, status ->
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, status, Toast.LENGTH_SHORT).show()));
         } catch (Exception e) {
             android.util.Log.e("BellotaMCP", "No se pudo recuperar la configuración MCP cifrada.");
         }
