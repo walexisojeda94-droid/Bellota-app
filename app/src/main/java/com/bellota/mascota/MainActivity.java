@@ -23,6 +23,7 @@ import android.widget.EditText;
 import android.text.InputType;
 import android.widget.Toast;
 import com.bellota.mascota.core.PetLife;
+import com.bellota.mascota.core.AutonomousBehavior;
 import com.bellota.mascota.local.OfflineReplies;
 import com.bellota.mascota.ui.EyePetView;
 import com.bellota.mascota.voice.ContinuousVoiceCommands;
@@ -44,6 +45,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     private LocalVoice localVoice;
     private ContinuousVoiceCommands voiceCommands;
     private PetLife petLife;
+    private AutonomousBehavior autonomy;
     private XiaoZhiConnection xiaoZhiConnection;
     private McpConnection mcpConnection;
     private McpCredentialStore mcpCredentialStore;
@@ -56,20 +58,35 @@ public class MainActivity extends Activity implements SensorEventListener {
     private long lastThemeChange;
     private final Runnable autonomousRoutine = new Runnable() {
         @Override public void run() {
-            if (eyes != null) {
+            if (eyes != null && autonomy != null && !isFinishing()) {
                 int hour=java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
-                if(hour>=0 && hour<7) eyes.setMood(EyePetView.Mood.SLEEPY);
-                else eyes.performAutonomousBehavior();
-                // El cuerpo cambia de lugar ocasionalmente, no en cada ciclo.
-                if (Math.random() < 0.12d) moveEyesAroundScreen();
+                AutonomousBehavior.Action action=autonomy.next(petLife,hour>=0 && hour<7);
+                switch(action) {
+                    case REST: eyes.setMood(EyePetView.Mood.SLEEPY); break;
+                    case PLAY:
+                        eyes.playAutonomousGame();
+                        if(petLife!=null) petLife.setNeeds(Math.max(5,petLife.getEnergy()-2),Math.min(100,petLife.getFun()+8));
+                        break;
+                    case THINK: eyes.setMood(EyePetView.Mood.THINKING); break;
+                    case LOOK_AROUND:
+                        eyes.performAutonomousBehavior();
+                        if(Math.random()<0.20d) moveEyesAroundScreen();
+                        break;
+                    case INITIATE_CHAT:
+                        eyes.setMood(EyePetView.Mood.HAPPY);
+                        speakIfEnabled(autonomy.initiativeLine());
+                        break;
+                    default: break;
+                }
             }
-            handler.postDelayed(this, 15000L + (long)(Math.random() * 10000L));
+            handler.postDelayed(this,20000L+(long)(Math.random()*18000L));
         }
     };
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         petLife = new PetLife(this);
+        autonomy = new AutonomousBehavior(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enterImmersiveMode();
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
@@ -99,6 +116,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         root.setBackgroundColor(0xFF080D10);
         eyes = new EyePetView(this);
         eyes.setLightTheme(false);
+        eyes.setOnClickListener(v -> { eyes.reactToAttention(); if(autonomy!=null) autonomy.onInteraction(petLife); });
         int width = (int)(getResources().getDisplayMetrics().widthPixels * 0.42f);
         int height = (int)(getResources().getDisplayMetrics().heightPixels * 0.34f);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
@@ -160,6 +178,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return;
         }
         if (eyes != null) eyes.reactToAttention();
+        if (autonomy != null) autonomy.onInteraction(petLife);
         if(text.contains("bateria") || text.contains("carga del telefono")){ BatteryManager b=(BatteryManager)getSystemService(BATTERY_SERVICE); int level=b.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY); speakIfEnabled(level>=0?"El teléfono tiene "+level+" por ciento de batería.":"No pude consultar la batería."); return; }
         if(text.contains("que hora") || text.equals("hora") || text.contains("que dia es") || text.contains("fecha de hoy")){ Date now=new Date(); speakIfEnabled("Son las "+new SimpleDateFormat("HH:mm",new Locale("es","AR")).format(now)+". Hoy es "+new SimpleDateFormat("EEEE d 'de' MMMM",new Locale("es","AR")).format(now)+"."); return; }
         if(text.contains("volumen actual")){ AudioManager a=(AudioManager)getSystemService(AUDIO_SERVICE); speakIfEnabled("El volumen multimedia está al "+Math.round(a.getStreamVolume(AudioManager.STREAM_MUSIC)*100f/a.getStreamMaxVolume(AudioManager.STREAM_MUSIC))+" por ciento."); return; }
@@ -172,6 +191,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         String mood = eyes == null ? "NEUTRAL" : eyes.getMood().name();
         String reply = offlineReplies.reply(text, petLife, mood);
         if (reply != null) speakIfEnabled(reply);
+        else speakIfEnabled("No tengo ese dato a mano todavía, pero puedo seguir conversando con vos. Contame un poco más.");
     }
 
     private void requestXiaoZhiActivation() {
