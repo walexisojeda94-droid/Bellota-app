@@ -107,7 +107,7 @@ public final class XiaoZhiMqttUdpSession {
             JSONObject msg=new JSONObject(raw); String type=msg.optString("type","");
             if("hello".equals(type)){
                 if(!"udp".equals(msg.optString("transport",""))){fail("El servidor no confirmó transporte UDP.");return;}
-                String sid=msg.optString("session_id,"");
+                String sid=msg.optString("session_id","");
                 JSONObject udpCfg=msg.optJSONObject("udp");
                 if(sid.isEmpty()||udpCfg==null){fail("La respuesta hello no contiene session_id o parámetros UDP.");return;}
                 byte[] key=hex(udpCfg.optString("key","")), nonce=hex(udpCfg.optString("nonce",""));
