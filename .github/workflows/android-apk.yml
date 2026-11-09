@@ -49,6 +49,12 @@ jobs:
           BELLOTA_KEY_ALIAS: ${{ secrets.BELLOTA_KEY_ALIAS }}
           BELLOTA_KEY_PASSWORD: ${{ secrets.BELLOTA_KEY_PASSWORD }}
         run: gradle --no-daemon :app:assembleRelease
+      - name: Verify permanent signing certificate
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          APK="app/build/outputs/apk/release/app-release.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/signature.txt"
+          grep -qi "76:2b:29:d7:36:27:5f:54:4c:b6:17:ae:48:a2:68:f7:1a:3f:23:58:4f:38:bc:62:17:d3:c3:3f:81:d3:94:8f" "$RUNNER_TEMP/signature.txt"
       - name: Build temporary debug APK (until permanent key is configured)
         if: steps.signing.outputs.enabled != 'true'
         run: gradle --no-daemon :app:assembleDebug
