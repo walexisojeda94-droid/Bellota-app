@@ -247,25 +247,43 @@ public final class XiaoZhiVoiceSession {
             throw new IllegalStateException("Android no pudo inicializar el micrófono.");
         }
         recorder.startRecording();
+        final AudioRecord activeRecorder = recorder;
         capturing.set(true);
         audioExecutor.execute(() -> {
-            short[] pcm = new short[UPLINK_FRAME];
+            short[] frame = new short[UPLINK_FRAME];
+            short[] readBuffer = new short[UPLINK_FRAME];
             byte[] opus = new byte[4000];
+            int filled = 0;
             while (capturing.get() && running.get() && !serverSpeaking) {
-                int count = recorder == null ? 0 : recorder.read(pcm, 0, pcm.length);
-                if (count <= 0) continue;
-                if (count < UPLINK_FRAME) {
-                    java.util.Arrays.fill(pcm, count, UPLINK_FRAME, (short) 0);
-                }
-                try {
-                    int length = encoder.encode(pcm, 0, UPLINK_FRAME, opus, 0, opus.length);
-                    WebSocket ws = socket;
-                    if (length > 0 && ws != null && capturing.get()) {
-                        ws.send(ByteString.of(java.util.Arrays.copyOf(opus, length)));
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "Error codificando audio", e);
+                int count = activeRecorder.read(readBuffer, 0, readBuffer.length);
+                if (count == AudioRecord.ERROR_INVALID_OPERATION || count == AudioRecord.ERROR_BAD_VALUE) {
+                    fail("Android interrumpió la captura del micrófono.");
                     break;
+                }
+                if (count <= 0) continue;
+                int offset = 0;
+                while (offset < count && capturing.get() && running.get() && !serverSpeaking) {
+                    int copy = Math.min(UPLINK_FRAME - filled, count - offset);
+                    System.arraycopy(readBuffer, offset, frame, filled, copy);
+                    filled += copy;
+                    offset += copy;
+                    if (filled == UPLINK_FRAME) {
+                        try {
+                            int length = encoder.encode(frame, 0, UPLINK_FRAME, opus, 0, opus.length);
+                            WebSocket ws = socket;
+                            if (length > 0 && ws != null && capturing.get()) {
+                                if (!ws.send(ByteString.of(java.util.Arrays.copyOf(opus, length)))) {
+                                    fail("No se pudo enviar el audio a XiaoZhi.");
+                                    return;
+                                }
+                            }
+                        } catch (Exception e) {
+                            Log.e(TAG, "Error codificando audio", e);
+                            fail("Falló la codificación de audio Opus.");
+                            return;
+                        }
+                        filled = 0;
+                    }
                 }
             }
         });
