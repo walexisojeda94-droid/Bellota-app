@@ -50,6 +50,10 @@ public class XiaoZhiConnection {
         return preferences.getBoolean(KEY_ACTIVATED, false);
     }
 
+    public String getAccessToken() { return preferences.getString(KEY_ACCESS_TOKEN, ""); }
+    public String getDeviceId() { return preferences.getString(KEY_DEVICE_ID, ""); }
+    public String getClientId() { return preferences.getString(KEY_CLIENT_ID, ""); }
+
     /** Configuración de transporte entregada por el OTA oficial. */
     public JSONObject getWebSocketConfig() {
         try { String raw = preferences.getString(KEY_WEBSOCKET_CONFIG, null); return raw == null ? null : new JSONObject(raw); }
