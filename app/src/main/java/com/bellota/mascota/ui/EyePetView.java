@@ -67,6 +67,19 @@ public class EyePetView extends View {
         postDelayed(() -> { if(active){autonomousScene=0;invalidate();} },6500L);
     }
 
+    /** Juego breve: Bellota persigue un punto luminoso con la mirada. */
+    public void playAutonomousGame() {
+        if (!active) return;
+        autonomousScene=2;
+        setMood(Mood.HAPPY);
+        final float[][] targets={{-0.34f,-0.12f},{0.30f,-0.18f},{0.22f,0.16f},{-0.28f,0.12f},{0f,0f}};
+        for(int i=0;i<targets.length;i++) {
+            final float tx=targets[i][0], ty=targets[i][1];
+            postDelayed(() -> { if(active) animateGaze(tx,ty,520L); },i*620L);
+        }
+        postDelayed(() -> { if(active) { autonomousScene=0; setMood(Mood.CURIOUS); invalidate(); } },3900L);
+    }
+
     private void animateGaze(float x, float y, long duration) {
         animate().cancel();
         ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
