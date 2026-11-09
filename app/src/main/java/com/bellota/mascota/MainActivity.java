@@ -17,12 +17,14 @@ import java.util.Date;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
+import android.view.MotionEvent;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.EditText;
 import android.text.InputType;
 import android.widget.Toast;
 import com.bellota.mascota.core.PetLife;
+import com.bellota.mascota.core.PetMemory;
 import com.bellota.mascota.core.AutonomousBehavior;
 import com.bellota.mascota.local.OfflineReplies;
 import com.bellota.mascota.ui.EyePetView;
@@ -47,6 +49,9 @@ public class MainActivity extends Activity implements SensorEventListener {
     private ContinuousVoiceCommands voiceCommands;
     private PetLife petLife;
     private AutonomousBehavior autonomy;
+    private PetMemory petMemory;
+    private long touchStartedAt;
+    private float touchStartX, touchStartY, touchPressure;
     private XiaoZhiConnection xiaoZhiConnection;
     private XiaoZhiVoiceSession xiaoZhiVoiceSession;
     private boolean xiaoZhiVoiceFailed;
@@ -64,6 +69,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (eyes != null && autonomy != null && !isFinishing()) {
                 int hour=java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
                 AutonomousBehavior.Action action=autonomy.next(petLife,hour>=0 && hour<7);
+                if(action!=AutonomousBehavior.Action.NONE && petMemory!=null) petMemory.remember("actividad", action.name());
                 switch(action) {
                     case REST: eyes.setMood(EyePetView.Mood.SLEEPY); break;
                     case PLAY:
@@ -90,6 +96,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         super.onCreate(savedInstanceState);
         petLife = new PetLife(this);
         autonomy = new AutonomousBehavior(this);
+        petMemory = new PetMemory(this);
+        petMemory.remember("inicio", "Bellota inició una nueva sesión.");
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enterImmersiveMode();
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
@@ -119,7 +127,32 @@ public class MainActivity extends Activity implements SensorEventListener {
         root.setBackgroundColor(0xFF080D10);
         eyes = new EyePetView(this);
         eyes.setLightTheme(false);
-        eyes.setOnClickListener(v -> { eyes.reactToAttention(); if(autonomy!=null) autonomy.onInteraction(petLife); });
+        eyes.setOnClickListener(v -> { eyes.reactToAttention(); });
+        eyes.setOnTouchListener((view, event) -> {
+            if(event.getPointerCount()>1) {
+                if(event.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN && petMemory!=null)
+                    petMemory.remember("contacto_multiple", "Bellota recibió un toque con varios dedos.");
+                return false;
+            }
+            if(event.getActionMasked()==MotionEvent.ACTION_DOWN) {
+                touchStartedAt=System.currentTimeMillis();
+                touchStartX=event.getX(); touchStartY=event.getY(); touchPressure=event.getPressure();
+            } else if(event.getActionMasked()==MotionEvent.ACTION_UP) {
+                long duration=System.currentTimeMillis()-touchStartedAt;
+                float distance=(float)Math.hypot(event.getX()-touchStartX,event.getY()-touchStartY);
+                boolean stroke=distance>24f || duration>420L;
+                boolean firm=!stroke && touchPressure>=0.72f && duration<190L;
+                String kind=firm?"rough_touch":"caress";
+                if(autonomy!=null) autonomy.onInteraction(petLife,kind);
+                if(petMemory!=null) petMemory.remember(kind,
+                        firm?"Toque breve y firme; Bellota lo interpretó como un golpe.":"Contacto prolongado o suave; Bellota lo interpretó como una caricia.");
+                if(eyes!=null) {
+                    if(firm) eyes.setMood(EyePetView.Mood.SURPRISED);
+                    else eyes.reactToAttention();
+                }
+            }
+            return false;
+        });
         int width = (int)(getResources().getDisplayMetrics().widthPixels * 0.42f);
         int height = (int)(getResources().getDisplayMetrics().heightPixels * 0.34f);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
@@ -183,7 +216,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
             @Override public void onTranscript(String transcript) {
                 runOnUiThread(() -> {
-                    if (autonomy != null) autonomy.onInteraction(petLife);
+                    if (autonomy != null) autonomy.onInteraction(petLife,"attention");
+                    if (petMemory != null) petMemory.remember("conversacion_usuario", transcript);
                     if (eyes != null) eyes.reactToAttention();
                     android.util.Log.i("BellotaXiaoZhi", "Usuario: " + transcript);
                 });
@@ -232,7 +266,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             return;
         }
         if (eyes != null) eyes.reactToAttention();
-        if (autonomy != null) autonomy.onInteraction(petLife);
+        if (autonomy != null) autonomy.onInteraction(petLife,"attention");
+        if (petMemory != null) petMemory.remember("voz_usuario", spoken);
         if(text.contains("bateria") || text.contains("carga del telefono")){ BatteryManager b=(BatteryManager)getSystemService(BATTERY_SERVICE); int level=b.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY); speakIfEnabled(level>=0?"El teléfono tiene "+level+" por ciento de batería.":"No pude consultar la batería."); return; }
         if(text.contains("que hora") || text.equals("hora") || text.contains("que dia es") || text.contains("fecha de hoy")){ Date now=new Date(); speakIfEnabled("Son las "+new SimpleDateFormat("HH:mm",new Locale("es","AR")).format(now)+". Hoy es "+new SimpleDateFormat("EEEE d 'de' MMMM",new Locale("es","AR")).format(now)+"."); return; }
         if(text.contains("volumen actual")){ AudioManager a=(AudioManager)getSystemService(AUDIO_SERVICE); speakIfEnabled("El volumen multimedia está al "+Math.round(a.getStreamVolume(AudioManager.STREAM_MUSIC)*100f/a.getStreamMaxVolume(AudioManager.STREAM_MUSIC))+" por ciento."); return; }
