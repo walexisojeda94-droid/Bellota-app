@@ -30,6 +30,7 @@ import com.bellota.mascota.voice.ContinuousVoiceCommands;
 import com.bellota.mascota.voice.LocalVoice;
 import com.bellota.mascota.weather.WeatherService;
 import com.bellota.mascota.xiaozhi.XiaoZhiConnection;
+import com.bellota.mascota.xiaozhi.XiaoZhiVoiceSession;
 import com.bellota.mascota.xiaozhi.McpConnection;
 import com.bellota.mascota.xiaozhi.McpCredentialStore;
 import org.json.JSONArray;
@@ -47,6 +48,8 @@ public class MainActivity extends Activity implements SensorEventListener {
     private PetLife petLife;
     private AutonomousBehavior autonomy;
     private XiaoZhiConnection xiaoZhiConnection;
+    private XiaoZhiVoiceSession xiaoZhiVoiceSession;
+    private boolean xiaoZhiVoiceFailed;
     private McpConnection mcpConnection;
     private McpCredentialStore mcpCredentialStore;
     private String pendingXiaoZhiCode;
@@ -153,12 +156,59 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void startVoiceCommands() {
+        if (xiaoZhiVoiceSession != null) return;
+        if (!xiaoZhiVoiceFailed && xiaoZhiConnection != null && xiaoZhiConnection.isConfigured()
+                && xiaoZhiConnection.hasVoiceConfiguration()) {
+            startXiaoZhiVoice();
+            return;
+        }
         if (voiceCommands != null) voiceCommands.stop();
         voiceCommands = new ContinuousVoiceCommands(this, new ContinuousVoiceCommands.Listener() {
             @Override public void onRecognized(String spoken) { handleVoiceCommand(spoken); }
             @Override public void onStatus(String status) { }
         });
         voiceCommands.start();
+    }
+
+    private void startXiaoZhiVoice() {
+        if (xiaoZhiVoiceSession != null || xiaoZhiVoiceFailed || xiaoZhiConnection == null) return;
+        if (voiceCommands != null) voiceCommands.stop();
+        xiaoZhiVoiceSession = new XiaoZhiVoiceSession(xiaoZhiConnection, new XiaoZhiVoiceSession.Listener() {
+            @Override public void onStatus(String status) {
+                android.util.Log.i("BellotaXiaoZhi", status);
+            }
+            @Override public void onTranscript(String transcript) {
+                runOnUiThread(() -> {
+                    if (autonomy != null) autonomy.onInteraction(petLife);
+                    if (eyes != null) eyes.reactToAttention();
+                    android.util.Log.i("BellotaXiaoZhi", "Usuario: " + transcript);
+                });
+            }
+            @Override public void onSpeaking(boolean speaking) {
+                runOnUiThread(() -> {
+                    if (speaking) {
+                        if (localVoice != null) localVoice.stop();
+                        if (eyes != null) eyes.setMood(EyePetView.Mood.HAPPY);
+                    } else if (eyes != null) {
+                        eyes.setMood(EyePetView.Mood.CALM);
+                    }
+                });
+            }
+            @Override public void onError(String message) {
+                runOnUiThread(() -> {
+                    android.util.Log.e("BellotaXiaoZhi", message);
+                    xiaoZhiVoiceFailed = true;
+                    if (xiaoZhiVoiceSession != null) {
+                        xiaoZhiVoiceSession.disconnect();
+                        xiaoZhiVoiceSession = null;
+                    }
+                    if (!isFinishing() && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        startVoiceCommands();
+                    }
+                });
+            }
+        });
+        xiaoZhiVoiceSession.connect();
     }
 
     private void handleVoiceCommand(String spoken) {
@@ -195,7 +245,11 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void requestXiaoZhiActivation() {
-        if (xiaoZhiConnection == null || xiaoZhiConnection.isConfigured()) return;
+        if (xiaoZhiConnection == null) return;
+        if (xiaoZhiConnection.isConfigured()) {
+            if (xiaoZhiConnection.hasVoiceConfiguration()) startXiaoZhiVoice();
+            return;
+        }
         xiaoZhiConnection.requestActivationCode(new XiaoZhiConnection.ActivationListener() {
             @Override public void onCodeReceived(String code, String message) {
                 runOnUiThread(() -> {
@@ -213,7 +267,11 @@ public class MainActivity extends Activity implements SensorEventListener {
                 });
             }
             @Override public void onActivated() {
-                runOnUiThread(() -> speakIfEnabled("Bellota ya está vinculada con XiaoZhi."));
+                runOnUiThread(() -> {
+                    speakIfEnabled("Bellota ya está vinculada con XiaoZhi.");
+                    if (xiaoZhiConnection.hasVoiceConfiguration()) startXiaoZhiVoice();
+                    else android.util.Log.w("BellotaXiaoZhi", "El OTA todavía no entregó un transporte de voz.");
+                });
             }
             @Override public void onError(String message) {
                 runOnUiThread(() -> speakIfEnabled("Todavía no pude obtener el código de XiaoZhi. " + message));
@@ -332,6 +390,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     @Override protected void onPause() {
         if (voiceCommands != null) voiceCommands.stop();
+        if (xiaoZhiVoiceSession != null) { xiaoZhiVoiceSession.disconnect(); xiaoZhiVoiceSession = null; }
         if (eyes != null) eyes.pauseAnimation();
         if(sensorManager!=null)sensorManager.unregisterListener(this);
         super.onPause();
@@ -340,6 +399,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     @Override protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
         if (voiceCommands != null) { voiceCommands.stop(); voiceCommands = null; }
+        if (xiaoZhiVoiceSession != null) { xiaoZhiVoiceSession.disconnect(); xiaoZhiVoiceSession = null; }
         if (localVoice != null) { localVoice.stop(); localVoice.release(); localVoice = null; }
         if (mcpConnection != null) { mcpConnection.disconnect(); mcpConnection = null; }
         super.onDestroy();
