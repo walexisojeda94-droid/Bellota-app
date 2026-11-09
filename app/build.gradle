@@ -16,8 +16,8 @@ android {
         applicationId 'com.bellota.mascota'
         minSdk 27
         targetSdk 28
-        versionCode 5
-        versionName '0.4.1'
+        versionCode 6
+        versionName '0.4.2'
     }
 
     if (hasReleaseSigning) {
