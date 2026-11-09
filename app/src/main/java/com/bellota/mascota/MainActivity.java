@@ -27,6 +27,8 @@ import com.bellota.mascota.core.PetLife;
 import com.bellota.mascota.core.PetMemory;
 import com.bellota.mascota.core.AutonomousBehavior;
 import com.bellota.mascota.local.OfflineReplies;
+import com.bellota.mascota.local.LocalConversationEngine;
+import com.bellota.mascota.local.Reply;
 import com.bellota.mascota.ui.EyePetView;
 import com.bellota.mascota.voice.ContinuousVoiceCommands;
 import com.bellota.mascota.voice.LocalVoice;
@@ -44,6 +46,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     private static final int LOCATION_PERMISSION = 42;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final OfflineReplies offlineReplies = new OfflineReplies();
+    private LocalConversationEngine conversationEngine;
     private EyePetView eyes;
     private FrameLayout petRoot;
     private LocalVoice localVoice;
@@ -99,6 +102,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         petLife = new PetLife(this);
         autonomy = new AutonomousBehavior(this);
         petMemory = new PetMemory(this);
+        conversationEngine = new LocalConversationEngine(this);
         petMemory.remember("inicio", "Bellota inició una nueva sesión.");
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enterImmersiveMode();
@@ -307,15 +311,18 @@ public class MainActivity extends Activity implements SensorEventListener {
         if(text.contains("que hora") || text.equals("hora") || text.contains("que dia es") || text.contains("fecha de hoy")){ Date now=new Date(); speakIfEnabled("Son las "+new SimpleDateFormat("HH:mm",new Locale("es","AR")).format(now)+". Hoy es "+new SimpleDateFormat("EEEE d 'de' MMMM",new Locale("es","AR")).format(now)+"."); return; }
         if(text.contains("volumen actual")){ AudioManager a=(AudioManager)getSystemService(AUDIO_SERVICE); speakIfEnabled("El volumen multimedia está al "+Math.round(a.getStreamVolume(AudioManager.STREAM_MUSIC)*100f/a.getStreamMaxVolume(AudioManager.STREAM_MUSIC))+" por ciento."); return; }
 
-        if (offlineReplies.isWeatherQuestion(text)) {
+        String mood = eyes == null ? "NEUTRAL" : eyes.getMood().name();
+        Reply result = conversationEngine == null
+                ? Reply.text(offlineReplies.reply(text, petLife, mood))
+                : conversationEngine.respond(text, petLife, mood);
+        if (result.type == Reply.Type.NEEDS_WEATHER) {
             requestWeather();
             return;
         }
-
-        String mood = eyes == null ? "NEUTRAL" : eyes.getMood().name();
-        String reply = offlineReplies.reply(text, petLife, mood);
-        if (reply != null) speakIfEnabled(reply);
-        else speakIfEnabled("No tengo ese dato a mano todavía, pero puedo seguir conversando con vos. Contame un poco más.");
+        if (result.type == Reply.Type.TEXT && result.text != null) speakIfEnabled(result.text);
+        else if (result.type == Reply.Type.NEEDS_AI) {
+            speakIfEnabled("Ese comando ya está disponible.");
+        }
     }
 
     private void requestXiaoZhiActivation() {
