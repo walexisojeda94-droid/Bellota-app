@@ -94,7 +94,7 @@ public class XiaoZhiConnection {
         String androidId = Settings.Secure.getString(
                 context.getContentResolver(), Settings.Secure.ANDROID_ID);
         if (androidId == null || androidId.trim().isEmpty()) {
-            androidId = "bellota-device-" + BuildConfig.APPLICATION_ID;
+            androidId = "bellota-device-bellota";
         }
         SharedPreferences.Editor editor = preferences.edit();
         if (!preferences.contains(KEY_CLIENT_ID)) {
