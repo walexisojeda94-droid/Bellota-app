@@ -27,12 +27,36 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Build debug APK
+      - name: Prepare permanent signing key
+        if: ${{ secrets.BELLOTA_KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.BELLOTA_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/bellota-release.jks"
+          echo "BELLOTA_KEYSTORE_FILE=$RUNNER_TEMP/bellota-release.jks" >> "$GITHUB_ENV"
+      - name: Build signed release APK
+        if: ${{ secrets.BELLOTA_KEYSTORE_BASE64 != '' && secrets.BELLOTA_KEYSTORE_PASSWORD != '' && secrets.BELLOTA_KEY_ALIAS != '' && secrets.BELLOTA_KEY_PASSWORD != '' }}
+        env:
+          BELLOTA_KEYSTORE_PASSWORD: ${{ secrets.BELLOTA_KEYSTORE_PASSWORD }}
+          BELLOTA_KEY_ALIAS: ${{ secrets.BELLOTA_KEY_ALIAS }}
+          BELLOTA_KEY_PASSWORD: ${{ secrets.BELLOTA_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
+      - name: Build temporary debug APK (until permanent key is configured)
+        if: ${{ secrets.BELLOTA_KEYSTORE_BASE64 == '' || secrets.BELLOTA_KEYSTORE_PASSWORD == '' || secrets.BELLOTA_KEY_ALIAS == '' || secrets.BELLOTA_KEY_PASSWORD == '' }}
         run: gradle --no-daemon :app:assembleDebug
-      - name: Upload APK
+      - name: Upload signed release APK
+        if: ${{ secrets.BELLOTA_KEYSTORE_BASE64 != '' && secrets.BELLOTA_KEYSTORE_PASSWORD != '' && secrets.BELLOTA_KEY_ALIAS != '' && secrets.BELLOTA_KEY_PASSWORD != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: bellota-debug-apk
+          name: bellota-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload temporary debug APK
+        if: ${{ secrets.BELLOTA_KEYSTORE_BASE64 == '' || secrets.BELLOTA_KEYSTORE_PASSWORD == '' || secrets.BELLOTA_KEY_ALIAS == '' || secrets.BELLOTA_KEY_PASSWORD == '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bellota-debug-apk-temporal
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
