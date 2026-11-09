@@ -54,7 +54,7 @@ jobs:
         run: |
           APK="app/build/outputs/apk/release/app-release.apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/signature.txt"
-          grep -qi "76:2b:29:d7:36:27:5f:54:4c:b6:17:ae:48:a2:68:f7:1a:3f:23:58:4f:38:bc:62:17:d3:c3:3f:81:d3:94:8f" "$RUNNER_TEMP/signature.txt"
+          grep -qi "762b29d736275f544cb617ae48a268f71a3f23584f38bc6217d3c33f81d3948f" "$RUNNER_TEMP/signature.txt"
       - name: Build temporary debug APK (until permanent key is configured)
         if: steps.signing.outputs.enabled != 'true'
         run: gradle --no-daemon :app:assembleDebug
