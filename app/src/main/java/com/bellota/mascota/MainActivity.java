@@ -268,9 +268,11 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
             @Override public void onActivated() {
                 runOnUiThread(() -> {
-                    speakIfEnabled("Bellota ya está vinculada con XiaoZhi.");
                     if (xiaoZhiConnection.hasVoiceConfiguration()) startXiaoZhiVoice();
-                    else android.util.Log.w("BellotaXiaoZhi", "El OTA todavía no entregó un transporte de voz.");
+                    else {
+                        speakIfEnabled("Bellota ya está vinculada con XiaoZhi, pero todavía no recibí la configuración de voz.");
+                        android.util.Log.w("BellotaXiaoZhi", "El OTA todavía no entregó un transporte de voz.");
+                    }
                 });
             }
             @Override public void onError(String message) {
