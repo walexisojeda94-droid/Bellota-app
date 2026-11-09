@@ -40,11 +40,12 @@ No se debe asumir que el panel web es un endpoint WebSocket. Tampoco se deben in
 ## Próximos pasos
 
 1. Verificar en el J7 que el motor TTS tenga datos españoles instalados y funcione sin internet.
-2. Confirmar con documentación y flujo oficial si se puede registrar un cliente Android propio.
-3. Obtener endpoint y credenciales mediante el procedimiento legítimo de activación.
-4. Implementar WebSocket, handshake, negociación de audio y decodificación Opus en un módulo aislado.
+2. Consultar y validar la configuración `websocket`/`mqtt` recibida del OTA oficial sin mostrar ni registrar tokens.
+3. Confirmar con documentación y flujo oficial si se puede registrar un cliente Android propio.
+4. Obtener endpoint y credenciales mediante el procedimiento legítimo de activación.
+5. Implementar WebSocket, handshake, negociación de audio y codificación/decodificación Opus en un módulo aislado.
 5. Probar conversación real, desconexión, fallback y reconexión en Android 8.1.
 
 ## Estado
 
-La base del protocolo está revisada documentalmente. La compatibilidad de la cuenta/servicio oficial con un cliente Android propio todavía no está confirmada. No existe conexión remota funcional en esta versión.
+La solicitud OTA ahora conserva los parámetros de transporte que devuelve XiaoZhi y usa el locale español de Troko. Esto todavía no establece una sesión de voz: el WebSocket/MQTT, el audio Opus y la conversación real siguen pendientes de implementación y prueba en el J7.
