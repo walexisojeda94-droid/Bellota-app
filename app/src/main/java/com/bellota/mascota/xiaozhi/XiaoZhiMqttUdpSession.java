@@ -126,7 +126,7 @@ public final class XiaoZhiMqttUdpSession {
                 }
                 DatagramSocket socket=new DatagramSocket();
                 socket.connect(InetAddress.getByName(host),port);
-                sessionId=sid; aesKey=key; baseNonce=nonce; udpHost=socket.getInetAddress();udpPort=port;udp=socket;
+                rxSequence=0; txSequence=0; timestamp=0; sessionId=sid; aesKey=key; baseNonce=nonce; udpHost=socket.getInetAddress();udpPort=port;udp=socket;
                 downRate=rate; decoder=new OpusDecoder(rate,1); encoder=new OpusEncoder(RATE,1,OpusApplication.OPUS_APPLICATION_VOIP);
                 createPlayer(); report("Canal UDP negociado. Audio Opus "+rate+" Hz con AES-128-CTR.");
                 Thread receiver=new Thread(this::receiveLoop,"Bellota-UDP-RX");receiver.setDaemon(true);receiver.start();
