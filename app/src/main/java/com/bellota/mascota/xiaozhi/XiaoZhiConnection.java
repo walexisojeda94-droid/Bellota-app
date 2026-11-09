@@ -86,7 +86,9 @@ public class XiaoZhiConnection {
 
     public void requestActivationCode(ActivationListener listener) {
         if (isConfigured()) {
-            if (listener != null) listener.onActivated();
+            // La vinculación persiste, pero la configuración de transporte puede cambiar.
+            // Consultar OTA en cada inicio evita depender de una URL/token antiguos o ausentes.
+            executor.execute(() -> refreshConfiguration(listener));
             return;
         }
         executor.execute(() -> activate(listener));
@@ -124,6 +126,17 @@ public class XiaoZhiConnection {
             return mac.toString();
         } catch (Exception e) {
             return "02:00:00:00:00:01";
+        }
+    }
+
+    private void refreshConfiguration(ActivationListener listener) {
+        try {
+            JSONObject response = request("POST", OTA_URL, buildDeviceReport());
+            saveServerConfiguration(response);
+            if (listener != null) listener.onActivated();
+        } catch (Exception e) {
+            if (listener != null) listener.onError("No pude actualizar la conexión con XiaoZhi: "
+                    + (e.getMessage() == null ? "error de red" : e.getMessage()));
         }
     }
 
