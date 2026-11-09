@@ -285,10 +285,8 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     private void requestXiaoZhiActivation() {
         if (xiaoZhiConnection == null) return;
-        if (xiaoZhiConnection.isConfigured()) {
-            if (xiaoZhiConnection.hasVoiceConfiguration()) startXiaoZhiVoice();
-            return;
-        }
+        // Siempre consultar OTA: si ya está vinculado, se renueva la configuración
+        // WebSocket/MQTT sin pedir otro código de activación.
         xiaoZhiConnection.requestActivationCode(new XiaoZhiConnection.ActivationListener() {
             @Override public void onCodeReceived(String code, String message) {
                 runOnUiThread(() -> {
@@ -307,10 +305,18 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
             @Override public void onActivated() {
                 runOnUiThread(() -> {
-                    if (xiaoZhiConnection.hasVoiceConfiguration()) startXiaoZhiVoice();
-                    else {
-                        speakIfEnabled("Bellota ya está vinculada con XiaoZhi, pero todavía no recibí la configuración de voz.");
-                        android.util.Log.w("BellotaXiaoZhi", "El OTA todavía no entregó un transporte de voz.");
+                    String transport = xiaoZhiConnection.getTransport();
+                    android.util.Log.i("BellotaXiaoZhi", "OTA actualizado. Transporte recibido: "
+                            + (transport == null ? "ninguno" : transport));
+                    if ("websocket".equals(transport) && xiaoZhiConnection.hasVoiceConfiguration()) {
+                        xiaoZhiVoiceFailed = false;
+                        startXiaoZhiVoice();
+                    } else if ("mqtt".equals(transport)) {
+                        speakIfEnabled("XiaoZhi entregó conexión MQTT. Esta versión todavía no puede usar ese transporte; voy a mantener el modo local.");
+                        android.util.Log.w("BellotaXiaoZhi", "El servidor entregó MQTT; el cliente Android implementa WebSocket.");
+                    } else {
+                        speakIfEnabled("Bellota todavía no recibió una configuración de voz de XiaoZhi. Voy a mantener el modo local.");
+                        android.util.Log.w("BellotaXiaoZhi", "El OTA no entregó un transporte de voz.");
                     }
                 });
             }
