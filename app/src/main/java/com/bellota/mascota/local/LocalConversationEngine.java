@@ -68,10 +68,23 @@ public final class LocalConversationEngine {
                 "No estoy segura de haber entendido bien. ¿Me lo explicás de otra manera?"));
     }
 
+    /** Registra mensajes enviados al motor online sin generar una segunda respuesta local. */
+    public synchronized void rememberOnlineMessage(String input) {
+        if (input == null || input.trim().isEmpty()) return;
+        long now = System.currentTimeMillis();
+        Utterance u = Utterance.of(input);
+        memory.onUserMessage(now);
+        String learnedName = extractName(u.text);
+        if (learnedName != null) memory.setName(learnedName);
+        String like = extractLike(u.text);
+        if (like != null) memory.addLike(like);
+        memory.afterTurn("xiaozhi");
+    }
+
     public ConversationMemory memory() { return memory; }
 
     private String extractName(String text) {
-        String[] markers = {"me llamo ", "mi nombre es ", "soy "};
+        String[] markers = {"me llamo ", "mi nombre es "};
         for (String marker : markers) {
             int at = text.indexOf(marker);
             if (at >= 0) {
