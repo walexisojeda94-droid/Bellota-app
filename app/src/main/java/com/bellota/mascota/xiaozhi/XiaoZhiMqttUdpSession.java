@@ -55,6 +55,7 @@ public final class XiaoZhiMqttUdpSession {
     private volatile String publishTopic, sessionId;
     private volatile byte[] aesKey, baseNonce;
     private volatile boolean speaking;
+    private final AtomicBoolean firstDownlinkPacket = new AtomicBoolean(false);
     private volatile long txSequence, rxSequence;
     private AudioRecord recorder;
     private AudioTrack player;
@@ -137,9 +138,10 @@ public final class XiaoZhiMqttUdpSession {
                 }
                 DatagramSocket socket=new DatagramSocket();
                 socket.connect(InetAddress.getByName(host),port);
-                rxSequence=0; txSequence=0; sessionId=sid; aesKey=key; baseNonce=nonce; udpHost=socket.getInetAddress();udpPort=port;udp=socket;
+                rxSequence=0; txSequence=0; firstDownlinkPacket.set(false); sessionId=sid; aesKey=key; baseNonce=nonce; udpHost=socket.getInetAddress();udpPort=port;udp=socket;
                 downRate=rate; decoder=new OpusDecoder(rate,1); encoder=new OpusEncoder(RATE,1,OpusApplication.OPUS_APPLICATION_VOIP);
                 createPlayer(); report("Canal UDP negociado. Audio Opus "+rate+" Hz con AES-128-CTR.");
+                Log.i(TAG, "Hello MQTT aceptado; canal UDP listo, audio de bajada " + rate + " Hz.");
                 Thread receiver=new Thread(this::receiveLoop,"Bellota-UDP-RX");receiver.setDaemon(true);receiver.start();
                 startListening();
             }else if("stt".equals(type)){
@@ -210,6 +212,9 @@ public final class XiaoZhiMqttUdpSession {
                 int len=h.getShort(2)&65535;long seq=h.getInt(12)&0xffffffffL;
                 if(len!=p.getLength()-HEADER||seq<=rxSequence)continue;
                 rxSequence=seq;
+                if (firstDownlinkPacket.compareAndSet(false, true)) {
+                    Log.i(TAG, "Primer paquete Opus UDP recibido: " + len + " bytes.");
+                }
                 byte[] iv=Arrays.copyOfRange(buffer,0,HEADER), cipher=Arrays.copyOfRange(buffer,HEADER,p.getLength());
                 byte[] plain=crypt(cipher,iv);short[] pcm=new short[5760];
                 int samples=decoder.decode(plain,0,plain.length,pcm,0,pcm.length,false);
