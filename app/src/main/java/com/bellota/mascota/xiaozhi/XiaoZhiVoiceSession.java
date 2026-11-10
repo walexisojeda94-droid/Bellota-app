@@ -93,7 +93,8 @@ public final class XiaoZhiVoiceSession {
             reportError("La configuración OTA no contiene una URL WebSocket.");
             return;
         }
-        String token = cfg.optString("token", identity.getAccessToken());
+        String token = cfg.optString("token", "").trim();
+        if (token.isEmpty()) token = identity.getAccessToken().trim();
         if (token.isEmpty()) {
             reportError("XiaoZhi no entregó un token de voz.");
             return;
