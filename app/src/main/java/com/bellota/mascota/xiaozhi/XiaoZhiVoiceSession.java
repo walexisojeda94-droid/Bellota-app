@@ -51,6 +51,7 @@ public final class XiaoZhiVoiceSession {
     private final ExecutorService audioExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean capturing = new AtomicBoolean(false);
+    private final AtomicBoolean intentionalClose = new AtomicBoolean(false);
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable helloTimeout = () -> {
         if (!running.get() && socket != null && !audioNegotiated) {
@@ -77,6 +78,7 @@ public final class XiaoZhiVoiceSession {
 
     public void connect() {
         if (running.get()) return;
+        intentionalClose.set(false);
         JSONObject cfg = identity.getWebSocketConfig();
         if (cfg == null) {
             reportError("XiaoZhi no entregó configuración WebSocket para voz.");
@@ -144,12 +146,12 @@ public final class XiaoZhiVoiceSession {
                 }
 
                 @Override public void onClosed(WebSocket webSocket, int code, String reason) {
-                    boolean wasActive = running.get() || audioNegotiated;
+                    boolean unexpected = !intentionalClose.get();
                     mainHandler.removeCallbacks(helloTimeout);
                     stopAudio();
                     running.set(false);
-                    if (wasActive) {
-                        reportError("XiaoZhi cerró inesperadamente la sesión de voz ("
+                    if (unexpected) {
+                        reportError("XiaoZhi cerró la sesión de voz ("
                                 + code + (reason == null || reason.isEmpty() ? "" : ": " + reason) + ").");
                     } else {
                         reportStatus("Conexión XiaoZhi cerrada.");
@@ -366,6 +368,7 @@ public final class XiaoZhiVoiceSession {
     }
 
     public void disconnect() {
+        intentionalClose.set(true);
         mainHandler.removeCallbacks(helloTimeout);
         running.set(false);
         serverSpeaking = false;
@@ -376,6 +379,7 @@ public final class XiaoZhiVoiceSession {
     }
 
     private void fail(String message) {
+        intentionalClose.set(true);
         mainHandler.removeCallbacks(helloTimeout);
         running.set(false);
         stopAudio();
