@@ -143,8 +143,10 @@ public final class XiaoZhiVoiceSession {
                 }
 
                 @Override public void onFailure(WebSocket webSocket, Throwable t, Response response) {
-                    fail("Se perdió la conexión de voz con XiaoZhi: " +
-                            (response != null ? "HTTP " + response.code() : t.getMessage()));
+                    if (!intentionalClose.get()) {
+                        fail("Se perdió la conexión de voz con XiaoZhi: " +
+                                (response != null ? "HTTP " + response.code() : t.getMessage()));
+                    }
                 }
 
                 @Override public void onClosed(WebSocket webSocket, int code, String reason) {
@@ -206,11 +208,9 @@ public final class XiaoZhiVoiceSession {
                     fail("XiaoZhi solicitó paquetes de " + frameDuration + " ms. Bellota solo tiene implementados paquetes de " + FRAME_MS + " ms.");
                     return;
                 }
+                // El protocolo permite que el hello omita session_id; en ese caso
+                // los mensajes posteriores llevan el campo vacío.
                 sessionId = msg.optString("session_id", "");
-                if (sessionId.isEmpty()) {
-                    fail("XiaoZhi no entregó un identificador de sesión. Bellota no iniciará la transmisión.");
-                    return;
-                }
                 negotiatedProtocolVersion = serverVersion;
                 downlinkRate = rate;
                 decoder = new OpusDecoder(downlinkRate, 1);
