@@ -23,6 +23,9 @@ import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
@@ -42,6 +45,8 @@ public final class XiaoZhiMqttUdpSession {
     private final Listener listener;
     private final ExecutorService io=Executors.newSingleThreadExecutor();
     private final ExecutorService capture=Executors.newSingleThreadExecutor();
+    private final ScheduledExecutorService watchdog=Executors.newSingleThreadScheduledExecutor();
+    private volatile ScheduledFuture<?> helloTimeout;
     private final AtomicBoolean active=new AtomicBoolean(false), recording=new AtomicBoolean(false);
     private volatile MqttClient mqtt;
     private volatile DatagramSocket udp;
@@ -50,8 +55,8 @@ public final class XiaoZhiMqttUdpSession {
     private volatile String publishTopic, sessionId;
     private volatile byte[] aesKey, baseNonce;
     private volatile boolean speaking;
+    private final AtomicBoolean firstDownlinkPacket = new AtomicBoolean(false);
     private volatile long txSequence, rxSequence;
-    private volatile int timestamp;
     private AudioRecord recorder;
     private AudioTrack player;
     private OpusEncoder encoder;
@@ -75,7 +80,13 @@ public final class XiaoZhiMqttUdpSession {
             fail("La configuración MQTT está incompleta. Se requieren endpoint, credenciales y tópicos de publicación y suscripción; no se supondrá ningún tópico.");
             return;
         }
-        if(!endpoint.matches("^[a-zA-Z][a-zA-Z0-9+.-]*://.*")) endpoint="ssl://"+endpoint;
+        // El OTA suele entregar solo host[:puerto]. El gateway oficial usa
+        // TCP sin TLS en 1883 y TLS en 8883; respetar también esquemas explícitos.
+        if (endpoint.startsWith("mqtt://")) endpoint = "tcp://" + endpoint.substring(7);
+        else if (endpoint.startsWith("mqtts://")) endpoint = "ssl://" + endpoint.substring(8);
+        else if (!endpoint.matches("^[a-zA-Z][a-zA-Z0-9+.-]*://.*")) {
+            endpoint = endpoint.endsWith(":1883") ? "tcp://" + endpoint : "ssl://" + endpoint;
+        }
         final String broker=endpoint, cid=clientId, user=username, pass=password, sub=subscribeTopic;
         io.execute(()->{
             try{
@@ -86,7 +97,7 @@ public final class XiaoZhiMqttUdpSession {
                 options.setCleanSession(true); options.setAutomaticReconnect(true);
                 options.setKeepAliveInterval(cfg.optInt("keepalive",240));
                 client.setCallback(new MqttCallback(){
-                    @Override public void connectionLost(Throwable cause){ if(active.get()) report("Se interrumpió MQTT; esperando reconexión."); }
+                    @Override public void connectionLost(Throwable cause){ if(active.get()) fail("Se perdió la conexión MQTT con XiaoZhi: "+(cause==null||cause.getMessage()==null?"desconexión":cause.getMessage())); }
                     @Override public void messageArrived(String topic,MqttMessage message){handleControl(new String(message.getPayload(),java.nio.charset.StandardCharsets.UTF_8));}
                     @Override public void deliveryComplete(IMqttDeliveryToken token){}
                 });
@@ -98,6 +109,11 @@ public final class XiaoZhiMqttUdpSession {
                         .put("audio_params",new JSONObject().put("format","opus").put("sample_rate",RATE)
                                 .put("channels",1).put("frame_duration",FRAME_MS));
                 publish(hello);
+                helloTimeout = watchdog.schedule(() -> {
+                    if (active.get() && udp == null) {
+                        fail("MQTT conectó, pero XiaoZhi no respondió al hello UDP en 12 segundos.");
+                    }
+                }, 12, TimeUnit.SECONDS);
                 report("MQTT conectado. Esperando negociación del canal UDP…");
             }catch(Exception e){fail("No se pudo conectar o negociar MQTT: "+safe(e));}
         });
@@ -107,6 +123,8 @@ public final class XiaoZhiMqttUdpSession {
         try{
             JSONObject msg=new JSONObject(raw); String type=msg.optString("type","");
             if("hello".equals(type)){
+                ScheduledFuture<?> timeout = helloTimeout;
+                if (timeout != null) timeout.cancel(false);
                 if(!"udp".equals(msg.optString("transport",""))){fail("El servidor no confirmó transporte UDP.");return;}
                 String sid=msg.optString("session_id","");
                 JSONObject udpCfg=msg.optJSONObject("udp");
@@ -126,9 +144,10 @@ public final class XiaoZhiMqttUdpSession {
                 }
                 DatagramSocket socket=new DatagramSocket();
                 socket.connect(InetAddress.getByName(host),port);
-                rxSequence=0; txSequence=0; timestamp=0; sessionId=sid; aesKey=key; baseNonce=nonce; udpHost=socket.getInetAddress();udpPort=port;udp=socket;
+                rxSequence=0; txSequence=0; firstDownlinkPacket.set(false); sessionId=sid; aesKey=key; baseNonce=nonce; udpHost=socket.getInetAddress();udpPort=port;udp=socket;
                 downRate=rate; decoder=new OpusDecoder(rate,1); encoder=new OpusEncoder(RATE,1,OpusApplication.OPUS_APPLICATION_VOIP);
                 createPlayer(); report("Canal UDP negociado. Audio Opus "+rate+" Hz con AES-128-CTR.");
+                Log.i(TAG, "Hello MQTT aceptado; canal UDP listo, audio de bajada " + rate + " Hz.");
                 Thread receiver=new Thread(this::receiveLoop,"Bellota-UDP-RX");receiver.setDaemon(true);receiver.start();
                 startListening();
             }else if("stt".equals(type)){
@@ -139,7 +158,9 @@ public final class XiaoZhiMqttUdpSession {
                 else if("stop".equals(state)){speaking=false;if(listener!=null)listener.onSpeaking(false);startListening();}
             }else if("llm".equals(type)){
                 report("XiaoZhi: "+msg.optString("emotion","está pensando…"));
-            }else if("goodbye".equals(type)){closeUdp();active.set(false);report("XiaoZhi cerró la sesión de audio.");}
+            }else if("goodbye".equals(type)){
+                fail("XiaoZhi cerró la sesión de audio UDP.");
+            }
         }catch(Exception e){fail("Respuesta MQTT/UDP inválida: "+safe(e));}
     }
 
@@ -161,7 +182,7 @@ public final class XiaoZhiMqttUdpSession {
                         if(filled==SAMPLES)try{
                             int len=encoder.encode(frame,0,SAMPLES,opus,0,opus.length);
                             if(len>0)sendAudio(Arrays.copyOf(opus,len));
-                            timestamp+=SAMPLES;filled=0;
+                            filled=0;
                         }catch(Exception e){fail("Error codificando Opus.");return;}
                     }
                 }
@@ -172,8 +193,15 @@ public final class XiaoZhiMqttUdpSession {
     private void sendAudio(byte[] payload)throws Exception{
         if(payload.length>65535)throw new IllegalArgumentException("Paquete Opus demasiado grande");
         byte[] header=baseNonce.clone();
+        // El nonce OTA aporta el bloque base de 128 bits, pero los campos de
+        // cabecera del datagrama deben respetar el protocolo UDP: tipo 0x01,
+        // flags reservados en cero. Se conserva intacta la parte central del
+        // nonce OTA porque integra el IV AES-CTR; solo cambian longitud y secuencia.
+        header[0]=0x01;
+        header[1]=0x00;
         ByteBuffer b=ByteBuffer.wrap(header).order(ByteOrder.BIG_ENDIAN);
-        b.putShort(2,(short)payload.length);b.putInt(8,timestamp);b.putInt(12,(int)++txSequence);
+        b.putShort(2,(short)payload.length);
+        b.putInt(12,(int)++txSequence);
         byte[] encrypted=crypt(payload,header);
         byte[] packet=new byte[HEADER+encrypted.length];System.arraycopy(header,0,packet,0,HEADER);
         System.arraycopy(encrypted,0,packet,HEADER,encrypted.length);
@@ -190,6 +218,9 @@ public final class XiaoZhiMqttUdpSession {
                 int len=h.getShort(2)&65535;long seq=h.getInt(12)&0xffffffffL;
                 if(len!=p.getLength()-HEADER||seq<=rxSequence)continue;
                 rxSequence=seq;
+                if (firstDownlinkPacket.compareAndSet(false, true)) {
+                    Log.i(TAG, "Primer paquete Opus UDP recibido: " + len + " bytes.");
+                }
                 byte[] iv=Arrays.copyOfRange(buffer,0,HEADER), cipher=Arrays.copyOfRange(buffer,HEADER,p.getLength());
                 byte[] plain=crypt(cipher,iv);short[] pcm=new short[5760];
                 int samples=decoder.decode(plain,0,plain.length,pcm,0,pcm.length,false);
@@ -224,12 +255,14 @@ public final class XiaoZhiMqttUdpSession {
     private synchronized void releasePlayer(){if(player!=null){try{player.pause();player.flush();player.stop();}catch(Exception ignored){}player.release();player=null;}}
     private void closeUdp(){stopCapture();DatagramSocket s=udp;udp=null;if(s!=null)s.close();releasePlayer();}
     public void disconnect(){
-        active.set(false);speaking=false;stopCapture();
+        active.set(false);speaking=false;
+        ScheduledFuture<?> timeout=helloTimeout;if(timeout!=null)timeout.cancel(false);
+        stopCapture();
         try{if(sessionId!=null&&mqtt!=null&&mqtt.isConnected())publish(new JSONObject().put("session_id",sessionId).put("type","goodbye"));}catch(Exception ignored){}
         closeUdp();MqttClient c=mqtt;mqtt=null;if(c!=null)try{c.disconnect();c.close();}catch(Exception ignored){}
-        io.shutdownNow();capture.shutdownNow();
+        io.shutdownNow();capture.shutdownNow();watchdog.shutdownNow();
     }
-    private void fail(String message){Log.e(TAG,message);active.set(false);closeUdp();MqttClient c=mqtt;mqtt=null;if(c!=null)try{c.disconnect();c.close();}catch(Exception ignored){}if(listener!=null)listener.onError(message);}
+    private void fail(String message){Log.e(TAG,message);active.set(false);ScheduledFuture<?> timeout=helloTimeout;if(timeout!=null)timeout.cancel(false);closeUdp();MqttClient c=mqtt;mqtt=null;if(c!=null)try{c.disconnect();c.close();}catch(Exception ignored){}if(listener!=null)listener.onError(message);}
     private void report(String s){if(listener!=null)listener.onStatus(s);}
     private static String safe(Exception e){String m=e.getMessage();return m==null?"error de conexión":m;}
 }

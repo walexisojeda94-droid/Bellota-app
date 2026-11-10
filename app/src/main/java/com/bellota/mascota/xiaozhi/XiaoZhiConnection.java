@@ -64,23 +64,51 @@ public class XiaoZhiConnection {
         catch (Exception ignored) { return null; }
     }
     public String getTransport() {
-        if (getWebSocketConfig() != null) return "websocket";
-        if (getMqttConfig() != null) return "mqtt";
+        JSONObject ws = getWebSocketConfig();
+        if (ws != null && !ws.optString("url", "").trim().isEmpty()
+                && (!ws.optString("token", "").trim().isEmpty()
+                    || !getAccessToken().trim().isEmpty())) return "websocket";
+        JSONObject mqtt = getMqttConfig();
+        if (mqtt != null && !mqtt.optString("endpoint", "").trim().isEmpty()
+                && !mqtt.optString("username", "").trim().isEmpty()
+                && !mqtt.optString("password", "").trim().isEmpty()
+                && !mqtt.optString("publish_topic", "").trim().isEmpty()
+                && !mqtt.optString("subscribe_topic", "").trim().isEmpty()
+                && !"null".equalsIgnoreCase(mqtt.optString("subscribe_topic", "").trim())) return "mqtt";
         return null;
     }
     public boolean hasVoiceConfiguration() {
-        JSONObject ws = getWebSocketConfig();
-        if (ws != null && !ws.optString("url", "").isEmpty()) return true;
-        JSONObject mqtt = getMqttConfig();
-        return mqtt != null && !mqtt.optString("endpoint", "").isEmpty();
+        return getTransport() != null;
     }
+    private void replaceServerConfiguration(JSONObject response) {
+        SharedPreferences.Editor editor = preferences.edit()
+                .remove(KEY_WEBSOCKET_CONFIG)
+                .remove(KEY_MQTT_CONFIG);
+        if (response != null) {
+            JSONObject ws = response.optJSONObject("websocket");
+            JSONObject mqtt = response.optJSONObject("mqtt");
+            if (ws != null) editor.putString(KEY_WEBSOCKET_CONFIG, ws.toString());
+            if (mqtt != null) editor.putString(KEY_MQTT_CONFIG, mqtt.toString());
+        }
+        editor.apply();
+    }
+
     private void saveServerConfiguration(JSONObject response) {
         if (response == null) return;
-        SharedPreferences.Editor editor = preferences.edit();
         JSONObject ws = response.optJSONObject("websocket");
         JSONObject mqtt = response.optJSONObject("mqtt");
-        if (ws != null) editor.putString(KEY_WEBSOCKET_CONFIG, ws.toString());
-        if (mqtt != null) editor.putString(KEY_MQTT_CONFIG, mqtt.toString());
+        SharedPreferences.Editor editor = preferences.edit();
+
+        // Cuando OTA entrega una nueva configuración de transporte, reemplazar la
+        // anterior completa. No conservar un WebSocket/MQTT obsoleto si el servidor
+        // cambió de transporte. Las respuestas de /activate que solo traen token
+        // no contienen estas claves y por eso no borran la configuración recién recibida.
+        if (response.has("websocket") || response.has("mqtt")) {
+            editor.remove(KEY_WEBSOCKET_CONFIG);
+            editor.remove(KEY_MQTT_CONFIG);
+            if (ws != null) editor.putString(KEY_WEBSOCKET_CONFIG, ws.toString());
+            if (mqtt != null) editor.putString(KEY_MQTT_CONFIG, mqtt.toString());
+        }
         editor.apply();
     }
 
@@ -104,8 +132,9 @@ public class XiaoZhiConnection {
         }
         SharedPreferences.Editor editor = preferences.edit();
         if (!preferences.contains(KEY_CLIENT_ID)) {
-            String stableClientId = UUID.nameUUIDFromBytes(
-                    ("Bellota:" + androidId).getBytes(StandardCharsets.UTF_8)).toString();
+            // XiaoZhi espera un UUID de cliente; se genera una sola vez y se
+            // conserva en preferencias para mantener la identidad entre sesiones.
+            String stableClientId = UUID.randomUUID().toString();
             editor.putString(KEY_CLIENT_ID, stableClientId);
         }
         if (!preferences.contains(KEY_DEVICE_ID)) {
@@ -132,7 +161,7 @@ public class XiaoZhiConnection {
     private void refreshConfiguration(ActivationListener listener) {
         try {
             JSONObject response = request("POST", OTA_URL, buildDeviceReport());
-            saveServerConfiguration(response);
+            replaceServerConfiguration(response);
             if (listener != null) listener.onActivated();
         } catch (Exception e) {
             if (listener != null) listener.onError("No pude actualizar la conexión con XiaoZhi: "
@@ -143,10 +172,17 @@ public class XiaoZhiConnection {
     private void activate(ActivationListener listener) {
         try {
             JSONObject response = request("POST", OTA_URL, buildDeviceReport());
-            saveServerConfiguration(response);
+            replaceServerConfiguration(response);
             JSONObject activation = response.optJSONObject("activation");
             if (activation == null) {
-                throw new IllegalStateException("XiaoZhi no devolvió una solicitud de vinculación. Revisá la respuesta del servidor.");
+                // El protocolo oficial considera que un dispositivo sin campo
+                // "activation" no necesita vincularse nuevamente.
+                String token = response.optString("access_token", "");
+                SharedPreferences.Editor editor = preferences.edit().putBoolean(KEY_ACTIVATED, true);
+                if (!token.isEmpty()) editor.putString(KEY_ACCESS_TOKEN, token);
+                editor.apply();
+                if (listener != null) listener.onActivated();
+                return;
             }
 
             String code = activation.optString("code", "");
@@ -190,7 +226,7 @@ public class XiaoZhiConnection {
         report.put("chip_model_name", "Android");
         JSONObject application = new JSONObject();
         application.put("name", "Bellota");
-        application.put("version", "0.2.0");
+        application.put("version", "0.4.4");
         application.put("idf_version", "Android");
         application.put("elf_sha256", "");
         report.put("application", application);
@@ -240,7 +276,7 @@ public class XiaoZhiConnection {
         connection.setRequestProperty("Activation-Version", "1");
         connection.setRequestProperty("Device-Id", preferences.getString(KEY_DEVICE_ID, ""));
         connection.setRequestProperty("Client-Id", preferences.getString(KEY_CLIENT_ID, ""));
-        connection.setRequestProperty("User-Agent", "Bellota-Android/0.2.0");
+        connection.setRequestProperty("User-Agent", "Bellota-Android/0.4.4");
         connection.setRequestProperty("Accept-Language", "es-ES");
         connection.setRequestProperty("Content-Type", "application/json");
         connection.setRequestProperty("Accept", "application/json");
