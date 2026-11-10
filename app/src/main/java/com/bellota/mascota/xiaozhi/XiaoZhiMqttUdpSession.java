@@ -187,11 +187,13 @@ public final class XiaoZhiMqttUdpSession {
         byte[] header=baseNonce.clone();
         // El nonce OTA aporta el bloque base de 128 bits, pero los campos de
         // cabecera del datagrama deben respetar el protocolo UDP: tipo 0x01,
-        // flags reservados en cero, longitud, timestamp y secuencia.
+        // flags reservados en cero. Se conserva intacta la parte central del
+        // nonce OTA porque integra el IV AES-CTR; solo cambian longitud y secuencia.
         header[0]=0x01;
         header[1]=0x00;
         ByteBuffer b=ByteBuffer.wrap(header).order(ByteOrder.BIG_ENDIAN);
-        b.putShort(2,(short)payload.length);b.putInt(8,timestamp);b.putInt(12,(int)++txSequence);
+        b.putShort(2,(short)payload.length);
+        b.putInt(12,(int)++txSequence);
         byte[] encrypted=crypt(payload,header);
         byte[] packet=new byte[HEADER+encrypted.length];System.arraycopy(header,0,packet,0,HEADER);
         System.arraycopy(encrypted,0,packet,HEADER,encrypted.length);
