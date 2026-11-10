@@ -80,7 +80,13 @@ public final class XiaoZhiMqttUdpSession {
             fail("La configuración MQTT está incompleta. Se requieren endpoint, credenciales y tópicos de publicación y suscripción; no se supondrá ningún tópico.");
             return;
         }
-        if(!endpoint.matches("^[a-zA-Z][a-zA-Z0-9+.-]*://.*")) endpoint="ssl://"+endpoint;
+        // El OTA suele entregar solo host[:puerto]. El gateway oficial usa
+        // TCP sin TLS en 1883 y TLS en 8883; respetar también esquemas explícitos.
+        if (endpoint.startsWith("mqtt://")) endpoint = "tcp://" + endpoint.substring(7);
+        else if (endpoint.startsWith("mqtts://")) endpoint = "ssl://" + endpoint.substring(8);
+        else if (!endpoint.matches("^[a-zA-Z][a-zA-Z0-9+.-]*://.*")) {
+            endpoint = endpoint.endsWith(":1883") ? "tcp://" + endpoint : "ssl://" + endpoint;
+        }
         final String broker=endpoint, cid=clientId, user=username, pass=password, sub=subscribeTopic;
         io.execute(()->{
             try{
