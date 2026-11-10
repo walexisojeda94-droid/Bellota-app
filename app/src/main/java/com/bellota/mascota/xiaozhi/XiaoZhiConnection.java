@@ -65,9 +65,15 @@ public class XiaoZhiConnection {
     }
     public String getTransport() {
         JSONObject ws = getWebSocketConfig();
-        if (ws != null && !ws.optString("url", "").trim().isEmpty()) return "websocket";
+        if (ws != null && !ws.optString("url", "").trim().isEmpty()
+                && (!ws.optString("token", "").trim().isEmpty()
+                    || !getAccessToken().trim().isEmpty())) return "websocket";
         JSONObject mqtt = getMqttConfig();
-        if (mqtt != null && !mqtt.optString("endpoint", "").trim().isEmpty()) return "mqtt";
+        if (mqtt != null && !mqtt.optString("endpoint", "").trim().isEmpty()
+                && !mqtt.optString("username", "").trim().isEmpty()
+                && !mqtt.optString("password", "").trim().isEmpty()
+                && !mqtt.optString("publish_topic", "").trim().isEmpty()
+                && !mqtt.optString("subscribe_topic", "").trim().isEmpty()) return "mqtt";
         return null;
     }
     public boolean hasVoiceConfiguration() {
@@ -112,8 +118,9 @@ public class XiaoZhiConnection {
         }
         SharedPreferences.Editor editor = preferences.edit();
         if (!preferences.contains(KEY_CLIENT_ID)) {
-            String stableClientId = UUID.nameUUIDFromBytes(
-                    ("Bellota:" + androidId).getBytes(StandardCharsets.UTF_8)).toString();
+            // XiaoZhi espera un UUID de cliente; se genera una sola vez y se
+            // conserva en preferencias para mantener la identidad entre sesiones.
+            String stableClientId = UUID.randomUUID().toString();
             editor.putString(KEY_CLIENT_ID, stableClientId);
         }
         if (!preferences.contains(KEY_DEVICE_ID)) {
@@ -154,7 +161,14 @@ public class XiaoZhiConnection {
             saveServerConfiguration(response);
             JSONObject activation = response.optJSONObject("activation");
             if (activation == null) {
-                throw new IllegalStateException("XiaoZhi no devolvió una solicitud de vinculación. Revisá la respuesta del servidor.");
+                // El protocolo oficial considera que un dispositivo sin campo
+                // "activation" no necesita vincularse nuevamente.
+                String token = response.optString("access_token", "");
+                SharedPreferences.Editor editor = preferences.edit().putBoolean(KEY_ACTIVATED, true);
+                if (!token.isEmpty()) editor.putString(KEY_ACCESS_TOKEN, token);
+                editor.apply();
+                if (listener != null) listener.onActivated();
+                return;
             }
 
             String code = activation.optString("code", "");
