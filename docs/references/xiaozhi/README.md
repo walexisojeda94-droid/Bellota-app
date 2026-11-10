@@ -1,23 +1,21 @@
-# Referencia XiaoZhi
+# Referencias técnicas de XiaoZhi
 
-Esta carpeta conserva documentación del protocolo y del ecosistema XiaoZhi para consulta técnica. No es código ejecutable de la aplicación Android.
+Esta carpeta conserva documentación técnica del protocolo y del ecosistema XiaoZhi. Es material de consulta, no código ejecutable de Bellota.
 
-## Decisión del proyecto
+## Relación con Bellota
 
-Bellota utilizará XiaoZhi oficial mediante `https://xiaozhi.me` como servicio online predeterminado, una vez verificados e implementados el registro, la autenticación y el protocolo compatibles con un cliente Android propio.
+La aplicación ya contiene un cliente OTA y sesiones de voz WebSocket y MQTT/UDP. La documentación ayuda a revisar formatos de mensajes, negociación de audio, estados, notificaciones y herramientas MCP. La compatibilidad real debe comprobarse con la versión vigente del servicio y con pruebas en el dispositivo.
 
-La URL del panel no debe asumirse como endpoint de comunicación. Los detalles de conexión deben confirmarse con documentación vigente y pruebas reales.
+La URL del panel web no debe confundirse con el endpoint de comunicación del dispositivo. Bellota utiliza los parámetros de conexión entregados por el flujo OTA.
 
-## Uso de esta documentación
+## Contenido
 
-Puede consultarse para estudiar:
-- Formatos de mensajes y transporte.
-- Audio bidireccional.
-- Estados, emociones y notificaciones.
-- Integración de funciones y herramientas.
-
-El núcleo local de Bellota seguirá funcionando sin XiaoZhi. Estos documentos son referencias y no sustituyen la implementación del adaptador Android.
+- `websocket.md`, `mqtt-udp.md`: transporte y negociación de audio.
+- `mcp-protocol.md`, `mcp-usage.md`: protocolo y herramientas MCP.
+- `glyph-push.md`, `notify.md`: mensajes complementarios.
+- `README-xiaozhi-original.md`: referencia original conservada.
+- `LICENSE-XIAOZHI`: licencia asociada al material de referencia.
 
 Ver también:
-- [Integración con xiaozhi.me](../integracion-xiaozhi-me.md)
-- [Arquitectura híbrida](../arquitectura-j7-offline.md)
+- [Integración XiaoZhi en Bellota](../../integracion-xiaozhi-me.md)
+- [Arquitectura local-first](../../arquitectura-j7-offline.md)
