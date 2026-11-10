@@ -23,6 +23,9 @@ import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
@@ -42,6 +45,8 @@ public final class XiaoZhiMqttUdpSession {
     private final Listener listener;
     private final ExecutorService io=Executors.newSingleThreadExecutor();
     private final ExecutorService capture=Executors.newSingleThreadExecutor();
+    private final ScheduledExecutorService watchdog=Executors.newSingleThreadScheduledExecutor();
+    private volatile ScheduledFuture<?> helloTimeout;
     private final AtomicBoolean active=new AtomicBoolean(false), recording=new AtomicBoolean(false);
     private volatile MqttClient mqtt;
     private volatile DatagramSocket udp;
@@ -86,7 +91,7 @@ public final class XiaoZhiMqttUdpSession {
                 options.setCleanSession(true); options.setAutomaticReconnect(true);
                 options.setKeepAliveInterval(cfg.optInt("keepalive",240));
                 client.setCallback(new MqttCallback(){
-                    @Override public void connectionLost(Throwable cause){ if(active.get()) report("Se interrumpió MQTT; esperando reconexión."); }
+                    @Override public void connectionLost(Throwable cause){ if(active.get()) fail("Se perdió la conexión MQTT con XiaoZhi: "+(cause==null?"desconexión":safe(cause))); }
                     @Override public void messageArrived(String topic,MqttMessage message){handleControl(new String(message.getPayload(),java.nio.charset.StandardCharsets.UTF_8));}
                     @Override public void deliveryComplete(IMqttDeliveryToken token){}
                 });
@@ -98,6 +103,11 @@ public final class XiaoZhiMqttUdpSession {
                         .put("audio_params",new JSONObject().put("format","opus").put("sample_rate",RATE)
                                 .put("channels",1).put("frame_duration",FRAME_MS));
                 publish(hello);
+                helloTimeout = watchdog.schedule(() -> {
+                    if (active.get() && udp == null) {
+                        fail("MQTT conectó, pero XiaoZhi no respondió al hello UDP en 12 segundos.");
+                    }
+                }, 12, TimeUnit.SECONDS);
                 report("MQTT conectado. Esperando negociación del canal UDP…");
             }catch(Exception e){fail("No se pudo conectar o negociar MQTT: "+safe(e));}
         });
@@ -107,6 +117,8 @@ public final class XiaoZhiMqttUdpSession {
         try{
             JSONObject msg=new JSONObject(raw); String type=msg.optString("type","");
             if("hello".equals(type)){
+                ScheduledFuture<?> timeout = helloTimeout;
+                if (timeout != null) timeout.cancel(false);
                 if(!"udp".equals(msg.optString("transport",""))){fail("El servidor no confirmó transporte UDP.");return;}
                 String sid=msg.optString("session_id","");
                 JSONObject udpCfg=msg.optJSONObject("udp");
@@ -172,6 +184,11 @@ public final class XiaoZhiMqttUdpSession {
     private void sendAudio(byte[] payload)throws Exception{
         if(payload.length>65535)throw new IllegalArgumentException("Paquete Opus demasiado grande");
         byte[] header=baseNonce.clone();
+        // El nonce OTA aporta el bloque base de 128 bits, pero los campos de
+        // cabecera del datagrama deben respetar el protocolo UDP: tipo 0x01,
+        // flags reservados en cero, longitud, timestamp y secuencia.
+        header[0]=0x01;
+        header[1]=0x00;
         ByteBuffer b=ByteBuffer.wrap(header).order(ByteOrder.BIG_ENDIAN);
         b.putShort(2,(short)payload.length);b.putInt(8,timestamp);b.putInt(12,(int)++txSequence);
         byte[] encrypted=crypt(payload,header);
@@ -224,12 +241,14 @@ public final class XiaoZhiMqttUdpSession {
     private synchronized void releasePlayer(){if(player!=null){try{player.pause();player.flush();player.stop();}catch(Exception ignored){}player.release();player=null;}}
     private void closeUdp(){stopCapture();DatagramSocket s=udp;udp=null;if(s!=null)s.close();releasePlayer();}
     public void disconnect(){
-        active.set(false);speaking=false;stopCapture();
+        active.set(false);speaking=false;
+        ScheduledFuture<?> timeout=helloTimeout;if(timeout!=null)timeout.cancel(false);
+        stopCapture();
         try{if(sessionId!=null&&mqtt!=null&&mqtt.isConnected())publish(new JSONObject().put("session_id",sessionId).put("type","goodbye"));}catch(Exception ignored){}
         closeUdp();MqttClient c=mqtt;mqtt=null;if(c!=null)try{c.disconnect();c.close();}catch(Exception ignored){}
-        io.shutdownNow();capture.shutdownNow();
+        io.shutdownNow();capture.shutdownNow();watchdog.shutdownNow();
     }
-    private void fail(String message){Log.e(TAG,message);active.set(false);closeUdp();MqttClient c=mqtt;mqtt=null;if(c!=null)try{c.disconnect();c.close();}catch(Exception ignored){}if(listener!=null)listener.onError(message);}
+    private void fail(String message){Log.e(TAG,message);active.set(false);ScheduledFuture<?> timeout=helloTimeout;if(timeout!=null)timeout.cancel(false);closeUdp();MqttClient c=mqtt;mqtt=null;if(c!=null)try{c.disconnect();c.close();}catch(Exception ignored){}if(listener!=null)listener.onError(message);}
     private void report(String s){if(listener!=null)listener.onStatus(s);}
     private static String safe(Exception e){String m=e.getMessage();return m==null?"error de conexión":m;}
 }
