@@ -56,7 +56,6 @@ public final class XiaoZhiMqttUdpSession {
     private volatile byte[] aesKey, baseNonce;
     private volatile boolean speaking;
     private volatile long txSequence, rxSequence;
-    private volatile int timestamp;
     private AudioRecord recorder;
     private AudioTrack player;
     private OpusEncoder encoder;
@@ -138,7 +137,7 @@ public final class XiaoZhiMqttUdpSession {
                 }
                 DatagramSocket socket=new DatagramSocket();
                 socket.connect(InetAddress.getByName(host),port);
-                rxSequence=0; txSequence=0; timestamp=0; sessionId=sid; aesKey=key; baseNonce=nonce; udpHost=socket.getInetAddress();udpPort=port;udp=socket;
+                rxSequence=0; txSequence=0; sessionId=sid; aesKey=key; baseNonce=nonce; udpHost=socket.getInetAddress();udpPort=port;udp=socket;
                 downRate=rate; decoder=new OpusDecoder(rate,1); encoder=new OpusEncoder(RATE,1,OpusApplication.OPUS_APPLICATION_VOIP);
                 createPlayer(); report("Canal UDP negociado. Audio Opus "+rate+" Hz con AES-128-CTR.");
                 Thread receiver=new Thread(this::receiveLoop,"Bellota-UDP-RX");receiver.setDaemon(true);receiver.start();
@@ -175,7 +174,7 @@ public final class XiaoZhiMqttUdpSession {
                         if(filled==SAMPLES)try{
                             int len=encoder.encode(frame,0,SAMPLES,opus,0,opus.length);
                             if(len>0)sendAudio(Arrays.copyOf(opus,len));
-                            timestamp+=SAMPLES;filled=0;
+                            filled=0;
                         }catch(Exception e){fail("Error codificando Opus.");return;}
                     }
                 }
