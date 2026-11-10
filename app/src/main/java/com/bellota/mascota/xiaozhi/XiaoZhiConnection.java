@@ -226,7 +226,7 @@ public class XiaoZhiConnection {
         report.put("chip_model_name", "Android");
         JSONObject application = new JSONObject();
         application.put("name", "Bellota");
-        application.put("version", "0.4.3");
+        application.put("version", "0.4.4");
         application.put("idf_version", "Android");
         application.put("elf_sha256", "");
         report.put("application", application);
@@ -276,7 +276,7 @@ public class XiaoZhiConnection {
         connection.setRequestProperty("Activation-Version", "1");
         connection.setRequestProperty("Device-Id", preferences.getString(KEY_DEVICE_ID, ""));
         connection.setRequestProperty("Client-Id", preferences.getString(KEY_CLIENT_ID, ""));
-        connection.setRequestProperty("User-Agent", "Bellota-Android/0.4.3");
+        connection.setRequestProperty("User-Agent", "Bellota-Android/0.4.4");
         connection.setRequestProperty("Accept-Language", "es-ES");
         connection.setRequestProperty("Content-Type", "application/json");
         connection.setRequestProperty("Accept", "application/json");
