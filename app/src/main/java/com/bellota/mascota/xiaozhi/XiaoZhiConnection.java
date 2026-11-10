@@ -79,6 +79,19 @@ public class XiaoZhiConnection {
     public boolean hasVoiceConfiguration() {
         return getTransport() != null;
     }
+    private void replaceServerConfiguration(JSONObject response) {
+        SharedPreferences.Editor editor = preferences.edit()
+                .remove(KEY_WEBSOCKET_CONFIG)
+                .remove(KEY_MQTT_CONFIG);
+        if (response != null) {
+            JSONObject ws = response.optJSONObject("websocket");
+            JSONObject mqtt = response.optJSONObject("mqtt");
+            if (ws != null) editor.putString(KEY_WEBSOCKET_CONFIG, ws.toString());
+            if (mqtt != null) editor.putString(KEY_MQTT_CONFIG, mqtt.toString());
+        }
+        editor.apply();
+    }
+
     private void saveServerConfiguration(JSONObject response) {
         if (response == null) return;
         JSONObject ws = response.optJSONObject("websocket");
@@ -147,7 +160,7 @@ public class XiaoZhiConnection {
     private void refreshConfiguration(ActivationListener listener) {
         try {
             JSONObject response = request("POST", OTA_URL, buildDeviceReport());
-            saveServerConfiguration(response);
+            replaceServerConfiguration(response);
             if (listener != null) listener.onActivated();
         } catch (Exception e) {
             if (listener != null) listener.onError("No pude actualizar la conexión con XiaoZhi: "
@@ -158,7 +171,7 @@ public class XiaoZhiConnection {
     private void activate(ActivationListener listener) {
         try {
             JSONObject response = request("POST", OTA_URL, buildDeviceReport());
-            saveServerConfiguration(response);
+            replaceServerConfiguration(response);
             JSONObject activation = response.optJSONObject("activation");
             if (activation == null) {
                 // El protocolo oficial considera que un dispositivo sin campo
