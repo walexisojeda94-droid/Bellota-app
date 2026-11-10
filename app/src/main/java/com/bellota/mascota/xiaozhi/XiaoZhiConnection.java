@@ -73,7 +73,8 @@ public class XiaoZhiConnection {
                 && !mqtt.optString("username", "").trim().isEmpty()
                 && !mqtt.optString("password", "").trim().isEmpty()
                 && !mqtt.optString("publish_topic", "").trim().isEmpty()
-                && !mqtt.optString("subscribe_topic", "").trim().isEmpty()) return "mqtt";
+                && !mqtt.optString("subscribe_topic", "").trim().isEmpty()
+                && !"null".equalsIgnoreCase(mqtt.optString("subscribe_topic", "").trim())) return "mqtt";
         return null;
     }
     public boolean hasVoiceConfiguration() {
