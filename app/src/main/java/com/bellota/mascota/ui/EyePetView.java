@@ -2,6 +2,8 @@ package com.bellota.mascota.ui;
 
 import android.animation.ValueAnimator;
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
@@ -22,6 +24,20 @@ public class EyePetView extends View {
     private boolean lightTheme;
     private int autonomousScene;
     private ValueAnimator blinkAnimator;
+    private ValueAnimator gazeAnimator;
+    private final Handler animationHandler = new Handler(Looper.getMainLooper());
+    private final Runnable idleAnimation = new Runnable() {
+        @Override public void run() {
+            if (!active || !isAttachedToWindow()) return;
+            if (random.nextInt(100) < 82) {
+                animateGaze(random.nextFloat() * 0.62f - 0.31f,
+                        random.nextFloat() * 0.38f - 0.19f,
+                        650L + random.nextInt(850));
+            }
+            if (random.nextInt(100) < 48) blinkOnce();
+            animationHandler.postDelayed(this, 2200L + random.nextInt(2600));
+        }
+    };
 
     public EyePetView(Context context) {
         super(context);
@@ -81,18 +97,18 @@ public class EyePetView extends View {
     }
 
     private void animateGaze(float x, float y, long duration) {
-        animate().cancel();
-        ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
+        if (gazeAnimator != null) gazeAnimator.cancel();
+        gazeAnimator = ValueAnimator.ofFloat(0f, 1f);
         final float fromX = gazeX, fromY = gazeY;
-        animator.setDuration(duration);
-        animator.setInterpolator(new AccelerateDecelerateInterpolator());
-        animator.addUpdateListener(a -> {
+        gazeAnimator.setDuration(duration);
+        gazeAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
+        gazeAnimator.addUpdateListener(a -> {
             float f = (float)a.getAnimatedValue();
             gazeX = fromX + (x - fromX) * f;
             gazeY = fromY + (y - fromY) * f;
             invalidate();
         });
-        animator.start();
+        gazeAnimator.start();
     }
 
     private void blinkOnce() {
@@ -103,8 +119,36 @@ public class EyePetView extends View {
         blinkAnimator.start();
     }
 
-    public void pauseAnimation() { active = false; if (blinkAnimator != null) blinkAnimator.cancel(); }
-    public void resumeAnimation() { active = true; }
+    private void scheduleIdleAnimation() {
+        animationHandler.removeCallbacks(idleAnimation);
+        if (active && isAttachedToWindow()) animationHandler.postDelayed(idleAnimation, 1200L);
+    }
+
+    @Override protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        active = true;
+        scheduleIdleAnimation();
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        active = false;
+        animationHandler.removeCallbacks(idleAnimation);
+        if (blinkAnimator != null) blinkAnimator.cancel();
+        if (gazeAnimator != null) gazeAnimator.cancel();
+        super.onDetachedFromWindow();
+    }
+
+    public void pauseAnimation() {
+        active = false;
+        animationHandler.removeCallbacks(idleAnimation);
+        if (blinkAnimator != null) blinkAnimator.cancel();
+        if (gazeAnimator != null) gazeAnimator.cancel();
+    }
+
+    public void resumeAnimation() {
+        active = true;
+        scheduleIdleAnimation();
+    }
 
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);

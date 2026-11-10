@@ -60,6 +60,9 @@ public class MainActivity extends Activity implements SensorEventListener {
     private XiaoZhiVoiceSession xiaoZhiVoiceSession;
     private XiaoZhiMqttUdpSession xiaoZhiMqttUdpSession;
     private boolean xiaoZhiVoiceFailed;
+    private boolean xiaoZhiRefreshPending = true;
+    private String pendingXiaoZhiTranscript;
+    private Runnable pendingXiaoZhiFallback;
     private McpConnection mcpConnection;
     private McpCredentialStore mcpCredentialStore;
     private String pendingXiaoZhiCode;
@@ -198,7 +201,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (Build.VERSION.SDK_INT >= 23
                 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         if (xiaoZhiVoiceSession != null || xiaoZhiMqttUdpSession != null) return;
-        if (!xiaoZhiVoiceFailed && xiaoZhiConnection != null && xiaoZhiConnection.isConfigured()
+        if (!xiaoZhiRefreshPending && !xiaoZhiVoiceFailed && xiaoZhiConnection != null && xiaoZhiConnection.isConfigured()
                 && xiaoZhiConnection.hasVoiceConfiguration()) {
             if ("mqtt".equals(xiaoZhiConnection.getTransport())) startXiaoZhiMqtt();
             else startXiaoZhiVoice();
@@ -225,7 +228,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 runOnUiThread(() -> {
                     if (autonomy != null) autonomy.onInteraction(petLife,"attention");
                     if (petMemory != null) petMemory.remember("conversacion_usuario", transcript);
-                    if (conversationEngine != null) conversationEngine.rememberOnlineMessage(transcript);
+                    queueLocalFallback(transcript);
                     if (eyes != null) eyes.reactToAttention();
                     android.util.Log.i("BellotaXiaoZhi", "Usuario: " + transcript);
                 });
@@ -233,6 +236,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             @Override public void onSpeaking(boolean speaking) {
                 runOnUiThread(() -> {
                     if (speaking) {
+                        completeOnlineTurn();
                         if (localVoice != null) localVoice.stop();
                         if (eyes != null) eyes.setMood(EyePetView.Mood.HAPPY);
                     } else if (eyes != null) {
@@ -244,6 +248,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 runOnUiThread(() -> {
                     android.util.Log.e("BellotaXiaoZhi", message);
                     xiaoZhiVoiceFailed = true;
+                    fallbackPendingTranscript();
                     if (xiaoZhiVoiceSession != null) {
                         xiaoZhiVoiceSession.disconnect();
                         xiaoZhiVoiceSession = null;
@@ -268,13 +273,13 @@ public class MainActivity extends Activity implements SensorEventListener {
                 runOnUiThread(() -> {
                     if (autonomy != null) autonomy.onInteraction(petLife,"attention");
                     if (petMemory != null) petMemory.remember("conversacion_usuario", transcript);
-                    if (conversationEngine != null) conversationEngine.rememberOnlineMessage(transcript);
+                    queueLocalFallback(transcript);
                     if (eyes != null) eyes.reactToAttention();
                 });
             }
             @Override public void onSpeaking(boolean speaking) {
                 runOnUiThread(() -> {
-                    if (speaking) { if (localVoice != null) localVoice.stop(); if (eyes != null) eyes.setMood(EyePetView.Mood.HAPPY); }
+                    if (speaking) { completeOnlineTurn(); if (localVoice != null) localVoice.stop(); if (eyes != null) eyes.setMood(EyePetView.Mood.HAPPY); }
                     else if (eyes != null) eyes.setMood(EyePetView.Mood.CALM);
                 });
             }
@@ -282,12 +287,47 @@ public class MainActivity extends Activity implements SensorEventListener {
                 runOnUiThread(() -> {
                     android.util.Log.e("BellotaXiaoZhi", message);
                     xiaoZhiVoiceFailed = true;
+                    fallbackPendingTranscript();
                     if (xiaoZhiMqttUdpSession != null) { xiaoZhiMqttUdpSession.disconnect(); xiaoZhiMqttUdpSession = null; }
                     if (!isFinishing() && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startVoiceCommands();
                 });
             }
         });
         xiaoZhiMqttUdpSession.connect();
+    }
+
+    private void queueLocalFallback(String transcript) {
+        cancelLocalFallback(false);
+        if (transcript == null || transcript.trim().isEmpty()) return;
+        pendingXiaoZhiTranscript = transcript;
+        pendingXiaoZhiFallback = () -> {
+            String unanswered = pendingXiaoZhiTranscript;
+            pendingXiaoZhiTranscript = null;
+            pendingXiaoZhiFallback = null;
+            if (!isFinishing() && unanswered != null) {
+                android.util.Log.w("BellotaVoice", "XiaoZhi no inició TTS; usando respuesta local.");
+                handleVoiceCommand(unanswered);
+            }
+        };
+        handler.postDelayed(pendingXiaoZhiFallback, 9000L);
+    }
+
+    private void completeOnlineTurn() { cancelLocalFallback(true); }
+
+    private void cancelLocalFallback(boolean answeredOnline) {
+        if (pendingXiaoZhiFallback != null) handler.removeCallbacks(pendingXiaoZhiFallback);
+        pendingXiaoZhiFallback = null;
+        String transcript = pendingXiaoZhiTranscript;
+        pendingXiaoZhiTranscript = null;
+        if (answeredOnline && transcript != null && conversationEngine != null) {
+            conversationEngine.rememberOnlineMessage(transcript);
+        }
+    }
+
+    private void fallbackPendingTranscript() {
+        String transcript = pendingXiaoZhiTranscript;
+        cancelLocalFallback(false);
+        if (transcript != null && !isFinishing()) handleVoiceCommand(transcript);
     }
 
     private void handleVoiceCommand(String spoken) {
@@ -349,6 +389,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
             @Override public void onActivated() {
                 runOnUiThread(() -> {
+                    xiaoZhiRefreshPending = false;
                     String transport = xiaoZhiConnection.getTransport();
                     android.util.Log.i("BellotaXiaoZhi", "OTA actualizado. Transporte recibido: "
                             + (transport == null ? "ninguno" : transport));
@@ -359,13 +400,21 @@ public class MainActivity extends Activity implements SensorEventListener {
                         xiaoZhiVoiceFailed = false;
                         startXiaoZhiMqtt();
                     } else {
+                        xiaoZhiVoiceFailed = true;
                         speakIfEnabled("Bellota todavía no recibió una configuración de voz de XiaoZhi. Voy a mantener el modo local.");
                         android.util.Log.w("BellotaXiaoZhi", "El OTA no entregó un transporte de voz.");
+                        startVoiceCommands();
                     }
                 });
             }
             @Override public void onError(String message) {
-                runOnUiThread(() -> speakIfEnabled("Todavía no pude obtener el código de XiaoZhi. " + message));
+                runOnUiThread(() -> {
+                    xiaoZhiRefreshPending = false;
+                    xiaoZhiVoiceFailed = true;
+                    android.util.Log.w("BellotaXiaoZhi", "OTA no disponible; continúo en modo local: " + message);
+                    speakIfEnabled("Todavía no pude obtener la conexión de XiaoZhi. Voy a seguir funcionando en modo local.");
+                    startVoiceCommands();
+                });
             }
         });
     }
@@ -466,6 +515,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     @Override protected void onPause() {
+        cancelLocalFallback(false);
         if (voiceCommands != null) voiceCommands.stop();
         if (xiaoZhiVoiceSession != null) { xiaoZhiVoiceSession.disconnect(); xiaoZhiVoiceSession = null; }
         if (xiaoZhiMqttUdpSession != null) { xiaoZhiMqttUdpSession.disconnect(); xiaoZhiMqttUdpSession = null; }
@@ -475,6 +525,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     @Override protected void onDestroy() {
+        cancelLocalFallback(false);
         handler.removeCallbacksAndMessages(null);
         if (voiceCommands != null) { voiceCommands.stop(); voiceCommands = null; }
         if (xiaoZhiVoiceSession != null) { xiaoZhiVoiceSession.disconnect(); xiaoZhiVoiceSession = null; }

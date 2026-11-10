@@ -14,7 +14,9 @@ public class LocalVoice implements TextToSpeech.OnInitListener {
     private final Listener listener;
     private Runnable onSpeechFinished;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private boolean ready;
+    private volatile boolean ready;
+    private String pendingText;
+    private long utteranceSequence;
 
     public LocalVoice(Context context, Listener listener) {
         this.listener = listener;
@@ -41,21 +43,36 @@ public class LocalVoice implements TextToSpeech.OnInitListener {
             });
         }
         notifyListener(ready, ready ? "Voz local lista. Idioma español." : "Falta instalar una voz española en Android.");
+        if (ready && pendingText != null) {
+            String queued = pendingText;
+            pendingText = null;
+            speak(queued);
+        }
     }
 
     public boolean isReady() { return ready; }
     public void setOnSpeechFinished(Runnable callback) { onSpeechFinished = callback; }
 
     public void speak(String text) {
-        if (!ready || text == null || text.trim().isEmpty()) {
+        if (text == null || text.trim().isEmpty()) {
             finishSpeech();
             return;
         }
-        engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "bellota-local-voice");
+        if (!ready) {
+            pendingText = text;
+            return;
+        }
+        int result = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null,
+                "bellota-local-voice-" + (++utteranceSequence));
+        if (result == TextToSpeech.ERROR) finishSpeech();
     }
 
     public void stop() { if (engine != null) engine.stop(); }
-    public void release() { ready = false; if (engine != null) engine.shutdown(); }
+    public void release() {
+        ready = false;
+        pendingText = null;
+        if (engine != null) engine.shutdown();
+    }
 
     private void finishSpeech() {
         mainHandler.post(() -> { if (onSpeechFinished != null) onSpeechFinished.run(); });
