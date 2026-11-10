@@ -1,27 +1,49 @@
-# Aplicación Android Bellota
+# Aplicación Android
 
-Proyecto Android orientado al Samsung Galaxy J7 con Android 8.1 (API 27).
+Módulo Android nativo de Bellota. Paquete: `com.bellota.mascota`.
 
-## Funciones presentes en esta etapa
+## Plataforma
 
-- Pantalla principal con expresiones GIF.
-- Pantalla siempre encendida mientras la actividad está visible.
-- Edad virtual persistente: un año de Bellota equivale a 30 días reales desde el primer inicio.
-- Estado básico de energía y diversión guardado localmente.
-- Comportamientos autónomos sencillos durante los períodos de inactividad.
-- Solicitud de permisos de micrófono y cámara.
-- Reconocimiento de voz por sesiones consecutivas mediante el servicio instalado en Android.
-- Comandos iniciales: «Silencio, Bellota» y «Sonido, Bellota».
-- Voz local Android TextToSpeech como respuesta de respaldo.
+- Android mínimo: API 27 (Android 8.1).
+- Target SDK: API 28.
+- Compile SDK: API 35.
+- Lenguaje: Java 8.
+- Compilación CI: Java 17 y Gradle 8.7.
+- Orientación de la experiencia: horizontal, pantalla inmersiva.
 
-## Limitaciones pendientes
+## Componentes
 
-- El reconocimiento continuo depende del proveedor de voz instalado y puede tener pausas o requerir conectividad. No equivale todavía a la escucha de baja latencia integrada con XiaoZhi.
-- «Mira esto, Bellota» y la captura real de cámara frontal con análisis visual todavía no están conectados.
-- La activación OTA, autenticación, WebSocket y audio Opus de XiaoZhi todavía no están implementados.
-- La memoria de esta etapa guarda edad y necesidades básicas; todavía no conserva recuerdos semánticos de conversaciones.
-- Los comportamientos autónomos iniciales usan reglas y frases locales, no decisiones de un modelo de IA.
+| Paquete | Responsabilidad |
+| --- | --- |
+| `core/` | Ciclo de vida, necesidades, memoria de eventos y conducta autónoma. |
+| `local/` | Conversación offline, normalización de texto, contexto y memoria conversacional. |
+| `ui/` | Ojos vectoriales, expresiones y animaciones. |
+| `voice/` | TextToSpeech local y reconocimiento de comandos de Android. |
+| `xiaozhi/` | Activación OTA, sesiones WebSocket/MQTT-UDP, audio Opus y MCP. |
+| `weather/` | Consulta meteorológica mediante Open-Meteo. |
+
+## Comportamiento actual
+
+- La pantalla mantiene visibles los ojos animados y reacciona a toques.
+- La rutina autónoma puede hacer que Bellota explore, piense, juegue, descanse o inicie una interacción.
+- La edad virtual y las necesidades básicas se guardan localmente.
+- El motor local ofrece respuestas acotadas y conserva algunos datos de conversación.
+- La voz local usa el motor TextToSpeech instalado en Android.
+- XiaoZhi solicita la configuración OTA y, según el transporte recibido, inicia WebSocket o MQTT/UDP con audio Opus.
+- Si la sesión online falla, la actividad pasa al reconocimiento y la voz local como respaldo.
+- El clima se consulta bajo demanda y requiere permiso de ubicación.
+- MCP es opcional y se configura desde un acceso oculto mediante pulsación prolongada sobre los ojos.
 
 ## Compilación
 
-El workflow de GitHub Actions compila la aplicación con Java 17 y Gradle 8.7 y publica el APK de depuración como artefacto de la ejecución.
+Desde la raíz del repositorio:
+
+```bash
+gradle --no-daemon :app:assembleDebug
+```
+
+Para generar una versión release firmada, configurar los secretos de firma documentados en el workflow de GitHub Actions. Nunca guardar el keystore ni sus contraseñas dentro del repositorio.
+
+## Validación pendiente
+
+La integración de red y audio está implementada, pero debe probarse con una vinculación real de XiaoZhi y en el Samsung Galaxy J7 objetivo. También deben medirse estabilidad, latencia, consumo de batería, memoria y funcionamiento offline. No considerar estas pruebas aprobadas solo porque el APK compile.
