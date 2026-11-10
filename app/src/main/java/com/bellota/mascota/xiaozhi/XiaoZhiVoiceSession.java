@@ -52,6 +52,7 @@ public final class XiaoZhiVoiceSession {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean capturing = new AtomicBoolean(false);
     private final AtomicBoolean intentionalClose = new AtomicBoolean(false);
+    private final AtomicBoolean firstDownlinkPacket = new AtomicBoolean(false);
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable helloTimeout = this::checkHelloTimeout;
     private volatile WebSocket socket;
@@ -81,6 +82,7 @@ public final class XiaoZhiVoiceSession {
     public void connect() {
         if (running.get()) return;
         intentionalClose.set(false);
+        firstDownlinkPacket.set(false);
         JSONObject cfg = identity.getWebSocketConfig();
         if (cfg == null) {
             reportError("XiaoZhi no entregó configuración WebSocket para voz.");
@@ -120,6 +122,7 @@ public final class XiaoZhiVoiceSession {
             reportStatus("Conectando con XiaoZhi…");
             socket = http.newWebSocket(request, new WebSocketListener() {
                 @Override public void onOpen(WebSocket webSocket, Response response) {
+                    Log.i(TAG, "Handshake WebSocket HTTP " + response.code() + "; enviando hello.");
                     mainHandler.postDelayed(helloTimeout, 10000L);
                     try {
                         JSONObject hello = new JSONObject();
@@ -217,6 +220,7 @@ public final class XiaoZhiVoiceSession {
                 recreatePlayer();
                 audioNegotiated = true;
                 running.set(true);
+                Log.i(TAG, "Hello aceptado. Opus mono; subida 16000 Hz, bajada " + downlinkRate + " Hz.");
                 reportStatus("Bellota está conectada a XiaoZhi.");
                 startListening();
             } else if ("stt".equals(type)) {
@@ -225,6 +229,7 @@ public final class XiaoZhiVoiceSession {
             } else if ("tts".equals(type)) {
                 String state = msg.optString("state", "");
                 if ("start".equals(state)) {
+                    Log.i(TAG, "XiaoZhi inició TTS.");
                     serverSpeaking = true;
                     stopCapture();
                     if (listener != null) listener.onSpeaking(true);
@@ -330,6 +335,9 @@ public final class XiaoZhiVoiceSession {
     private void handleAudio(byte[] packet) {
         if (!running.get() || !audioNegotiated || negotiatedProtocolVersion != 1
                 || !serverSpeaking || packet.length == 0) return;
+        if (firstDownlinkPacket.compareAndSet(false, true)) {
+            Log.i(TAG, "Primer paquete Opus recibido desde XiaoZhi: " + packet.length + " bytes.");
+        }
         try {
             if (player == null) createPlayer();
             short[] pcm = new short[5760];
