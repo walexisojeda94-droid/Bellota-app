@@ -64,23 +64,31 @@ public class XiaoZhiConnection {
         catch (Exception ignored) { return null; }
     }
     public String getTransport() {
-        if (getWebSocketConfig() != null) return "websocket";
-        if (getMqttConfig() != null) return "mqtt";
+        JSONObject ws = getWebSocketConfig();
+        if (ws != null && !ws.optString("url", "").trim().isEmpty()) return "websocket";
+        JSONObject mqtt = getMqttConfig();
+        if (mqtt != null && !mqtt.optString("endpoint", "").trim().isEmpty()) return "mqtt";
         return null;
     }
     public boolean hasVoiceConfiguration() {
-        JSONObject ws = getWebSocketConfig();
-        if (ws != null && !ws.optString("url", "").isEmpty()) return true;
-        JSONObject mqtt = getMqttConfig();
-        return mqtt != null && !mqtt.optString("endpoint", "").isEmpty();
+        return getTransport() != null;
     }
     private void saveServerConfiguration(JSONObject response) {
         if (response == null) return;
-        SharedPreferences.Editor editor = preferences.edit();
         JSONObject ws = response.optJSONObject("websocket");
         JSONObject mqtt = response.optJSONObject("mqtt");
-        if (ws != null) editor.putString(KEY_WEBSOCKET_CONFIG, ws.toString());
-        if (mqtt != null) editor.putString(KEY_MQTT_CONFIG, mqtt.toString());
+        SharedPreferences.Editor editor = preferences.edit();
+
+        // Cuando OTA entrega una nueva configuración de transporte, reemplazar la
+        // anterior completa. No conservar un WebSocket/MQTT obsoleto si el servidor
+        // cambió de transporte. Las respuestas de /activate que solo traen token
+        // no contienen estas claves y por eso no borran la configuración recién recibida.
+        if (response.has("websocket") || response.has("mqtt")) {
+            editor.remove(KEY_WEBSOCKET_CONFIG);
+            editor.remove(KEY_MQTT_CONFIG);
+            if (ws != null) editor.putString(KEY_WEBSOCKET_CONFIG, ws.toString());
+            if (mqtt != null) editor.putString(KEY_MQTT_CONFIG, mqtt.toString());
+        }
         editor.apply();
     }
 
@@ -190,7 +198,7 @@ public class XiaoZhiConnection {
         report.put("chip_model_name", "Android");
         JSONObject application = new JSONObject();
         application.put("name", "Bellota");
-        application.put("version", "0.2.0");
+        application.put("version", "0.4.3");
         application.put("idf_version", "Android");
         application.put("elf_sha256", "");
         report.put("application", application);
@@ -240,7 +248,7 @@ public class XiaoZhiConnection {
         connection.setRequestProperty("Activation-Version", "1");
         connection.setRequestProperty("Device-Id", preferences.getString(KEY_DEVICE_ID, ""));
         connection.setRequestProperty("Client-Id", preferences.getString(KEY_CLIENT_ID, ""));
-        connection.setRequestProperty("User-Agent", "Bellota-Android/0.2.0");
+        connection.setRequestProperty("User-Agent", "Bellota-Android/0.4.3");
         connection.setRequestProperty("Accept-Language", "es-ES");
         connection.setRequestProperty("Content-Type", "application/json");
         connection.setRequestProperty("Accept", "application/json");
