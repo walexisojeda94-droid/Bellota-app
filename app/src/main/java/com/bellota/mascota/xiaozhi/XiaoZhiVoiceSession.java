@@ -53,11 +53,7 @@ public final class XiaoZhiVoiceSession {
     private final AtomicBoolean capturing = new AtomicBoolean(false);
     private final AtomicBoolean intentionalClose = new AtomicBoolean(false);
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final Runnable helloTimeout = () -> {
-        if (!running.get() && socket != null && !audioNegotiated) {
-            fail("XiaoZhi abrió WebSocket pero no completó la negociación hello en 10 segundos.");
-        }
-    };
+    private final Runnable helloTimeout = this::checkHelloTimeout;
     private volatile WebSocket socket;
     private volatile String sessionId;
     private volatile boolean serverSpeaking;
@@ -68,6 +64,12 @@ public final class XiaoZhiVoiceSession {
     private AudioTrack player;
     private OpusEncoder encoder;
     private OpusDecoder decoder;
+
+    private void checkHelloTimeout() {
+        if (!running.get() && socket != null && !audioNegotiated) {
+            fail("XiaoZhi abrió WebSocket pero no completó la negociación hello en 10 segundos.");
+        }
+    }
 
     public XiaoZhiVoiceSession(XiaoZhiConnection identity, Listener listener) {
         this.identity = identity;
