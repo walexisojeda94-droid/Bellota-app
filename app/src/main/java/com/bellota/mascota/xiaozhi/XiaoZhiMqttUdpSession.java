@@ -151,7 +151,9 @@ public final class XiaoZhiMqttUdpSession {
                 else if("stop".equals(state)){speaking=false;if(listener!=null)listener.onSpeaking(false);startListening();}
             }else if("llm".equals(type)){
                 report("XiaoZhi: "+msg.optString("emotion","está pensando…"));
-            }else if("goodbye".equals(type)){closeUdp();active.set(false);report("XiaoZhi cerró la sesión de audio.");}
+            }else if("goodbye".equals(type)){
+                fail("XiaoZhi cerró la sesión de audio UDP.");
+            }
         }catch(Exception e){fail("Respuesta MQTT/UDP inválida: "+safe(e));}
     }
 
