@@ -90,7 +90,7 @@ public final class XiaoZhiMqttUdpSession {
                 options.setCleanSession(true); options.setAutomaticReconnect(true);
                 options.setKeepAliveInterval(cfg.optInt("keepalive",240));
                 client.setCallback(new MqttCallback(){
-                    @Override public void connectionLost(Throwable cause){ if(active.get()) fail("Se perdió la conexión MQTT con XiaoZhi: "+(cause==null?"desconexión":safe(cause))); }
+                    @Override public void connectionLost(Throwable cause){ if(active.get()) fail("Se perdió la conexión MQTT con XiaoZhi: "+(cause==null||cause.getMessage()==null?"desconexión":cause.getMessage())); }
                     @Override public void messageArrived(String topic,MqttMessage message){handleControl(new String(message.getPayload(),java.nio.charset.StandardCharsets.UTF_8));}
                     @Override public void deliveryComplete(IMqttDeliveryToken token){}
                 });
