@@ -5,6 +5,8 @@ import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
 import android.media.AudioManager;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import org.concentus.OpusApplication;
@@ -49,6 +51,12 @@ public final class XiaoZhiVoiceSession {
     private final ExecutorService audioExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean capturing = new AtomicBoolean(false);
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable helloTimeout = () -> {
+        if (!running.get() && socket != null && !audioNegotiated) {
+            fail("XiaoZhi abrió WebSocket pero no completó la negociación hello en 10 segundos.");
+        }
+    };
     private volatile WebSocket socket;
     private volatile String sessionId;
     private volatile boolean serverSpeaking;
@@ -108,6 +116,7 @@ public final class XiaoZhiVoiceSession {
             reportStatus("Conectando con XiaoZhi…");
             socket = http.newWebSocket(request, new WebSocketListener() {
                 @Override public void onOpen(WebSocket webSocket, Response response) {
+                    mainHandler.postDelayed(helloTimeout, 10000L);
                     try {
                         JSONObject hello = new JSONObject();
                         hello.put("type", "hello");
@@ -135,9 +144,16 @@ public final class XiaoZhiVoiceSession {
                 }
 
                 @Override public void onClosed(WebSocket webSocket, int code, String reason) {
+                    boolean wasActive = running.get() || audioNegotiated;
+                    mainHandler.removeCallbacks(helloTimeout);
                     stopAudio();
                     running.set(false);
-                    reportStatus("Conexión XiaoZhi cerrada.");
+                    if (wasActive) {
+                        reportError("XiaoZhi cerró inesperadamente la sesión de voz ("
+                                + code + (reason == null || reason.isEmpty() ? "" : ": " + reason) + ").");
+                    } else {
+                        reportStatus("Conexión XiaoZhi cerrada.");
+                    }
                 }
             });
         } catch (Exception e) {
@@ -164,6 +180,7 @@ public final class XiaoZhiVoiceSession {
                             + ", pero Bellota inició con v" + negotiatedProtocolVersion + ".");
                     return;
                 }
+                mainHandler.removeCallbacks(helloTimeout);
                 JSONObject params = msg.optJSONObject("audio_params");
                 String format = params == null ? "opus" : params.optString("format", "opus");
                 if (!"opus".equalsIgnoreCase(format)) {
@@ -175,7 +192,7 @@ public final class XiaoZhiVoiceSession {
                     fail("XiaoZhi solicitó audio de " + channels + " canales. Bellota solo tiene implementado Opus mono.");
                     return;
                 }
-                int rate = params == null ? UPLINK_RATE : params.optInt("sample_rate", UPLINK_RATE);
+                int rate = params == null ? downlinkRate : params.optInt("sample_rate", downlinkRate);
                 if (rate != 8000 && rate != 12000 && rate != 16000 && rate != 24000 && rate != 48000) {
                     fail("XiaoZhi solicitó una frecuencia de audio no compatible: " + rate + " Hz.");
                     return;
@@ -349,6 +366,7 @@ public final class XiaoZhiVoiceSession {
     }
 
     public void disconnect() {
+        mainHandler.removeCallbacks(helloTimeout);
         running.set(false);
         serverSpeaking = false;
         stopAudio();
@@ -358,6 +376,7 @@ public final class XiaoZhiVoiceSession {
     }
 
     private void fail(String message) {
+        mainHandler.removeCallbacks(helloTimeout);
         running.set(false);
         stopAudio();
         WebSocket ws = socket;
