@@ -313,7 +313,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 handleVoiceCommand(unanswered);
             }
         };
-        handler.postDelayed(pendingXiaoZhiFallback, 9000L);
+        handler.postDelayed(pendingXiaoZhiFallback, 20000L);
     }
 
     private void completeOnlineTurn() { cancelLocalFallback(true); }
@@ -435,6 +435,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (isFinishing()) return;
         xiaoZhiVoiceFailed = true;
         xiaoZhiRefreshPending = true;
+        // No dejar el reconocedor local compitiendo mientras se recupera XiaoZhi.
+        if (voiceCommands != null) voiceCommands.stop();
         if (xiaoZhiVoiceSession != null) {
             xiaoZhiVoiceSession.disconnect();
             xiaoZhiVoiceSession = null;
