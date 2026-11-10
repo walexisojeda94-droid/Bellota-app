@@ -156,6 +156,7 @@ public final class XiaoZhiVoiceSession {
                     boolean unexpected = !intentionalClose.get();
                     mainHandler.removeCallbacks(helloTimeout);
                     stopAudio();
+                    audioExecutor.shutdownNow();
                     running.set(false);
                     if (unexpected) {
                         reportError("XiaoZhi cerró la sesión de voz ("
@@ -383,6 +384,7 @@ public final class XiaoZhiVoiceSession {
         running.set(false);
         serverSpeaking = false;
         stopAudio();
+        audioExecutor.shutdownNow();
         WebSocket ws = socket;
         socket = null;
         if (ws != null) ws.close(1000, "Bellota cerrando sesión");
@@ -393,6 +395,7 @@ public final class XiaoZhiVoiceSession {
         mainHandler.removeCallbacks(helloTimeout);
         running.set(false);
         stopAudio();
+        audioExecutor.shutdownNow();
         WebSocket ws = socket;
         socket = null;
         if (ws != null) ws.cancel();
