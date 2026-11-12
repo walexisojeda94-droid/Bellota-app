@@ -161,6 +161,13 @@ public class XiaoZhiConnection {
     private void refreshConfiguration(ActivationListener listener) {
         try {
             JSONObject response = request("POST", OTA_URL, buildDeviceReport());
+            if (response.optJSONObject("activation") != null) {
+                // El servidor volvió a pedir vinculación (dispositivo desvinculado o token
+                // revocado): descartar el estado local y repetir el flujo de activación.
+                preferences.edit().putBoolean(KEY_ACTIVATED, false).remove(KEY_ACCESS_TOKEN).apply();
+                handleActivationResponse(response, listener);
+                return;
+            }
             replaceServerConfiguration(response);
             if (listener != null) listener.onActivated();
         } catch (Exception e) {
@@ -171,7 +178,14 @@ public class XiaoZhiConnection {
 
     private void activate(ActivationListener listener) {
         try {
-            JSONObject response = request("POST", OTA_URL, buildDeviceReport());
+            handleActivationResponse(request("POST", OTA_URL, buildDeviceReport()), listener);
+        } catch (Exception e) {
+            if (listener != null) listener.onError(e.getMessage() == null ? "No se pudo conectar con XiaoZhi." : e.getMessage());
+        }
+    }
+
+    private void handleActivationResponse(JSONObject response, ActivationListener listener) {
+        try {
             replaceServerConfiguration(response);
             JSONObject activation = response.optJSONObject("activation");
             if (activation == null) {
