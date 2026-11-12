@@ -42,7 +42,7 @@ public final class McpConnection {
             return;
         }
         Request request = new Request.Builder().url(endpoint)
-                .header("User-Agent", "Bellota-Android/0.2.0").build();
+                .header("User-Agent", "Bellota-Android/0.4.4").build();
         notifyStatus("Conectando con XiaoZhi…");
         socket = client.newWebSocket(request, new WebSocketListener() {
             @Override public void onOpen(WebSocket ws, Response r) { notifyStatus("MCP conectado. Esperando a XiaoZhi…"); }
@@ -71,7 +71,7 @@ public final class McpConnection {
                     JSONObject result = new JSONObject()
                             .put("protocolVersion", "2024-11-05")
                             .put("capabilities", new JSONObject().put("tools", new JSONObject()))
-                            .put("serverInfo", new JSONObject().put("name", "Bellota").put("version", "0.2.0"));
+                            .put("serverInfo", new JSONObject().put("name", "Bellota").put("version", "0.4.4"));
                     reply(ws, id, result);
                     notifyStatus("XiaoZhi inicializó MCP.");
                     break;
