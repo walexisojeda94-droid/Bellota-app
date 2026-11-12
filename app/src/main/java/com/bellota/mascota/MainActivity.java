@@ -61,6 +61,9 @@ public class MainActivity extends Activity implements SensorEventListener {
     private XiaoZhiMqttUdpSession xiaoZhiMqttUdpSession;
     private boolean xiaoZhiVoiceFailed;
     private boolean xiaoZhiRefreshPending = true;
+    private boolean xiaoZhiActivationInFlight;
+    private boolean paused;
+    private static final int LOCAL_FALLBACK_AFTER_RETRIES = 3;
     private int xiaoZhiRetryAttempts;
     private Runnable xiaoZhiRetryTask;
     private String pendingXiaoZhiTranscript;
@@ -76,7 +79,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     private long lastThemeChange;
     private final Runnable autonomousRoutine = new Runnable() {
         @Override public void run() {
-            if (eyes != null && autonomy != null && !isFinishing()) {
+            if (eyes != null && autonomy != null && !isFinishing() && !paused) {
                 int hour=java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
                 AutonomousBehavior.Action action=autonomy.next(petLife,hour>=0 && hour<7);
                 if(action!=AutonomousBehavior.Action.NONE && petMemory!=null) petMemory.remember("actividad", action.name());
@@ -209,13 +212,22 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (xiaoZhiVoiceSession != null || xiaoZhiMqttUdpSession != null) return;
         // Mientras se programa una reconexión, no arrancar el reconocedor local
         // como si fuera el motor principal: XiaoZhi sigue siendo el canal prioritario.
-        if (xiaoZhiRetryTask != null) return;
+        if (xiaoZhiRetryTask != null && xiaoZhiRetryAttempts < LOCAL_FALLBACK_AFTER_RETRIES) return;
         if (!xiaoZhiRefreshPending && !xiaoZhiVoiceFailed && xiaoZhiConnection != null && xiaoZhiConnection.isConfigured()
                 && xiaoZhiConnection.hasVoiceConfiguration()) {
             if ("mqtt".equals(xiaoZhiConnection.getTransport())) startXiaoZhiMqtt();
             else startXiaoZhiVoice();
             return;
         }
+        startLocalRecognizer();
+    }
+
+    /** Reconocimiento local de Android; también sirve de respaldo cuando XiaoZhi sigue sin conectar. */
+    private void startLocalRecognizer() {
+        if (paused || isFinishing()) return;
+        if (Build.VERSION.SDK_INT >= 23
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+        if (xiaoZhiVoiceSession != null || xiaoZhiMqttUdpSession != null) return;
         if (voiceCommands != null) voiceCommands.stop();
         voiceCommands = new ContinuousVoiceCommands(this, new ContinuousVoiceCommands.Listener() {
             @Override public void onRecognized(String spoken) { handleVoiceCommand(spoken); }
@@ -227,7 +239,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     private void startXiaoZhiVoice() {
         if (Build.VERSION.SDK_INT >= 23
                 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
-        if (xiaoZhiVoiceSession != null || xiaoZhiVoiceFailed || xiaoZhiConnection == null || isFinishing()) return;
+        if (xiaoZhiVoiceSession != null || xiaoZhiVoiceFailed || xiaoZhiConnection == null || isFinishing() || paused) return;
         if (voiceCommands != null) voiceCommands.stop();
         xiaoZhiVoiceSession = new XiaoZhiVoiceSession(xiaoZhiConnection, new XiaoZhiVoiceSession.Listener() {
             @Override public void onStatus(String status) {
@@ -268,7 +280,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     private void startXiaoZhiMqtt() {
         if (Build.VERSION.SDK_INT >= 23
                 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
-        if (xiaoZhiMqttUdpSession != null || xiaoZhiVoiceFailed || xiaoZhiConnection == null || isFinishing()) return;
+        if (xiaoZhiMqttUdpSession != null || xiaoZhiVoiceFailed || xiaoZhiConnection == null || isFinishing() || paused) return;
         if (voiceCommands != null) voiceCommands.stop();
         xiaoZhiMqttUdpSession = new XiaoZhiMqttUdpSession(xiaoZhiConnection, new XiaoZhiMqttUdpSession.Listener() {
             @Override public void onStatus(String status) {
@@ -372,7 +384,8 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void requestXiaoZhiActivation() {
-        if (xiaoZhiConnection == null) return;
+        if (xiaoZhiConnection == null || xiaoZhiActivationInFlight) return;
+        xiaoZhiActivationInFlight = true;
         // Siempre consultar OTA: si ya está vinculado, se renueva la configuración
         // WebSocket/MQTT sin pedir otro código de activación.
         xiaoZhiConnection.requestActivationCode(new XiaoZhiConnection.ActivationListener() {
@@ -393,6 +406,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
             @Override public void onActivated() {
                 runOnUiThread(() -> {
+                    xiaoZhiActivationInFlight = false;
                     xiaoZhiRefreshPending = false;
                     String transport = xiaoZhiConnection.getTransport();
                     android.util.Log.i("BellotaXiaoZhi", "OTA actualizado. Transporte recibido: "
@@ -411,6 +425,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
             @Override public void onError(String message) {
                 runOnUiThread(() -> {
+                    xiaoZhiActivationInFlight = false;
                     xiaoZhiRefreshPending = false;
                     android.util.Log.e("BellotaXiaoZhi", "No se pudo actualizar OTA: " + message);
                     scheduleXiaoZhiRetry(message);
@@ -446,6 +461,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             xiaoZhiMqttUdpSession = null;
         }
         if (xiaoZhiRetryTask != null) handler.removeCallbacks(xiaoZhiRetryTask);
+        xiaoZhiRetryTask = null;
+        if (paused) return; // al volver a primer plano onResume reintenta la conexión
 
         int exponent = Math.min(xiaoZhiRetryAttempts, 4);
         long delay = Math.min(60000L, 5000L * (1L << exponent));
@@ -460,6 +477,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
         };
         handler.postDelayed(xiaoZhiRetryTask, delay);
+        // Si XiaoZhi sigue sin conectar, Bellota no se queda sorda: usa el reconocimiento local.
+        if (xiaoZhiRetryAttempts >= LOCAL_FALLBACK_AFTER_RETRIES) startLocalRecognizer();
     }
 
     private void showMcpSetupDialog() {
@@ -550,14 +569,18 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     @Override protected void onResume() {
         super.onResume();
+        paused = false;
         enterImmersiveMode();
         if(sensorManager!=null&&lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         startVoiceCommands();
+        if (xiaoZhiRefreshPending && !xiaoZhiActivationInFlight && xiaoZhiRetryTask == null) requestXiaoZhiActivation();
         if (eyes != null) eyes.resumeAnimation();
     }
 
     @Override protected void onPause() {
+        paused = true;
+        if (xiaoZhiRetryTask != null) { handler.removeCallbacks(xiaoZhiRetryTask); xiaoZhiRetryTask = null; }
         cancelLocalFallback(false);
         if (voiceCommands != null) voiceCommands.stop();
         if (xiaoZhiVoiceSession != null) { xiaoZhiVoiceSession.disconnect(); xiaoZhiVoiceSession = null; }
