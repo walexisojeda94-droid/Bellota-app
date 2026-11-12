@@ -15,7 +15,9 @@ import org.concentus.OpusEncoder;
 import org.concentus.OpusException;
 import org.json.JSONObject;
 
+import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -47,7 +49,7 @@ public final class XiaoZhiVoiceSession {
     private final XiaoZhiConnection identity;
     private final Listener listener;
     private final OkHttpClient http = new OkHttpClient.Builder()
-            .retryOnConnectionFailure(true).build();
+            .retryOnConnectionFailure(true).pingInterval(30, TimeUnit.SECONDS).build();
     private final ExecutorService audioExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean capturing = new AtomicBoolean(false);
@@ -61,6 +63,7 @@ public final class XiaoZhiVoiceSession {
     private volatile boolean audioNegotiated;
     private volatile int negotiatedProtocolVersion;
     private volatile int downlinkRate = 24000;
+    private volatile long sessionStartMs;
     private AudioRecord recorder;
     private AudioTrack player;
     private OpusEncoder encoder;
@@ -103,10 +106,11 @@ public final class XiaoZhiVoiceSession {
         try {
             // El OTA oficial suele no mandar "version": el protocolo por defecto es 1.
             int protocolVersion = cfg.optInt("version", 1);
-            if (protocolVersion != 1) {
-                reportError("XiaoZhi solicitó el protocolo binario " + protocolVersion + ". Esta versión de Bellota implementa Opus v1 y no enviará audio incompatible.");
+            if (protocolVersion < 1 || protocolVersion > 3) {
+                reportError("XiaoZhi solicitó el protocolo binario " + protocolVersion + ", que Bellota no implementa (soporta 1, 2 y 3).");
                 return;
             }
+            sessionStartMs = System.currentTimeMillis();
             negotiatedProtocolVersion = protocolVersion; // FIX: antes quedaba en 0 y rechazaba el hello / descartaba todo el audio
             encoder = new OpusEncoder(UPLINK_RATE, 1, OpusApplication.OPUS_APPLICATION_VOIP);
             int rate = cfg.optInt("sample_rate", 24000);
@@ -307,7 +311,7 @@ public final class XiaoZhiVoiceSession {
                             int length = encoder.encode(frame, 0, UPLINK_FRAME, opus, 0, opus.length);
                             WebSocket ws = socket;
                             if (length > 0 && ws != null && capturing.get()) {
-                                if (!ws.send(ByteString.of(java.util.Arrays.copyOf(opus, length)))) {
+                                if (!ws.send(ByteString.of(wrapUplink(java.util.Arrays.copyOf(opus, length))))) {
                                     fail("No se pudo enviar el audio a XiaoZhi.");
                                     return;
                                 }
@@ -334,9 +338,47 @@ public final class XiaoZhiVoiceSession {
         }
     }
 
+    /** v1: Opus crudo. v2: cabecera de 16 B. v3: cabecera de 4 B (todo en orden de red). */
+    private byte[] wrapUplink(byte[] opus) {
+        int v = negotiatedProtocolVersion;
+        if (v == 2) {
+            ByteBuffer b = ByteBuffer.allocate(16 + opus.length);
+            b.putShort((short) 2).putShort((short) 0).putInt(0)
+                    .putInt((int) (System.currentTimeMillis() - sessionStartMs)).putInt(opus.length).put(opus);
+            return b.array();
+        }
+        if (v == 3) {
+            ByteBuffer b = ByteBuffer.allocate(4 + opus.length);
+            b.put((byte) 0).put((byte) 0).putShort((short) opus.length).put(opus);
+            return b.array();
+        }
+        return opus;
+    }
+
+    private byte[] unwrapDownlink(byte[] p) {
+        int v = negotiatedProtocolVersion;
+        if (v == 2) {
+            if (p.length < 16) return null;
+            ByteBuffer b = ByteBuffer.wrap(p);
+            b.getShort(); int type = b.getShort() & 0xFFFF; b.getInt(); b.getInt();
+            long size = b.getInt() & 0xFFFFFFFFL;
+            if (type != 0 || size != p.length - 16) return null;
+            return java.util.Arrays.copyOfRange(p, 16, p.length);
+        }
+        if (v == 3) {
+            if (p.length < 4) return null;
+            int type = p[0] & 0xFF, size = ((p[2] & 0xFF) << 8) | (p[3] & 0xFF);
+            if (type != 0 || size != p.length - 4) return null;
+            return java.util.Arrays.copyOfRange(p, 4, p.length);
+        }
+        return p;
+    }
+
     private void handleAudio(byte[] packet) {
-        if (!running.get() || !audioNegotiated || negotiatedProtocolVersion != 1
+        if (!running.get() || !audioNegotiated || negotiatedProtocolVersion < 1
                 || !serverSpeaking || packet.length == 0) return;
+        packet = unwrapDownlink(packet);
+        if (packet == null || packet.length == 0) return;
         if (firstDownlinkPacket.compareAndSet(false, true)) {
             Log.i(TAG, "Primer paquete Opus recibido desde XiaoZhi: " + packet.length + " bytes.");
         }
