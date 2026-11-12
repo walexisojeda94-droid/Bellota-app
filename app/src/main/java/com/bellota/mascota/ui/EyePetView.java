@@ -17,6 +17,7 @@ public class EyePetView extends View {
     private final Paint white = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pupil = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint lid = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint scenePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Random random = new Random();
     private Mood mood = Mood.NEUTRAL;
     private float gazeX, gazeY, blink = 1f;
@@ -44,7 +45,6 @@ public class EyePetView extends View {
         white.setColor(0xFFF4F7F5);
         pupil.setColor(0xFF10191B);
         lid.setColor(lightTheme?0xFFF2F5F3:0xFF080D10);
-        setLayerType(View.LAYER_TYPE_SOFTWARE, null);
     }
 
     public Mood getMood() { return mood; }
@@ -177,9 +177,9 @@ public class EyePetView extends View {
             lid.setColor(lightTheme?0xFFF2F5F3:0xFF080D10);
             canvas.drawRect(x, shape.top, x + eyeW, shape.top + height * 0.28f, lid);
         }
-        if(autonomousScene==1){ Paint p=new Paint(Paint.ANTI_ALIAS_FLAG); p.setColor(lightTheme?0xFF8A6D2F:0xFFFFD166); canvas.drawCircle(x+eyeW*0.5f,centerY-eyeH*0.62f,eyeW*0.045f,p); }
-        else if(autonomousScene==2){ Paint p=new Paint(Paint.ANTI_ALIAS_FLAG); p.setColor(0xFF00BFA6); float bx=x+eyeW*0.5f+(float)Math.sin(System.currentTimeMillis()/380.0)*eyeW*0.22f; canvas.drawCircle(bx,centerY+eyeH*0.67f,eyeW*0.10f,p); postInvalidateDelayed(180L); }
-        else if(autonomousScene==3){ Paint p=new Paint(Paint.ANTI_ALIAS_FLAG); p.setColor(lightTheme?0xFF52616B:0xFFB7C8D0); p.setTextSize(eyeW*0.16f); canvas.drawText("z",x+eyeW*0.86f,centerY-eyeH*0.45f,p); }
-        else if(autonomousScene==4){ Paint p=new Paint(Paint.ANTI_ALIAS_FLAG); p.setColor(lightTheme?0xFF52616B:0xFFE7EDF0); float sy=centerY-eyeH*0.62f; canvas.drawCircle(x+eyeW*0.25f,sy,eyeW*0.055f,p); canvas.drawCircle(x+eyeW*0.38f,sy-eyeW*0.025f,eyeW*0.045f,p); canvas.drawCircle(x+eyeW*0.72f,sy+eyeW*0.025f,eyeW*0.05f,p); }
+        if(autonomousScene==1){ Paint p=scenePaint; p.setColor(lightTheme?0xFF8A6D2F:0xFFFFD166); canvas.drawCircle(x+eyeW*0.5f,centerY-eyeH*0.62f,eyeW*0.045f,p); }
+        else if(autonomousScene==2){ Paint p=scenePaint; p.setColor(0xFF00BFA6); float bx=x+eyeW*0.5f+(float)Math.sin(System.currentTimeMillis()/380.0)*eyeW*0.22f; canvas.drawCircle(bx,centerY+eyeH*0.67f,eyeW*0.10f,p); postInvalidateDelayed(180L); }
+        else if(autonomousScene==3){ Paint p=scenePaint; p.setColor(lightTheme?0xFF52616B:0xFFB7C8D0); p.setTextSize(eyeW*0.16f); canvas.drawText("z",x+eyeW*0.86f,centerY-eyeH*0.45f,p); }
+        else if(autonomousScene==4){ Paint p=scenePaint; p.setColor(lightTheme?0xFF52616B:0xFFE7EDF0); float sy=centerY-eyeH*0.62f; canvas.drawCircle(x+eyeW*0.25f,sy,eyeW*0.055f,p); canvas.drawCircle(x+eyeW*0.38f,sy-eyeW*0.025f,eyeW*0.045f,p); canvas.drawCircle(x+eyeW*0.72f,sy+eyeW*0.025f,eyeW*0.05f,p); }
     }
 }
