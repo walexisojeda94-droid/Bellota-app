@@ -98,14 +98,18 @@ public final class XiaoZhiMqttUdpSession {
                 options.setKeepAliveInterval(cfg.optInt("keepalive",240));
                 client.setCallback(new MqttCallback(){
                     @Override public void connectionLost(Throwable cause){ if(active.get()) fail("Se perdió la conexión MQTT con XiaoZhi: "+(cause==null||cause.getMessage()==null?"desconexión":cause.getMessage())); }
-                    @Override public void messageArrived(String topic,MqttMessage message){handleControl(new String(message.getPayload(),java.nio.charset.StandardCharsets.UTF_8));}
+                    @Override public void messageArrived(String topic,MqttMessage message){
+                        // No publicar (QoS 1, bloqueante) desde el hilo de callback de Paho: procesar en el executor propio.
+                        final String raw=new String(message.getPayload(),java.nio.charset.StandardCharsets.UTF_8);
+                        try{io.execute(()->handleControl(raw));}catch(java.util.concurrent.RejectedExecutionException ignored){}
+                    }
                     @Override public void deliveryComplete(IMqttDeliveryToken token){}
                 });
                 client.connect(options);
                 mqtt=client; active.set(true);
                 client.subscribe(sub,1);
                 JSONObject hello=new JSONObject().put("type","hello").put("version",3).put("transport","udp")
-                        .put("features",new JSONObject().put("mcp",true))
+                        .put("features",new JSONObject().put("mcp",false))
                         .put("audio_params",new JSONObject().put("format","opus").put("sample_rate",RATE)
                                 .put("channels",1).put("frame_duration",FRAME_MS));
                 publish(hello);
