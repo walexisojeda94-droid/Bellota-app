@@ -39,6 +39,15 @@ gradle --no-daemon :app:assembleDebug
 
 El APK de depuración queda en `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions publica el APK como artefacto de la ejecución.
 
+Para ejecutar las pruebas JVM y el análisis estático:
+
+```bash
+gradle --no-daemon :app:testDebugUnitTest
+gradle --no-daemon :app:lintDebug
+```
+
+Las pruebas cubren respuestas locales, estados emocionales, memoria conversacional y normalización de mensajes. La CI ejecuta ambas tareas antes de generar el APK. El repositorio todavía no incluye Gradle Wrapper; los comandos requieren Gradle 8.7 instalado, la misma versión fijada en CI.
+
 ## Documentación
 
 - [Resumen del proyecto](docs/resumen-del-proyecto.md)
