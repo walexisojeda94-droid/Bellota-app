@@ -35,9 +35,13 @@ Correcciones aplicadas durante esta auditoría:
 
 ## Pendiente / riesgos conocidos de la auditoría
 
-- `McpConnection` todavía no reconecta automáticamente después de una caída de red.
-- La validación del endpoint MCP debe endurecerse para comprobar el host y la ruta exactos, no solo el prefijo del esquema.
 - `WeatherService` consulta únicamente la última ubicación conocida. Puede no existir o estar desactualizada; usa el último clima guardado como respaldo.
 - La CI compila y genera el APK, pero no ejecuta pruebas unitarias o instrumentadas de estos comportamientos.
-- Falta validar en el Samsung J7: micrófono al pasar a segundo plano, sueño, animaciones, herramientas MCP, audio bidireccional, caída de red y consumo de batería.
+- Falta validar en el Samsung J7: micrófono al pasar a segundo plano, sueño, animaciones, herramientas MCP, audio bidireccional, reconexión tras caída de red y consumo de batería.
 - `OfflineReplies` normalmente devuelve una respuesta de texto; por eso la rama de respuesta desconocida de `LocalConversationEngine` puede no alcanzarse en el flujo habitual.
+
+## Mejoras MCP aplicadas después de la revisión
+
+- La dirección se valida contra el host oficial `api.xiaozhi.me`, esquema `wss`, puerto estándar y ruta `/mcp/`.
+- `McpConnection` reintenta automáticamente tras una caída, con espera progresiva de 5 a 60 segundos. Una desconexión solicitada cancela los reintentos.
+- Los reintentos se registran en Logcat para evitar mostrar notificaciones repetidas; se muestra un aviso al recuperar la conexión.
