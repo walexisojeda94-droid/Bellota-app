@@ -6,15 +6,15 @@ Los textos están en `local/PetVoiceLines.java`. Las constantes de abajo se pued
 ## Energía y sueño
 | Situación | Regla |
 |---|---|
-| Despierta | -1 de energía cada 15 min (mínimo 5) |
-| Dormida | +1 de energía cada 2 min |
-| Energía < 40 | Avisa "Creo que estoy cansada, me voy a dormir" y se duerme a los 8 s |
-| Aburrida (etapa 3+, energía < 75) | Puede decir "Estoy aburrida, me voy a descansar" (máx. 1 vez cada 20 min) |
-| Noche (0 a 7 h) sin hablarle 10 min | Se va a dormir; despierta a la mañana |
-| "No te duermas" | Cancela el sueño y sigue despierta hasta llegar al 5% |
-| Energía ≤ 5% | Sueño obligatorio: no se despierta por toques ni voz; mic de XiaoZhi silenciado |
-| Despertar | Sueño normal: con ≥ 85% (y mínimo 20 a 30 min). Obligatorio: con ≥ 50% |
-| Despertarla a mano | Toque o "Bellota" / "hola"; queda 30 min sin dormirse sola |
+| Despierta | -2 de energía cada 15 min (mínimo 5); la diversión baja 1 punto en el mismo período |
+| Dormida | +1 de energía por minuto, hasta un máximo de 100 |
+| Energía < 30 | Puede iniciar el descanso por cansancio, salvo que esté configurada para mantenerse despierta o tenga una gracia activa |
+| Aburrida (etapa 3+, energía < 75) | Puede iniciar el descanso por aburrimiento (probabilidad del 18%, con espera de 20 min entre intentos) |
+| Noche (0 a 7 h) sin hablarle durante más de 10 min | Puede iniciar el descanso nocturno |
+| "No te duermas" | Desactiva los descansos automáticos hasta que se vuelva a habilitar |
+| Energía ≤ 5% | Sueño obligatorio: no acepta activación por voz ni interacción para despertarse |
+| Despertar | El sueño normal, incluido el nocturno, termina al llegar al 100%. El sueño obligatorio pasa a normal al 20%, pero continúa hasta el 100% |
+| Despertarla a mano | En sueño normal puede despertarse manualmente; queda 30 min sin iniciar otro descanso automático |
 
 Dormida baja el brillo de pantalla al mínimo y no reacciona al ruido ambiente.
 Comandos de voz: "no te duermas", "dormite", "andá a dormir", "despertate".
