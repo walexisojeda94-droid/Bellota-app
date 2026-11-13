@@ -86,8 +86,7 @@ public class OfflineReplies {
                 || t.equals("fecha") || t.equals("la fecha") || t.equals("que fecha es hoy");
     }
     private boolean asksName(String t) {
-        return t.contains("como te llamas") || t.contains("cual es tu nombre") || t.contains("tu nombre") ||
-                t.contains("como te llamas") || t.equals("como te llamas");
+        return t.contains("como te llamas") || t.contains("cual es tu nombre") || t.contains("tu nombre");
     }
     private boolean asksWeather(String t) {
         return t.contains("clima") || t.contains("temperatura") || t.contains("cuantos grados") ||
