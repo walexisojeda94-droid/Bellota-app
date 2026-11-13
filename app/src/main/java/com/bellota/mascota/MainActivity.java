@@ -1210,6 +1210,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (xiaoZhiMqttUdpSession != null) { xiaoZhiMqttUdpSession.disconnect(); xiaoZhiMqttUdpSession = null; }
         if (localVoice != null) { localVoice.stop(); localVoice.release(); localVoice = null; }
         if (mcpConnection != null) { mcpConnection.disconnect(); mcpConnection = null; }
+        if (xiaoZhiConnection != null) { xiaoZhiConnection.shutdown(); xiaoZhiConnection = null; }
         super.onDestroy();
     }
 }
