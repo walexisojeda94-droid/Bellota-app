@@ -39,6 +39,7 @@ import com.bellota.mascota.xiaozhi.XiaoZhiMqttUdpSession;
 import com.bellota.mascota.xiaozhi.McpConnection;
 import com.bellota.mascota.xiaozhi.McpCredentialStore;
 import org.json.JSONArray;
+import org.json.JSONObject;
 import com.bellota.mascota.local.ConversationMemory;
 import com.bellota.mascota.local.PetVoiceLines;
 import com.bellota.mascota.ui.PlayfieldView;
