@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import com.bellota.mascota.core.PetLife;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Punto único de entrada del diálogo local y su memoria persistente. */
 public final class LocalConversationEngine {
@@ -25,13 +27,41 @@ public final class LocalConversationEngine {
         if (u.isEmpty()) return Reply.text("Te escucho.");
         memory.onUserMessage(now);
 
-        String learnedName = extractName(u.text);
+        // Respuesta a una pregunta de Bellota sobre un gusto ("¿Seguís con ganas de...?")
+        String waiting = memory.expecting(now);
+        if (waiting != null && waiting.startsWith("like:")) {
+            String likeValue = waiting.substring(5);
+            memory.clearExpecting();
+            if (isNo(u)) {
+                memory.removeLike(likeValue);
+                memory.afterTurn("like_no");
+                return Reply.text("Ah, ya no te gusta. Lo saco de mis notas.");
+            }
+            if (isYes(u)) {
+                memory.afterTurn("like_yes");
+                return Reply.text("¡Qué bueno! Me alegra que te siga gustando.");
+            }
+        }
+
+        String learnedName = extractName(input);
         if (learnedName != null) {
             memory.setName(learnedName);
             memory.afterTurn("remember_name");
             return Reply.text("¡Listo! Voy a recordar que te llamás " + learnedName + ".");
         }
-        String like = extractLike(u.text);
+        String nickname = extractNickname(input);
+        if (nickname != null) {
+            memory.addNickname(nickname);
+            memory.afterTurn("remember_nickname");
+            return Reply.text("¡Dale! A veces te voy a decir " + nickname + ".");
+        }
+        String unliked = extractUnlike(input);
+        if (unliked != null) {
+            memory.removeLike(unliked);
+            memory.afterTurn("unlike");
+            return Reply.text("Entendido, lo saco de las cosas que te gustan.");
+        }
+        String like = extractLike(input);
         if (like != null) {
             memory.addLike(like);
         }
@@ -74,36 +104,70 @@ public final class LocalConversationEngine {
         long now = System.currentTimeMillis();
         Utterance u = Utterance.of(input);
         memory.onUserMessage(now);
-        String learnedName = extractName(u.text);
+        String learnedName = extractName(input);
         if (learnedName != null) memory.setName(learnedName);
-        String like = extractLike(u.text);
+        String nickname = extractNickname(input);
+        if (nickname != null) memory.addNickname(nickname);
+        String unliked = extractUnlike(input);
+        if (unliked != null) memory.removeLike(unliked);
+        String like = extractLike(input);
         if (like != null) memory.addLike(like);
         memory.afterTurn("xiaozhi");
     }
 
     public ConversationMemory memory() { return memory; }
 
-    private String extractName(String text) {
-        String[] markers = {"me llamo ", "mi nombre es "};
-        for (String marker : markers) {
-            int at = text.indexOf(marker);
-            if (at >= 0) {
-                String candidate = text.substring(at + marker.length()).trim();
-                if (candidate.matches("[a-záéíóúñ]{2,20}")) return candidate.substring(0,1).toUpperCase(new Locale("es","AR")) + candidate.substring(1);
-            }
-        }
-        return null;
+    private static final Pattern NAME = Pattern.compile("(?i)\\b(?:me llamo|mi nombre es)\\s+(\\p{L}{2,20})\\b");
+    private static final Pattern NICKNAME = Pattern.compile(
+            "(?i)\\b(?:llamame|decime|me dicen|mi apodo es|mi sobrenombre es)\\s+(\\p{L}{2,20})\\s*[.!¡]*\\s*$");
+    private static final Pattern LIKE = Pattern.compile("(?i)(?<!no )\\bme (?:gusta|gustan|encanta|encantan)\\s+(.{2,80})$");
+    private static final Pattern UNLIKE = Pattern.compile("(?i)\\bya no me (?:gusta|gustan|encanta|encantan)\\s+(.{2,80})$");
+    private static final String[] NOT_NAMES = {"algo", "hora", "fecha", "clima", "chiste", "cuando", "como", "que",
+            "donde", "quien", "por", "si", "no", "la", "el", "una", "un", "lo", "los", "las", "mas"};
+
+    private String extractName(String raw) {
+        if (raw == null) return null;
+        Matcher m = NAME.matcher(raw);
+        return m.find() ? capitalize(m.group(1)) : null;
     }
 
-    private String extractLike(String text) {
-        String[] markers = {"me gusta ", "me encanta "};
-        for (String marker : markers) {
-            int at = text.indexOf(marker);
-            if (at >= 0) {
-                String value = text.substring(at + marker.length()).trim();
-                if (value.length() >= 2 && value.length() <= 80) return value;
-            }
-        }
-        return null;
+    private String extractNickname(String raw) {
+        if (raw == null) return null;
+        Matcher m = NICKNAME.matcher(raw.trim());
+        if (!m.find()) return null;
+        String candidate = m.group(1);
+        for (String stop : NOT_NAMES) if (stop.equalsIgnoreCase(candidate)) return null;
+        return capitalize(candidate);
+    }
+
+    private String extractLike(String raw) {
+        if (raw == null) return null;
+        Matcher m = LIKE.matcher(raw.trim());
+        return m.find() ? cleanTail(m.group(1)) : null;
+    }
+
+    private String extractUnlike(String raw) {
+        if (raw == null) return null;
+        Matcher m = UNLIKE.matcher(raw.trim());
+        return m.find() ? cleanTail(m.group(1)) : null;
+    }
+
+    private static String cleanTail(String value) {
+        String out = value.replaceAll("[\\s.!?¡¿,;:]+$", "").trim();
+        return out.length() >= 2 ? out : null;
+    }
+
+    private static String capitalize(String word) {
+        Locale ar = new Locale("es", "AR");
+        return word.substring(0, 1).toUpperCase(ar) + word.substring(1).toLowerCase(ar);
+    }
+
+    private static boolean isNo(Utterance u) {
+        return u.hasWord("no") || u.hasWord("nunca") || u.hasPhrase("para nada") || u.hasPhrase("ya no");
+    }
+
+    private static boolean isYes(Utterance u) {
+        return u.hasWord("si") || u.hasWord("dale") || u.hasWord("obvio") || u.hasWord("claro")
+                || u.hasWord("siempre") || u.hasWord("mucho") || u.hasPhrase("por supuesto");
     }
 }
