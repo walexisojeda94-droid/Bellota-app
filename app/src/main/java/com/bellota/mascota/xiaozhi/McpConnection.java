@@ -1,6 +1,8 @@
 package com.bellota.mascota.xiaozhi;
 
 import android.util.Log;
+import android.os.Handler;
+import android.os.Looper;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -26,6 +28,11 @@ public final class McpConnection {
     private volatile Listener listener;
     private volatile JSONArray tools = new JSONArray();
     private volatile ToolHandler handler;
+    private final Handler reconnectHandler = new Handler(Looper.getMainLooper());
+    private volatile String endpoint;
+    private volatile boolean manuallyDisconnected = true;
+    private int reconnectAttempts;
+    private Runnable reconnectTask;
 
     public interface Listener { void onStatus(String status); }
 
@@ -42,21 +49,77 @@ public final class McpConnection {
             notifyStatus("La dirección MCP debe usar wss://api.xiaozhi.me/mcp/.");
             return;
         }
-        Request request = new Request.Builder().url(endpoint)
-                .header("User-Agent", "Bellota-Android/0.4.4").build();
-        notifyStatus("Conectando con XiaoZhi…");
-        socket = client.newWebSocket(request, new WebSocketListener() {
-            @Override public void onOpen(WebSocket ws, Response r) { notifyStatus("MCP conectado. Esperando a XiaoZhi…"); }
-            @Override public void onMessage(WebSocket ws, String text) { handleMessage(ws, text); }
-            @Override public void onFailure(WebSocket ws, Throwable t, Response r) {
-                notifyStatus("Conexión MCP interrumpida: " + (r == null ? String.valueOf(t.getMessage()) : "HTTP " + r.code()));
-                synchronized (McpConnection.this) { socket = null; }
+        this.endpoint = endpoint.trim();
+        manuallyDisconnected = false;
+        reconnectAttempts = 0;
+        openSocket();
+    }
+
+    private synchronized void openSocket() {
+        if (manuallyDisconnected || endpoint == null || socket != null) return;
+        try {
+            Request request = new Request.Builder().url(endpoint)
+                    .header("User-Agent", "Bellota-Android/0.4.4").build();
+            notifyStatus("Conectando con XiaoZhi…");
+            socket = client.newWebSocket(request, new WebSocketListener() {
+                @Override public void onOpen(WebSocket ws, Response r) {
+                    synchronized (McpConnection.this) {
+                        if (manuallyDisconnected || socket != ws) {
+                            ws.close(1000, "Conexión cancelada");
+                            return;
+                        }
+                        reconnectAttempts = 0;
+                    }
+                    notifyStatus("MCP conectado. Esperando a XiaoZhi…");
+                }
+
+                @Override public void onMessage(WebSocket ws, String text) {
+                    handleMessage(ws, text);
+                }
+
+                @Override public void onFailure(WebSocket ws, Throwable t, Response r) {
+                    boolean retry;
+                    synchronized (McpConnection.this) {
+                        retry = socket == ws && !manuallyDisconnected;
+                        if (socket == ws) socket = null;
+                    }
+                    notifyStatus("Conexión MCP interrumpida: "
+                            + (r == null ? String.valueOf(t.getMessage()) : "HTTP " + r.code()));
+                    if (retry) scheduleReconnect();
+                }
+
+                @Override public void onClosed(WebSocket ws, int code, String reason) {
+                    boolean retry;
+                    synchronized (McpConnection.this) {
+                        retry = socket == ws && !manuallyDisconnected;
+                        if (socket == ws) socket = null;
+                    }
+                    notifyStatus("Conexión MCP cerrada.");
+                    if (retry) scheduleReconnect();
+                }
+            });
+        } catch (Exception error) {
+            socket = null;
+            notifyStatus("No se pudo abrir MCP: " + error.getMessage());
+            scheduleReconnect();
+        }
+    }
+
+    /** Reintenta con espera exponencial y un máximo de 60 segundos. */
+    private synchronized void scheduleReconnect() {
+        if (manuallyDisconnected || endpoint == null || reconnectTask != null) return;
+        int exponent = Math.min(reconnectAttempts, 4);
+        long delay = Math.min(60000L, 5000L * (1L << exponent));
+        reconnectAttempts++;
+        notifyStatus("Reintentando MCP en " + (delay / 1000L) + " segundos…");
+        reconnectTask = () -> {
+            synchronized (McpConnection.this) {
+                reconnectTask = null;
+                if (manuallyDisconnected || socket != null) return;
             }
-            @Override public void onClosed(WebSocket ws, int code, String reason) {
-                notifyStatus("Conexión MCP cerrada.");
-                synchronized (McpConnection.this) { socket = null; }
-            }
-        });
+            openSocket();
+        };
+        reconnectHandler.postDelayed(reconnectTask, delay);
     }
 
     /** Solo acepta el endpoint oficial MCP de XiaoZhi, sin credenciales embebidas en el host. */
@@ -134,6 +197,15 @@ public final class McpConnection {
     }
 
     public synchronized void disconnect() {
-        if (socket != null) { socket.close(1000, "Bellota pausa"); socket = null; }
+        manuallyDisconnected = true;
+        endpoint = null;
+        reconnectAttempts = 0;
+        if (reconnectTask != null) {
+            reconnectHandler.removeCallbacks(reconnectTask);
+            reconnectTask = null;
+        }
+        WebSocket current = socket;
+        socket = null;
+        if (current != null) current.close(1000, "Desconexión solicitada");
     }
 }
