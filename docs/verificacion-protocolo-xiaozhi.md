@@ -22,13 +22,22 @@ Ese formato no figura en la documentación oficial de XiaoZhi: el hello oficial 
 - Pruebas reales: activación, audio bidireccional, caída de red y batería en el J7.
 
 ## Revisión general del código (segunda pasada)
-Revisados los 21 archivos Java, los 3 XML, el workflow y los docs. Sintaxis correcta en todos. Correcciones:
-1. `ContinuousVoiceCommands.stop()` no liberaba el flag `restarting`: si se detenía durante la espera entre reconocimientos, `start()` quedaba inerte y el reconocimiento local no volvía a arrancar.
-2. `MainActivity`: el reintento de XiaoZhi seguía corriendo con la app en segundo plano (podía abrir el micrófono). Ahora se cancela en `onPause` y se retoma en `onResume`; se evita lanzar dos activaciones OTA en paralelo; la rutina autónoma no habla en segundo plano.
-3. `MainActivity`: tras 3 reintentos fallidos de XiaoZhi se activa el reconocimiento local (antes Bellota quedaba sorda mientras XiaoZhi estaba caído, contra lo que dice la documentación).
-4. `app/build.gradle`: el bloque `dependencies` estaba dentro de `android {}`; movido a nivel raíz.
-5. `EyePetView`: se quitó la capa de renderizado por software y se dejó de crear `Paint` nuevos en cada cuadro (carga innecesaria en el J7).
-6. `PetMemory`: el diario `recuerdos.jsonl` crecía sin límite; ahora se recorta al superar 512 KB.
-7. `McpConnection`: versión informada 0.2.0 → 0.4.4, igual que `build.gradle`.
 
-Observaciones sin cambiar: la conexión MCP no se reconecta sola si se cae y no expone herramientas (lista vacía); `OfflineReplies` nunca devuelve null salvo clima, por lo que la rama "unknown" de `LocalConversationEngine` no se alcanza.
+El inventario anterior de 21 archivos Java quedó desactualizado y la afirmación de que todos tenían sintaxis correcta no era válida: una ejecución posterior de CI detectó un import faltante de `JSONObject` en `MainActivity.java`. Se corrigió y la compilación de release firmada volvió a completarse correctamente. La CI valida compilación y empaquetado, no el comportamiento físico en el teléfono.
+
+Correcciones aplicadas durante esta auditoría:
+1. `MainActivity`: agregado el import de `JSONObject` que impedía compilar las herramientas MCP.
+2. `MainActivity`: el callback de fin de voz ya no puede reiniciar el reconocimiento local cuando la actividad está pausada.
+3. `MainActivity`: el fallback local de XiaoZhi no vuelve a contabilizar una interacción que ya fue registrada al recibir la transcripción.
+4. `EyePetView`: al pausar se cancelan los animadores y se limpian bostezo, escena autónoma y rebote para evitar repintados residuales.
+5. `PetMemory`: el diario se mantiene dentro del límite de 512 KB, recortando entradas grandes sin partir caracteres Unicode.
+6. `MainActivity` y `McpConnection`: se implementó el listado y la ejecución de cinco herramientas MCP de Bellota.
+
+## Pendiente / riesgos conocidos de la auditoría
+
+- `McpConnection` todavía no reconecta automáticamente después de una caída de red.
+- La validación del endpoint MCP debe endurecerse para comprobar el host y la ruta exactos, no solo el prefijo del esquema.
+- `WeatherService` consulta únicamente la última ubicación conocida. Puede no existir o estar desactualizada; usa el último clima guardado como respaldo.
+- La CI compila y genera el APK, pero no ejecuta pruebas unitarias o instrumentadas de estos comportamientos.
+- Falta validar en el Samsung J7: micrófono al pasar a segundo plano, sueño, animaciones, herramientas MCP, audio bidireccional, caída de red y consumo de batería.
+- `OfflineReplies` normalmente devuelve una respuesta de texto; por eso la rama de respuesta desconocida de `LocalConversationEngine` puede no alcanzarse en el flujo habitual.
