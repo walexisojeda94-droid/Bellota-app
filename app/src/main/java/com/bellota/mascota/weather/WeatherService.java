@@ -18,6 +18,9 @@ public final class WeatherService {
     public interface Callback { void onResult(String response); }
     private static final String PREFS = "bellota_weather";
     private static final String KEY_CACHE = "last_weather";
+    private static final String KEY_CACHE_TIME = "last_weather_time";
+    private static final long MAX_LOCATION_AGE_MS = 2L * 60L * 60L * 1000L;
+    private static final long MAX_CACHE_AGE_MS = 6L * 60L * 60L * 1000L;
     private WeatherService() {}
 
     public static void fetch(Context context, Callback callback) {
@@ -25,10 +28,10 @@ public final class WeatherService {
         Location location = lastLocation(app);
         if (location == null) {
             SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            String cached = prefs.getString(KEY_CACHE, null);
+            String cached = readFreshCache(prefs);
             deliver(callback, cached == null
-                    ? "No pude obtener la ubicación del teléfono. Activá la ubicación y volvé a preguntarme por el clima."
-                    : cached + " Este dato es el último que pude guardar y podría estar desactualizado.");
+                    ? "No pude obtener una ubicación reciente del teléfono. Activá la ubicación y volvé a preguntarme por el clima."
+                    : cached + " No pude obtener una ubicación reciente; este dato guardado todavía tiene menos de seis horas.");
             return;
         }
         new Thread(() -> {
@@ -56,12 +59,15 @@ public final class WeatherService {
                 answer = String.format(new Locale("es", "AR"),
                         "Ahora hay %.0f grados y está %s. La sensación térmica es de %.0f grados, la humedad es del %d por ciento y el viento va a %.0f kilómetros por hora.",
                         temp, describe(code), feels, humidity, wind);
-                app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_CACHE, answer).apply();
+                app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                        .putString(KEY_CACHE, answer)
+                        .putLong(KEY_CACHE_TIME, System.currentTimeMillis())
+                        .apply();
             } catch (Exception error) {
-                String cached = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_CACHE, null);
+                String cached = readFreshCache(app.getSharedPreferences(PREFS, Context.MODE_PRIVATE));
                 answer = cached == null
                         ? "No pude consultar el clima en este momento. Revisá tu conexión a internet y preguntame de nuevo."
-                        : cached + " No pude actualizarlo, así que podría estar desactualizado.";
+                        : cached + " No pude actualizarlo; te comparto el último dato guardado de las últimas seis horas.";
             } finally {
                 if (connection != null) connection.disconnect();
             }
@@ -69,19 +75,39 @@ public final class WeatherService {
         }).start();
     }
 
+    private static String readFreshCache(SharedPreferences prefs) {
+        String cached = prefs.getString(KEY_CACHE, null);
+        long savedAt = prefs.getLong(KEY_CACHE_TIME, 0L);
+        long age = System.currentTimeMillis() - savedAt;
+        return cached != null && savedAt > 0L && age >= 0L && age <= MAX_CACHE_AGE_MS
+                ? cached : null;
+    }
+
     @SuppressWarnings("MissingPermission")
     private static Location lastLocation(Context context) {
+        LocationManager manager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+        if (manager == null) return null;
+        Location best = null;
+        long now = System.currentTimeMillis();
         try {
-            LocationManager manager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
-            Location best = null;
             for (String provider : manager.getProviders(true)) {
-                Location candidate = manager.getLastKnownLocation(provider);
-                if (candidate != null && (best == null || candidate.getTime() > best.getTime())) best = candidate;
+                try {
+                    Location candidate = manager.getLastKnownLocation(provider);
+                    if (candidate == null) continue;
+                    long age = now - candidate.getTime();
+                    if (age < -5L * 60L * 1000L || age > MAX_LOCATION_AGE_MS) continue;
+                    if (best == null || candidate.getTime() > best.getTime()) best = candidate;
+                } catch (SecurityException ignored) {
+                    // Un proveedor puede no estar permitido con ubicación aproximada.
+                    // Continuar para probar los demás, por ejemplo NETWORK.
+                } catch (RuntimeException ignored) {
+                    // Un proveedor no disponible no debe impedir consultar los restantes.
+                }
             }
+        } catch (SecurityException | RuntimeException ignored) {
             return best;
-        } catch (Exception ignored) {
-            return null;
         }
+        return best;
     }
 
     private static String describe(int code) {
