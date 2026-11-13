@@ -27,7 +27,7 @@ La integración está implementada en el repositorio, pero eso no demuestra que 
 
 ## Respaldo local
 
-Si la sesión online falla, la actividad puede volver al reconocimiento de voz y TTS de Android y al motor de conversación local. La reconexión automática sostenida después de una caída todavía requiere pruebas y mejoras.
+Si la sesión online falla, la actividad puede volver al reconocimiento de voz y TTS de Android y al motor de conversación local. La reconexión automática con backoff ya está implementada, pero requiere pruebas prolongadas en el dispositivo. El reconocimiento Android solicita preferencia offline, aunque el motor instalado puede no ofrecer reconocimiento sin conexión.
 
 ## Referencias técnicas
 
