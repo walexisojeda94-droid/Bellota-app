@@ -43,7 +43,7 @@
 ## Etapa 5. Resiliencia
 
 - [x] Camino de respaldo local ante errores de la sesión online.
-- [ ] Reconexión automática sostenida después de una caída.
+- [x] Reconexión automática con backoff acotado; falta validación prolongada en el J7.
 - [ ] Evitar respuestas duplicadas y conservar el contexto al recuperar conexión.
 - [ ] Probar cortes de red y servicio no disponible.
 
