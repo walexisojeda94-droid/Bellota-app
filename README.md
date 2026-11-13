@@ -18,7 +18,7 @@ El repositorio contiene una aplicación Android nativa en Java. La integración 
 - Consulta del clima mediante Open-Meteo y ubicación del teléfono.
 - Conexión MCP opcional, con credencial almacenada mediante el almacén seguro de la aplicación.
 
-La presencia de una función en el código no significa que ya haya superado pruebas de campo en el J7.
+La presencia de una función en el código no significa que ya haya superado pruebas de campo en el J7. La CI ejecuta 15 pruebas JVM, Android Lint y genera un APK release firmado. El proyecto conserva targetSdk 28 para su distribución privada y no está preparado para publicarse en Google Play.
 
 ## Estructura
 
