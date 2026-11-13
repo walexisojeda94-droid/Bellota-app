@@ -50,3 +50,13 @@ Correcciones aplicadas durante esta auditoría:
 - `XiaoZhiConnection` cierra su executor al destruirse la actividad.
 - El cambio de sueño obligatorio a normal actualiza el mute para volver a aceptar la palabra de activación.
 - Los reintentos se registran en Logcat para evitar mostrar notificaciones repetidas; se muestra un aviso al recuperar la conexión.
+
+
+## Calidad automatizada
+
+- Se agregaron pruebas JVM con JUnit 4.13.2 para respuestas locales, clasificación de estados emocionales, memoria de gustos/apodos, expiración de expectativas y normalización de mensajes.
+- GitHub Actions ejecuta `:app:testDebugUnitTest` y `:app:lintDebug` antes de compilar el APK.
+- La primera ejecución de Lint encontró tres errores de permiso de micrófono en los transportes de audio. Se añadieron comprobaciones explícitas de `RECORD_AUDIO` antes de crear los grabadores de WebSocket y MQTT/UDP. La nueva ejecución debe confirmar que no quedan errores.
+- La configuración de CI fija Java 17, Android SDK 35, Gradle 8.7 y Android Gradle Plugin 8.6.1.
+- No se incorporó Gradle Wrapper en esta pasada; sigue pendiente generar y versionar sus scripts, propiedades y JAR oficiales.
+- Las pruebas JVM y Lint no sustituyen las pruebas funcionales en el Samsung Galaxy J7.
