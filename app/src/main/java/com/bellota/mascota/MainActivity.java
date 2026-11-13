@@ -981,7 +981,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 })
                 .setPositiveButton("Guardar y conectar", (dialog, which) -> {
                     String endpoint = input.getText().toString().trim();
-                    if (!endpoint.startsWith("wss://") || !endpoint.contains("xiaozhi.me/mcp/")) {
+                    if (!McpConnection.isValidEndpoint(endpoint)) {
                         Toast.makeText(this, "La dirección no parece ser el endpoint MCP de XiaoZhi.", Toast.LENGTH_LONG).show();
                         return;
                     }
