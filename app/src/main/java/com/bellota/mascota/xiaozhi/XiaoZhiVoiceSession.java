@@ -1,5 +1,7 @@
 package com.bellota.mascota.xiaozhi;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
@@ -273,6 +275,10 @@ public final class XiaoZhiVoiceSession {
 
     private void startCapture() throws Exception {
         if (capturing.get()) return;
+        if (identity.getContext().checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            throw new SecurityException("Bellota necesita permiso de micrófono para iniciar el audio de XiaoZhi.");
+        }
         int min = AudioRecord.getMinBufferSize(UPLINK_RATE,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         int bufferSize = Math.max(min, UPLINK_FRAME * 2 * 4);
