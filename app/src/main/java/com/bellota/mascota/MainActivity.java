@@ -779,13 +779,11 @@ public class MainActivity extends Activity implements SensorEventListener {
         String text = spoken.toLowerCase(new Locale("es", "AR"))
                 .replace("á", "a").replace("é", "e").replace("í", "i")
                 .replace("ó", "o").replace("ú", "u").trim();
+        // En modo local, igual que en XiaoZhi, dormida solo despierta al oír su nombre.
+        // El filtro va antes de los comandos para que "despertate" o "hola" solos
+        // no salteen la palabra de activación.
+        if (autonomy != null && autonomy.isSleeping() && !text.contains("bellota")) return;
         if (handleCompanionCommand(text, true)) return;
-        if (autonomy != null && autonomy.isSleeping()) {
-            // Dormida no reacciona al ruido ambiente: solo si le hablan a ella.
-            boolean addressed = text.contains("bellota") || text.contains("hola")
-                    || text.contains("buen dia") || text.contains("buenas");
-            if (!addressed && !text.contains("silencio") && !text.contains("sonido")) return;
-        }
         if (text.contains("silencio")) {
             soundEnabled = false;
             if (localVoice != null) localVoice.stop();
