@@ -1063,11 +1063,12 @@ public class MainActivity extends Activity implements SensorEventListener {
             String phrase = args.optString("text", "").trim();
             if (phrase.isEmpty() || phrase.length() > 240) throw new Exception("La frase debe tener entre 1 y 240 caracteres.");
             if (isForcedState() || isAsleep()) return "No puedo hablar ahora: estoy durmiendo.";
-            if (!soundEnabled || localVoice == null) return "La voz está desactivada o todavía no está lista.";
+            if (!soundEnabled || localVoice == null || !localVoice.isReady()) return "La voz está desactivada o todavía no está lista.";
             speakIfEnabled(phrase);
             return "Estoy diciendo la frase.";
         }
         if ("interact_with_bellota".equals(name)) {
+            if (isForcedState()) return "Estoy en descanso obligatorio y no puedo despertarme todavía.";
             String kind = args.optString("kind", "attention");
             if (!"attention".equals(kind) && !"caress".equals(kind)
                     && !"affectionate".equals(kind) && !"apology".equals(kind))
