@@ -84,7 +84,9 @@ public class OfflineReplies {
         return t.contains("que hora") || t.equals("hora") || t.contains("decime la hora") || t.contains("decir la hora");
     }
     private boolean asksDate(String t) {
-        return t.contains("que dia") || t.contains("fecha de hoy") || t.contains("que fecha") || t.contains("que estamos");
+        return t.contains("que dia") || t.contains("que fecha") || t.contains("fecha de hoy")
+                || t.contains("decime la fecha") || t.contains("decir la fecha")
+                || t.equals("fecha") || t.equals("la fecha") || t.equals("que fecha es hoy");
     }
     private boolean asksName(String t) {
         return t.contains("como te llamas") || t.contains("cual es tu nombre") || t.contains("tu nombre") ||
