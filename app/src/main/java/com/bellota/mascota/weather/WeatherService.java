@@ -104,7 +104,7 @@ public final class WeatherService {
                     // Un proveedor no disponible no debe impedir consultar los restantes.
                 }
             }
-        } catch (SecurityException | RuntimeException ignored) {
+        } catch (RuntimeException ignored) {
             return best;
         }
         return best;
