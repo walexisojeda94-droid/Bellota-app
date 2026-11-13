@@ -33,7 +33,7 @@ La implementación debe seguir aislada del núcleo local. No se debe asumir que 
 
 ## Modo local y resiliencia
 
-El TTS Android y las respuestas locales permiten mantener una interacción básica cuando XiaoZhi no está disponible. La recuperación automática tras una desconexión, los reintentos controlados y la continuidad de contexto necesitan pruebas específicas y ajustes antes de considerarse terminados.
+El TTS Android y las respuestas locales permiten mantener una interacción básica cuando XiaoZhi no está disponible. La recuperación automática y los reintentos controlados ya están implementados: MCP usa backoff progresivo y reinicia el contador solo después de 60 segundos de conexión estable. Falta validar reconexión sostenida y continuidad de contexto en el J7. El reconocimiento Android solicita modo offline, pero la disponibilidad real depende del motor y del paquete de idioma instalado.
 
 ## Memoria y privacidad
 
