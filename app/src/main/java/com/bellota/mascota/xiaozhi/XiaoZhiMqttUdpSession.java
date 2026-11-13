@@ -1,5 +1,7 @@
 package com.bellota.mascota.xiaozhi;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
@@ -171,6 +173,11 @@ public final class XiaoZhiMqttUdpSession {
 
     private void startListening(){
         if(!active.get()||speaking||udp==null||recording.get())return;
+        if (identity.getContext().checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            fail("Bellota necesita permiso de micrófono para iniciar el audio de XiaoZhi.");
+            return;
+        }
         try{
             publish(new JSONObject().put("session_id",sessionId).put("type","listen").put("state","start").put("mode","auto"));
             int min=AudioRecord.getMinBufferSize(RATE,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT);
