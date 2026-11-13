@@ -112,6 +112,11 @@ public class XiaoZhiConnection {
         editor.apply();
     }
 
+    /** Libera el hilo de trabajo cuando la Activity termina definitivamente. */
+    public void shutdown() {
+        executor.shutdownNow();
+    }
+
     public void requestActivationCode(ActivationListener listener) {
         if (isConfigured()) {
             // La vinculación persiste, pero la configuración de transporte puede cambiar.
