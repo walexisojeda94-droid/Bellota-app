@@ -206,6 +206,23 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     private boolean xiaoZhiOnline() { return xiaoZhiVoiceSession != null || xiaoZhiMqttUdpSession != null; }
 
+    /**
+     * Mientras Bellota duerme, XiaoZhi solo puede despertarla si la transcripción
+     * contiene su nombre como palabra completa. Se aplica igual a WebSocket y MQTT.
+     */
+    private boolean acceptXiaoZhiTranscript(String transcript) {
+        String text = simplify(transcript);
+        boolean sleeping = isAsleep();
+        boolean calledByName = text.matches("(?s).*\\bbellota\\b.*");
+        if (sleeping && !calledByName) return false;
+
+        // Si estaba dormida, el nombre provoca el despertar antes de procesar el resto.
+        if (sleeping) userInteracted("attention", false);
+        if (handleCompanionCommand(text, false)) return false;
+        if (!sleeping) userInteracted("attention", false);
+        return true;
+    }
+
     private static String simplify(String spoken) {
         if (spoken == null) return "";
         return spoken.toLowerCase(new Locale("es", "AR"))
@@ -657,8 +674,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
             @Override public void onTranscript(String transcript) {
                 runOnUiThread(() -> {
-                    if (handleCompanionCommand(simplify(transcript), false)) return;
-                    userInteracted("attention", false);
+                    if (!acceptXiaoZhiTranscript(transcript)) return;
                     if (petMemory != null) petMemory.remember("conversacion_usuario", transcript);
                     queueLocalFallback(transcript);
                     if (eyes != null && !isAsleep()) eyes.reactToAttention();
@@ -700,8 +716,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
             @Override public void onTranscript(String transcript) {
                 runOnUiThread(() -> {
-                    if (handleCompanionCommand(simplify(transcript), false)) return;
-                    userInteracted("attention", false);
+                    if (!acceptXiaoZhiTranscript(transcript)) return;
                     if (petMemory != null) petMemory.remember("conversacion_usuario", transcript);
                     queueLocalFallback(transcript);
                     if (eyes != null && !isAsleep()) eyes.reactToAttention();
