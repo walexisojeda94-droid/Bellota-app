@@ -64,6 +64,7 @@ public final class XiaoZhiVoiceSession {
     private volatile int negotiatedProtocolVersion;
     private volatile int downlinkRate = 24000;
     private volatile long sessionStartMs;
+    private volatile boolean muted;
     private AudioRecord recorder;
     private AudioTrack player;
     private OpusEncoder encoder;
@@ -310,7 +311,7 @@ public final class XiaoZhiVoiceSession {
                         try {
                             int length = encoder.encode(frame, 0, UPLINK_FRAME, opus, 0, opus.length);
                             WebSocket ws = socket;
-                            if (length > 0 && ws != null && capturing.get()) {
+                            if (length > 0 && ws != null && capturing.get() && !muted) {
                                 if (!ws.send(ByteString.of(wrapUplink(java.util.Arrays.copyOf(opus, length))))) {
                                     fail("No se pudo enviar el audio a XiaoZhi.");
                                     return;
@@ -339,6 +340,9 @@ public final class XiaoZhiVoiceSession {
     }
 
     /** v1: Opus crudo. v2: cabecera de 16 B. v3: cabecera de 4 B (todo en orden de red). */
+    /** Con muted=true se sigue leyendo el micrófono pero no se envía audio (p. ej. mientras Bellota habla). */
+    public void setMuted(boolean value) { muted = value; }
+
     private byte[] wrapUplink(byte[] opus) {
         int v = negotiatedProtocolVersion;
         if (v == 2) {
