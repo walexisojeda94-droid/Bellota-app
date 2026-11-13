@@ -1109,8 +1109,13 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (endpoint == null || endpoint.isEmpty()) return;
             if (mcpConnection == null) mcpConnection = new McpConnection();
             JSONArray tools = buildMcpTools();
-            mcpConnection.connect(endpoint, tools, this::executeMcpTool, status ->
-                    runOnUiThread(() -> Toast.makeText(MainActivity.this, status, Toast.LENGTH_SHORT).show()));
+            mcpConnection.connect(endpoint, tools, this::executeMcpTool, status -> {
+                android.util.Log.i("BellotaMCP", status);
+                // Los reintentos se registran en Logcat; solo avisar con un Toast al conectar.
+                if (status != null && status.startsWith("MCP conectado.")) {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, status, Toast.LENGTH_SHORT).show());
+                }
+            });
         } catch (Exception e) {
             android.util.Log.e("BellotaMCP", "No se pudo configurar la conexión MCP.", e);
         }
