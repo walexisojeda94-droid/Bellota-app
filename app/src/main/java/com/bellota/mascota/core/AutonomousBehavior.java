@@ -169,7 +169,7 @@ public final class AutonomousBehavior {
                 prefs.edit().putLong(SULK_SINCE, now).apply();
             } else if (now - since > SULK_MAX_MS) { // se le pasa solita: arranca otro ciclo, un poco más resentida
                 prefs.edit().putLong(CYCLE_START, now).putLong(SULK_SINCE, 0L)
-                        .putInt("irritation", clamp(getTrait("irritation") + 6)).apply();
+                        .putInt("irritation", clamp(getTrait("irritation") - 8)).apply();
                 stage = 0;
             }
         }
