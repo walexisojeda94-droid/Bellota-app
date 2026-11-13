@@ -786,7 +786,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             pendingXiaoZhiFallback = null;
             if (!isFinishing() && unanswered != null) {
                 android.util.Log.w("BellotaVoice", "XiaoZhi no inició TTS; usando respuesta local.");
-                handleVoiceCommand(unanswered);
+                handleVoiceCommand(unanswered, true);
             }
         };
         handler.postDelayed(pendingXiaoZhiFallback, 20000L);
@@ -807,10 +807,14 @@ public class MainActivity extends Activity implements SensorEventListener {
     private void fallbackPendingTranscript() {
         String transcript = pendingXiaoZhiTranscript;
         cancelLocalFallback(false);
-        if (transcript != null && !isFinishing()) handleVoiceCommand(transcript);
+        if (transcript != null && !isFinishing()) handleVoiceCommand(transcript, true);
     }
 
     private void handleVoiceCommand(String spoken) {
+        handleVoiceCommand(spoken, false);
+    }
+
+    private void handleVoiceCommand(String spoken, boolean interactionAlreadyRecorded) {
         if (spoken == null || spoken.trim().isEmpty()) return;
         String text = spoken.toLowerCase(new Locale("es", "AR"))
                 .replace("á", "a").replace("é", "e").replace("í", "i")
@@ -833,8 +837,10 @@ public class MainActivity extends Activity implements SensorEventListener {
             return;
         }
         if (autonomy != null && autonomy.isForcedSleep()) { mumbleInSleep(); return; }
-        String interactionKind = classifyEmotionalInteraction(text);
-        userInteracted(interactionKind, true);
+        if (!interactionAlreadyRecorded) {
+            String interactionKind = classifyEmotionalInteraction(text);
+            userInteracted(interactionKind, true);
+        }
         if (eyes != null && !isAsleep()) eyes.reactToAttention();
         if (petMemory != null) petMemory.remember("voz_usuario", spoken);
         if(text.contains("bateria") || text.contains("carga del telefono")){ BatteryManager b=(BatteryManager)getSystemService(BATTERY_SERVICE); int level=b.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY); speakIfEnabled(level>=0?"El teléfono tiene "+level+" por ciento de batería.":"No pude consultar la batería."); return; }
