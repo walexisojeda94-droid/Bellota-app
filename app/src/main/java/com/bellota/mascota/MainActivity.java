@@ -210,13 +210,19 @@ public class MainActivity extends Activity implements SensorEventListener {
      * Mientras Bellota duerme, XiaoZhi solo puede despertarla si la transcripción
      * contiene su nombre como palabra completa. Se aplica igual a WebSocket y MQTT.
      */
+    private boolean containsWakeWord(String text) {
+        return text != null && text.matches("(?s).*\\bbellota\\b.*");
+    }
+
     private boolean acceptXiaoZhiTranscript(String transcript) {
         String text = simplify(transcript);
-        boolean sleeping = isAsleep();
-        boolean calledByName = text.matches("(?s).*\\bbellota\\b.*");
-        if (sleeping && !calledByName) return false;
+        // El sueño obligatorio no admite activación por voz: solo termina al recuperar energía.
+        if (isForcedState()) return false;
 
-        // Si estaba dormida, el nombre provoca el despertar antes de procesar el resto.
+        boolean sleeping = isAsleep();
+        if (sleeping && !containsWakeWord(text)) return false;
+
+        // Durante el sueño normal, el nombre provoca el despertar antes de procesar el resto.
         if (sleeping) userInteracted("attention", false);
         if (handleCompanionCommand(text, false)) return false;
         if (!sleeping) userInteracted("attention", false);
@@ -779,10 +785,11 @@ public class MainActivity extends Activity implements SensorEventListener {
         String text = spoken.toLowerCase(new Locale("es", "AR"))
                 .replace("á", "a").replace("é", "e").replace("í", "i")
                 .replace("ó", "o").replace("ú", "u").trim();
-        // En modo local, igual que en XiaoZhi, dormida solo despierta al oír su nombre.
-        // El filtro va antes de los comandos para que "despertate" o "hola" solos
-        // no salteen la palabra de activación.
-        if (autonomy != null && autonomy.isSleeping() && !text.contains("bellota")) return;
+        // El sueño obligatorio solo termina al recuperar la energía mínima.
+        if (isForcedState()) return;
+        // En sueño normal, la palabra de activación se exige también en reconocimiento local.
+        // Se usa el mismo detector de palabra completa que en WebSocket y MQTT.
+        if (isAsleep() && !containsWakeWord(text)) return;
         if (handleCompanionCommand(text, true)) return;
         if (text.contains("silencio")) {
             soundEnabled = false;
