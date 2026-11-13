@@ -66,6 +66,12 @@ public class EyePetView extends View {
         lid.setColor(lightTheme?0xFFF2F5F3:0xFF080D10);
     }
 
+    @Override
+    public boolean performClick() {
+        super.performClick();
+        return true;
+    }
+
     public Mood getMood() { return mood; }
     public void setLightTheme(boolean light) { lightTheme=light; lid.setColor(light?0xFFF2F5F3:0xFF080D10); tint.setColor(light?0xFFFFD2CB:0xFFFFC9C0); invalidate(); }
 
