@@ -559,6 +559,21 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
     }
 
+    /** Distingue cariño y disculpas de una interacción cotidiana para ajustar el ánimo. */
+    private String classifyEmotionalInteraction(String text) {
+        if (text == null) return "attention";
+        String value = simplify(text);
+        if (value.contains("perdon") || value.contains("lo siento") || value.contains("disculpa")
+                || value.contains("no quise") || value.contains("no era mi intencion")
+                || value.contains("tenes razon") || value.contains("tienes razon")) return "apology";
+        if (value.contains("te quiero") || value.contains("te amo") || value.contains("te adoro")
+                || value.contains("te aprecio") || value.contains("sos hermosa") || value.contains("sos linda")
+                || value.contains("sos bella") || value.contains("preciosa") || value.contains("mi vida")
+                || value.contains("corazon") || value.contains("hermosa bellota") || value.contains("linda bellota"))
+            return "affectionate";
+        return "attention";
+    }
+
     /** Registra la interacción, despierta si dormía, corta juegos y celebra si estaba fastidiada. */
     private void userInteracted(String kind, boolean speak) {
         if (autonomy == null) return;
@@ -803,7 +818,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             return;
         }
         if (autonomy != null && autonomy.isForcedSleep()) { mumbleInSleep(); return; }
-        userInteracted("attention", true);
+        String interactionKind = classifyEmotionalInteraction(text);
+        userInteracted(interactionKind, true);
         if (eyes != null && !isAsleep()) eyes.reactToAttention();
         if (petMemory != null) petMemory.remember("voz_usuario", spoken);
         if(text.contains("bateria") || text.contains("carga del telefono")){ BatteryManager b=(BatteryManager)getSystemService(BATTERY_SERVICE); int level=b.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY); speakIfEnabled(level>=0?"El teléfono tiene "+level+" por ciento de batería.":"No pude consultar la batería."); return; }
