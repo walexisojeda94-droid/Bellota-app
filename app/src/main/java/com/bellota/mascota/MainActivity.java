@@ -43,6 +43,9 @@ import com.bellota.mascota.local.ConversationMemory;
 import com.bellota.mascota.local.PetVoiceLines;
 import com.bellota.mascota.ui.PlayfieldView;
 import java.util.Locale;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class MainActivity extends Activity implements SensorEventListener {
     private static final int MICROPHONE_PERMISSION = 41;
@@ -984,16 +987,124 @@ public class MainActivity extends Activity implements SensorEventListener {
                 }).show();
     }
 
+    private JSONArray buildMcpTools() throws org.json.JSONException {
+        JSONArray definitions = new JSONArray();
+        definitions.put(new JSONObject()
+                .put("name", "get_bellota_status")
+                .put("description", "Consulta el estado actual de Bellota: ánimo, energía, diversión y si está despierta.")
+                .put("inputSchema", new JSONObject().put("type", "object").put("properties", new JSONObject())));
+        definitions.put(new JSONObject()
+                .put("name", "set_bellota_emotion")
+                .put("description", "Cambia la expresión emocional visible de Bellota. No la despierta si está dormida.")
+                .put("inputSchema", new JSONObject().put("type", "object")
+                        .put("properties", new JSONObject().put("emotion", new JSONObject()
+                                .put("type", "string").put("enum", new JSONArray()
+                                        .put("neutral").put("happy").put("thinking").put("surprised")
+                                        .put("sleepy").put("calm").put("curious").put("angry").put("bored").put("offended"))))
+                        .put("required", new JSONArray().put("emotion"))));
+        definitions.put(new JSONObject()
+                .put("name", "speak_as_bellota")
+                .put("description", "Hace que Bellota diga una frase breve en voz alta.")
+                .put("inputSchema", new JSONObject().put("type", "object")
+                        .put("properties", new JSONObject().put("text", new JSONObject()
+                                .put("type", "string").put("description", "Frase de hasta 240 caracteres.")))
+                        .put("required", new JSONArray().put("text"))));
+        definitions.put(new JSONObject()
+                .put("name", "interact_with_bellota")
+                .put("description", "Registra una interacción del usuario para actualizar el vínculo y el estado de Bellota.")
+                .put("inputSchema", new JSONObject().put("type", "object")
+                        .put("properties", new JSONObject().put("kind", new JSONObject()
+                                .put("type", "string").put("enum", new JSONArray()
+                                        .put("attention").put("caress").put("affectionate").put("apology"))))
+                        .put("required", new JSONArray().put("kind"))));
+        definitions.put(new JSONObject()
+                .put("name", "play_with_bellota")
+                .put("description", "Inicia un minijuego visual con Bellota.")
+                .put("inputSchema", new JSONObject().put("type", "object")
+                        .put("properties", new JSONObject().put("game", new JSONObject()
+                                .put("type", "string").put("enum", new JSONArray()
+                                        .put("ball").put("bubbles").put("fly").put("stars"))))
+                        .put("required", new JSONArray().put("game"))));
+        return definitions;
+    }
+
+    private String executeMcpTool(String name, JSONObject arguments) throws Exception {
+        if (Looper.myLooper() == Looper.getMainLooper()) return executeMcpToolOnMainThread(name, arguments);
+        AtomicReference<String> result = new AtomicReference<>();
+        AtomicReference<Exception> failure = new AtomicReference<>();
+        CountDownLatch completed = new CountDownLatch(1);
+        handler.post(() -> {
+            try { result.set(executeMcpToolOnMainThread(name, arguments)); }
+            catch (Exception e) { failure.set(e); }
+            finally { completed.countDown(); }
+        });
+        if (!completed.await(6, TimeUnit.SECONDS)) throw new Exception("Bellota tardó demasiado en responder.");
+        if (failure.get() != null) throw failure.get();
+        return result.get();
+    }
+
+    private String executeMcpToolOnMainThread(String name, JSONObject args) throws Exception {
+        if ("get_bellota_status".equals(name)) {
+            String mood = eyes == null ? "unknown" : eyes.getMood().name().toLowerCase(Locale.ROOT);
+            return "Estado: " + (isAsleep() ? "durmiendo" : "despierta")
+                    + "; ánimo: " + mood
+                    + "; energía: " + (petLife == null ? "?" : petLife.getEnergy())
+                    + "; diversión: " + (petLife == null ? "?" : petLife.getFun())
+                    + "; fastidio: " + (autonomy == null ? "?" : autonomy.getTrait("irritation")) + ".";
+        }
+        if ("set_bellota_emotion".equals(name)) {
+            String emotion = args.optString("emotion", "").trim().toUpperCase(Locale.ROOT);
+            if (isAsleep() || eyes == null) return "No puedo cambiar mi expresión mientras estoy dormida.";
+            try { eyes.setMood(EyePetView.Mood.valueOf(emotion)); }
+            catch (IllegalArgumentException e) { throw new Exception("Emoción no admitida."); }
+            return "Mi expresión ahora es " + emotion.toLowerCase(Locale.ROOT) + ".";
+        }
+        if ("speak_as_bellota".equals(name)) {
+            String phrase = args.optString("text", "").trim();
+            if (phrase.isEmpty() || phrase.length() > 240) throw new Exception("La frase debe tener entre 1 y 240 caracteres.");
+            if (isForcedState() || isAsleep()) return "No puedo hablar ahora: estoy durmiendo.";
+            if (!soundEnabled || localVoice == null) return "La voz está desactivada o todavía no está lista.";
+            speakIfEnabled(phrase);
+            return "Estoy diciendo la frase.";
+        }
+        if ("interact_with_bellota".equals(name)) {
+            String kind = args.optString("kind", "attention");
+            if (!"attention".equals(kind) && !"caress".equals(kind)
+                    && !"affectionate".equals(kind) && !"apology".equals(kind))
+                throw new Exception("Tipo de interacción no admitido.");
+            userInteracted(kind, false);
+            if (eyes != null && !isAsleep()) eyes.reactToAttention();
+            return "Interacción registrada: " + kind + ".";
+        }
+        if ("play_with_bellota".equals(name)) {
+            if (isAsleep() || isBusy()) return "Ahora no puedo empezar un juego.";
+            String game = args.optString("game", "");
+            PlayfieldView.Game selected;
+            String key = game;
+            switch (game) {
+                case "ball": selected = PlayfieldView.Game.BALL; break;
+                case "bubbles": selected = PlayfieldView.Game.BUBBLES; break;
+                case "fly": selected = PlayfieldView.Game.FLY; break;
+                case "stars": selected = PlayfieldView.Game.STARS; break;
+                default: throw new Exception("Juego no admitido.");
+            }
+            startGame(selected, key);
+            return playfield != null && playfield.isRunning() ? "Empecé a jugar: " + game + "." : "No pude iniciar el juego.";
+        }
+        throw new Exception("Herramienta desconocida: " + name);
+    }
+
     private void connectMcpIfConfigured() {
         if (mcpCredentialStore == null) return;
         try {
             String endpoint = mcpCredentialStore.read();
             if (endpoint == null || endpoint.isEmpty()) return;
             if (mcpConnection == null) mcpConnection = new McpConnection();
-            mcpConnection.connect(endpoint, new JSONArray(), null, status ->
+            JSONArray tools = buildMcpTools();
+            mcpConnection.connect(endpoint, tools, this::executeMcpTool, status ->
                     runOnUiThread(() -> Toast.makeText(MainActivity.this, status, Toast.LENGTH_SHORT).show()));
         } catch (Exception e) {
-            android.util.Log.e("BellotaMCP", "No se pudo recuperar la configuración MCP cifrada.");
+            android.util.Log.e("BellotaMCP", "No se pudo configurar la conexión MCP.", e);
         }
     }
 
