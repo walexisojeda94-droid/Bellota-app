@@ -24,13 +24,13 @@ public final class AutonomousBehavior {
     }
 
     /** Por debajo de este nivel de energía decide irse a dormir. */
-    public static final int TIRED_ENERGY = 40;
+    public static final int TIRED_ENERGY = 30;
     /** Con este nivel o menos duerme obligatoriamente. */
     public static final int FORCED_SLEEP_ENERGY = 5;
-    private static final int WAKE_ENERGY = 85;
-    private static final int FORCED_WAKE_ENERGY = 50;
-    private static final long RECOVERY_MS = 2L * 60L * 1000L;      // +1 de energía cada 2 min dormida
-    private static final long DECAY_MS = 15L * 60L * 1000L;        // -1 cada 15 min despierta
+    private static final int WAKE_ENERGY = 100;
+    private static final int FORCED_WAKE_ENERGY = 20;
+    private static final long RECOVERY_MS = 1L * 60L * 1000L;      // +1 de energía cada minuto dormida
+    private static final long DECAY_MS = 15L * 60L * 1000L;        // -2 de energía cada 15 min despierta
     private static final long SULK_MAX_MS = 12L * 60L * 1000L;
     private static final long GRACE_MS = 30L * 60L * 1000L;
 
@@ -38,7 +38,7 @@ public final class AutonomousBehavior {
     private static final String LAST_TICK = "last_tick", LAST_USER = "last_user", LAST_CHAT = "last_chat";
     private static final String REMAINDER = "decay_remainder", REC_REMAINDER = "recovery_remainder";
     private static final String SLEEPING = "sleeping", SLEEP_FORCED = "sleep_forced", SLEEP_REASON = "sleep_reason";
-    private static final String SLEEP_MIN_UNTIL = "sleep_min_until", STAY_AWAKE = "stay_awake";
+    private static final String STAY_AWAKE = "stay_awake";
     private static final String GRACE_UNTIL = "grace_until", CYCLE_START = "cycle_start", SULK_SINCE = "sulk_since";
 
     private final SharedPreferences prefs;
@@ -100,10 +100,9 @@ public final class AutonomousBehavior {
     public void startSleep(String reason) {
         long now = System.currentTimeMillis();
         boolean forced = "forced".equals(reason);
-        long minMinutes = "bored".equals(reason) ? 20L : 30L;
+        // El sueño normal no tiene duración mínima: termina al 100% o por llamada.
         prefs.edit().putBoolean(SLEEPING, true).putBoolean(SLEEP_FORCED, forced).putString(SLEEP_REASON, reason)
-                .putLong(SLEEP_MIN_UNTIL, now + minMinutes * 60000L).putLong(REC_REMAINDER, 0L)
-                .putLong(LAST_TICK, now).apply();
+                .putLong(REC_REMAINDER, 0L).putLong(LAST_TICK, now).apply();
     }
 
     /** manual=true: la despertó el usuario (queda 30 min sin dormirse sola). */
@@ -115,10 +114,9 @@ public final class AutonomousBehavior {
         editor.apply();
     }
 
-    private boolean shouldWake(long now, int energy, boolean quietHours) {
-        if (prefs.getBoolean(SLEEP_FORCED, false)) return energy >= FORCED_WAKE_ENERGY;
-        if ("night".equals(prefs.getString(SLEEP_REASON, "tired"))) return !quietHours && energy >= 60;
-        return energy >= WAKE_ENERGY && now >= prefs.getLong(SLEEP_MIN_UNTIL, 0L);
+    private boolean shouldWake(int energy) {
+        // Todo sueño normal, incluido el nocturno, termina al recuperar el 100%.
+        return energy >= WAKE_ENERGY;
     }
 
     // ---- Escalera del aburrimiento -------------------------------------------
@@ -143,7 +141,14 @@ public final class AutonomousBehavior {
         account(now, life);
         int energy = life == null ? 70 : life.getEnergy();
         int fun = life == null ? 60 : life.getFun();
-        if (isSleeping()) return shouldWake(now, energy, quietHours) ? Action.WAKE_UP : Action.NONE;
+        if (isSleeping()) {
+            // Al salir del sueño obligatorio al 20%, sigue dormida pero pasa a sueño normal.
+            if (prefs.getBoolean(SLEEP_FORCED, false) && energy >= FORCED_WAKE_ENERGY) {
+                prefs.edit().putBoolean(SLEEP_FORCED, false).putString(SLEEP_REASON, "tired").apply();
+                return Action.NONE;
+            }
+            return shouldWake(energy) ? Action.WAKE_UP : Action.NONE;
+        }
 
         long idle = now - prefs.getLong(LAST_USER, now);
         growIrritation(now, idle);
@@ -269,7 +274,7 @@ public final class AutonomousBehavior {
 
     // ---- Necesidades ----------------------------------------------------------
 
-    /** Dormida recupera energía (+1 cada 2 min); despierta la gasta (-1 cada 15 min). */
+    /** Dormida recupera energía (+1 por minuto); despierta la gasta (-2 cada 15 min). */
     private void account(long now, PetLife life) {
         long previous = prefs.getLong(LAST_TICK, now);
         boolean sleeping = isSleeping();
@@ -286,7 +291,7 @@ public final class AutonomousBehavior {
                 long acc = prefs.getLong(REMAINDER, 0L) + elapsed;
                 int periods = (int) (acc / DECAY_MS);
                 editor.putLong(REMAINDER, acc % DECAY_MS);
-                if (periods > 0) life.setNeeds(Math.max(5, life.getEnergy() - periods), Math.max(5, life.getFun() - periods));
+                if (periods > 0) life.setNeeds(Math.max(5, life.getEnergy() - periods * 2), Math.max(5, life.getFun() - periods));
             }
         }
         editor.apply();
