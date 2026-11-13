@@ -8,6 +8,7 @@ import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.net.URI;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -37,8 +38,8 @@ public final class McpConnection {
         listener = callback;
         tools = toolDefs == null ? new JSONArray() : toolDefs;
         handler = toolHandler;
-        if (endpoint == null || !endpoint.startsWith("wss://")) {
-            notifyStatus("La dirección MCP debe comenzar con wss://");
+        if (!isValidEndpoint(endpoint)) {
+            notifyStatus("La dirección MCP debe usar wss://api.xiaozhi.me/mcp/.");
             return;
         }
         Request request = new Request.Builder().url(endpoint)
@@ -56,6 +57,23 @@ public final class McpConnection {
                 synchronized (McpConnection.this) { socket = null; }
             }
         });
+    }
+
+    /** Solo acepta el endpoint oficial MCP de XiaoZhi, sin credenciales embebidas en el host. */
+    public static boolean isValidEndpoint(String endpoint) {
+        if (endpoint == null || endpoint.trim().isEmpty()) return false;
+        try {
+            URI uri = new URI(endpoint.trim());
+            String path = uri.getPath();
+            return "wss".equalsIgnoreCase(uri.getScheme())
+                    && "api.xiaozhi.me".equalsIgnoreCase(uri.getHost())
+                    && (uri.getPort() == -1 || uri.getPort() == 443)
+                    && uri.getUserInfo() == null
+                    && uri.getFragment() == null
+                    && path != null && path.startsWith("/mcp/");
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private void handleMessage(WebSocket ws, String raw) {
