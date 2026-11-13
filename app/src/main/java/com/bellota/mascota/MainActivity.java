@@ -223,9 +223,9 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (sleeping && !containsWakeWord(text)) return false;
 
         // Durante el sueño normal, el nombre provoca el despertar antes de procesar el resto.
-        if (sleeping) userInteracted("attention", false);
+        if (sleeping) userInteracted(classifyEmotionalInteraction(text), false);
         if (handleCompanionCommand(text, false)) return false;
-        if (!sleeping) userInteracted("attention", false);
+        if (!sleeping) userInteracted(classifyEmotionalInteraction(text), false);
         return true;
     }
 
@@ -253,7 +253,16 @@ public class MainActivity extends Activity implements SensorEventListener {
     private void applyStageMood() {
         int stage = autonomy.getStage(petLife);
         EyePetView.Mood mood = eyes.getMood();
-        if (stage >= 5) {
+        int irritation = autonomy.getTrait("irritation");
+        if (irritation >= 65) {
+            if (mood != EyePetView.Mood.OFFENDED) {
+                eyes.setMood(EyePetView.Mood.OFFENDED);
+                eyes.lookAway(rnd.nextBoolean() ? 1 : -1);
+            }
+        } else if (irritation >= 40) {
+            if (mood != EyePetView.Mood.ANGRY && mood != EyePetView.Mood.OFFENDED)
+                eyes.setMood(EyePetView.Mood.ANGRY);
+        } else if (stage >= 5) {
             if (mood != EyePetView.Mood.OFFENDED) {
                 eyes.setMood(EyePetView.Mood.OFFENDED);
                 eyes.lookAway(rnd.nextBoolean() ? 1 : -1);
@@ -334,7 +343,9 @@ public class MainActivity extends Activity implements SensorEventListener {
         ConversationMemory m = memory();
         PetVoiceLines.Talk talk = lines.initiative(m, autonomy.getTrait("irritation"),
                 autonomy.getTrait("affection"), xiaoZhiOnline());
-        eyes.setMood(EyePetView.Mood.HAPPY);
+        if (autonomy.getTrait("irritation") < 40) eyes.setMood(EyePetView.Mood.HAPPY);
+        else if (autonomy.getTrait("irritation") >= 65) eyes.setMood(EyePetView.Mood.OFFENDED);
+        else eyes.setMood(EyePetView.Mood.ANGRY);
         if (talk.expect != null && m != null && soundEnabled && localVoice != null) {
             m.expect(talk.expect, System.currentTimeMillis());
         }
