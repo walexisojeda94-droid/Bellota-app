@@ -102,7 +102,6 @@ public final class LocalConversationEngine {
     public synchronized void rememberOnlineMessage(String input) {
         if (input == null || input.trim().isEmpty()) return;
         long now = System.currentTimeMillis();
-        Utterance u = Utterance.of(input);
         memory.onUserMessage(now);
         String learnedName = extractName(input);
         if (learnedName != null) memory.setName(learnedName);
