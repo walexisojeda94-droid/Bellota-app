@@ -33,6 +33,11 @@ android {
 
     lint {
         checkReleaseBuilds false
+        abortOnError true
+        // Bellota se distribuye por instalación privada, no por Google Play.
+        // Se conserva targetSdk 28 para evitar cambios de comportamiento no validados
+        // en el dispositivo objetivo Android 8.1 (API 27).
+        disable += 'ExpiredTargetSdkVersion'
     }
 
     buildTypes {
