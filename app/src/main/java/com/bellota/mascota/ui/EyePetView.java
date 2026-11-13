@@ -214,6 +214,7 @@ public class EyePetView extends View {
         if (blinkAnimator != null) blinkAnimator.cancel();
         if (gazeAnimator != null) gazeAnimator.cancel();
         if (bounceAnimator != null) bounceAnimator.cancel();
+        animate().cancel();
         // Limpiar también las animaciones dibujadas directamente en onDraw.
         yawnStartMs = 0L;
         squint = 0f;
