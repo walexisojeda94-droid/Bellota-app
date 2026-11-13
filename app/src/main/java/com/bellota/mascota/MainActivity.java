@@ -39,6 +39,9 @@ import com.bellota.mascota.xiaozhi.XiaoZhiMqttUdpSession;
 import com.bellota.mascota.xiaozhi.McpConnection;
 import com.bellota.mascota.xiaozhi.McpCredentialStore;
 import org.json.JSONArray;
+import com.bellota.mascota.local.ConversationMemory;
+import com.bellota.mascota.local.PetVoiceLines;
+import com.bellota.mascota.ui.PlayfieldView;
 import java.util.Locale;
 
 public class MainActivity extends Activity implements SensorEventListener {
@@ -73,35 +76,31 @@ public class MainActivity extends Activity implements SensorEventListener {
     private String pendingXiaoZhiCode;
     private boolean soundEnabled = true;
     private boolean waitingForWeatherPermission;
+    private PlayfieldView playfield;
+    private final PetVoiceLines lines = new PetVoiceLines();
+    private final java.util.Random rnd = new java.util.Random();
+    private long busyUntil;
+    private Runnable pendingSleepTask;
+    private String pendingSleepReason;
+    private boolean ttsMuted;
+    private boolean hideSeekActive;
+    private int hideSeekToken;
+    private long lastMumbleAt;
+    private final Runnable unmuteTtsTask = new Runnable() {
+        @Override public void run() { ttsMuted = false; updateMute(); }
+    };
     private SensorManager sensorManager;
     private Sensor lightSensor;
     private boolean lightTheme;
     private long lastThemeChange;
     private final Runnable autonomousRoutine = new Runnable() {
         @Override public void run() {
+            long delay = 14000L + (long) (Math.random() * 12000L);
             if (eyes != null && autonomy != null && !isFinishing() && !paused) {
-                int hour=java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
-                AutonomousBehavior.Action action=autonomy.next(petLife,hour>=0 && hour<7);
-                if(action!=AutonomousBehavior.Action.NONE && petMemory!=null) petMemory.remember("actividad", action.name());
-                switch(action) {
-                    case REST: eyes.setMood(EyePetView.Mood.SLEEPY); break;
-                    case PLAY:
-                        eyes.playAutonomousGame();
-                        if(petLife!=null) petLife.setNeeds(Math.max(5,petLife.getEnergy()-2),Math.min(100,petLife.getFun()+8));
-                        break;
-                    case THINK: eyes.setMood(EyePetView.Mood.THINKING); break;
-                    case LOOK_AROUND:
-                        eyes.performAutonomousBehavior();
-                        if(Math.random()<0.20d) moveEyesAroundScreen();
-                        break;
-                    case INITIATE_CHAT:
-                        eyes.setMood(EyePetView.Mood.HAPPY);
-                        speakIfEnabled(autonomy.initiativeLine());
-                        break;
-                    default: break;
-                }
+                if (autonomy.isSleeping()) delay = 60000L; // dormida solo revisa si ya recuperó fuerzas
+                runAutonomousTick();
             }
-            handler.postDelayed(this,20000L+(long)(Math.random()*18000L));
+            handler.postDelayed(this, delay);
         }
     };
 
@@ -116,6 +115,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         enterImmersiveMode();
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         buildPetScreen();
+        applySleepVisuals();
         xiaoZhiConnection = new XiaoZhiConnection(this);
         mcpCredentialStore = new McpCredentialStore(this);
         connectMcpIfConfigured();
@@ -127,6 +127,9 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
         });
         localVoice.setOnSpeechFinished(() -> {
+            handler.removeCallbacks(unmuteTtsTask);
+            ttsMuted = false;
+            updateMute();
             // No iniciar el reconocedor local mientras el transporte XiaoZhi usa el micrófono.
             if (!isFinishing() && voiceCommands != null
                     && xiaoZhiVoiceSession == null && xiaoZhiMqttUdpSession == null) {
@@ -145,7 +148,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         root.setBackgroundColor(0xFF080D10);
         eyes = new EyePetView(this);
         eyes.setLightTheme(false);
-        eyes.setOnClickListener(v -> { eyes.reactToAttention(); });
+        eyes.setOnClickListener(v -> { }); // la reacción al toque se resuelve en ACTION_UP (onPetTouched)
         eyes.setOnTouchListener((view, event) -> {
             if(event.getPointerCount()>1) {
                 if(event.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN && petMemory!=null)
@@ -161,13 +164,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 boolean stroke=distance>24f || duration>420L;
                 boolean firm=!stroke && touchPressure>=0.72f && duration<190L;
                 String kind=firm?"rough_touch":"caress";
-                if(autonomy!=null) autonomy.onInteraction(petLife,kind);
-                if(petMemory!=null) petMemory.remember(kind,
-                        firm?"Toque breve y firme; Bellota lo interpretó como un golpe.":"Contacto prolongado o suave; Bellota lo interpretó como una caricia.");
-                if(eyes!=null) {
-                    if(firm) eyes.setMood(EyePetView.Mood.SURPRISED);
-                    else eyes.reactToAttention();
-                }
+                onPetTouched(kind, firm);
             }
             return false;
         });
@@ -177,9 +174,421 @@ public class MainActivity extends Activity implements SensorEventListener {
         params.leftMargin = (getResources().getDisplayMetrics().widthPixels - width) / 2;
         params.topMargin = (getResources().getDisplayMetrics().heightPixels - height) / 2;
         root.addView(eyes, params);
+        playfield = new PlayfieldView(this);
+        playfield.setListener(new PlayfieldView.Listener() {
+            @Override public void onAttention(float x, float y) { if (eyes != null) eyes.lookAtParentPoint(x, y); }
+            @Override public void onEvent(PlayfieldView.Game game, String event) { handleGameEvent(game, event); }
+            @Override public void onFinished(PlayfieldView.Game game) { finishGame(); }
+        });
+        root.addView(playfield, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         // Acceso oculto: mantener pulsados los ojos para configurar MCP.
         eyes.setOnLongClickListener(v -> { showMcpSetupDialog(); return true; });
         setContentView(root);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Rutina autónoma: sueño, escalera del aburrimiento y juegos
+    // ---------------------------------------------------------------------------
+
+    private boolean isAsleep() { return autonomy != null && autonomy.isSleeping(); }
+
+    private boolean isForcedState() {
+        return autonomy != null && (autonomy.isForcedSleep() || "forced".equals(pendingSleepReason));
+    }
+
+    private boolean isBusy() {
+        return System.currentTimeMillis() < busyUntil || pendingSleepTask != null || hideSeekActive
+                || (playfield != null && playfield.isRunning());
+    }
+
+    private ConversationMemory memory() { return conversationEngine == null ? null : conversationEngine.memory(); }
+
+    private boolean xiaoZhiOnline() { return xiaoZhiVoiceSession != null || xiaoZhiMqttUdpSession != null; }
+
+    private static String simplify(String spoken) {
+        if (spoken == null) return "";
+        return spoken.toLowerCase(new Locale("es", "AR"))
+                .replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u").trim();
+    }
+
+    private void runAutonomousTick() {
+        int hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+        boolean quiet = hour >= 0 && hour < 7;
+        if (autonomy.isSleeping()) {
+            if (autonomy.next(petLife, quiet) == AutonomousBehavior.Action.WAKE_UP) wakeUp(false, true);
+            return;
+        }
+        if (isBusy()) return;
+        applyStageMood();
+        AutonomousBehavior.Action action = autonomy.next(petLife, quiet);
+        if (action != AutonomousBehavior.Action.NONE && petMemory != null) petMemory.remember("actividad", action.name());
+        runAction(action);
+    }
+
+    /** El ánimo de fondo acompaña la escalera: aburrida, fastidiada u ofendida. */
+    private void applyStageMood() {
+        int stage = autonomy.getStage(petLife);
+        EyePetView.Mood mood = eyes.getMood();
+        if (stage >= 5) {
+            if (mood != EyePetView.Mood.OFFENDED) {
+                eyes.setMood(EyePetView.Mood.OFFENDED);
+                eyes.lookAway(rnd.nextBoolean() ? 1 : -1);
+            }
+        } else if (stage == 4) {
+            if (mood != EyePetView.Mood.ANGRY && mood != EyePetView.Mood.OFFENDED) {
+                eyes.setMood(rnd.nextInt(100) < 70 ? EyePetView.Mood.ANGRY : EyePetView.Mood.BORED);
+            }
+        } else if (stage >= 1 && stage <= 2) {
+            if (mood != EyePetView.Mood.BORED && rnd.nextInt(100) < 50) eyes.setMood(EyePetView.Mood.BORED);
+        } else if (stage == 0 && (mood == EyePetView.Mood.ANGRY || mood == EyePetView.Mood.OFFENDED
+                || mood == EyePetView.Mood.BORED)) {
+            eyes.setMood(EyePetView.Mood.CALM);
+        }
+    }
+
+    private void runAction(AutonomousBehavior.Action action) {
+        long now = System.currentTimeMillis();
+        switch (action) {
+            case REST_TIRED: startSleepSequence("tired"); break;
+            case REST_BORED: startSleepSequence("bored"); break;
+            case REST_NIGHT: startSleepSequence("night"); break;
+            case REST_FORCED: startSleepSequence("forced"); break;
+            case WAKE_UP: wakeUp(false, true); break;
+            case THINK: eyes.setMood(EyePetView.Mood.THINKING); break;
+            case LOOK_AROUND:
+                if (autonomy.getStage(petLife) <= 3) eyes.performAutonomousBehavior();
+                else eyes.lookDirection(rnd.nextFloat() * 0.6f - 0.3f, rnd.nextFloat() * 0.3f - 0.15f, 900L);
+                if (rnd.nextInt(100) < 20) moveEyesAroundScreen();
+                break;
+            case YAWN:
+                eyes.yawn();
+                busyUntil = now + 3000L;
+                if (rnd.nextInt(100) < 60) speakIfEnabled(lines.yawn());
+                break;
+            case MONOLOGUE:
+                eyes.setMood(rnd.nextBoolean() ? EyePetView.Mood.THINKING : EyePetView.Mood.CURIOUS);
+                speakIfEnabled(lines.monologue(memory()));
+                busyUntil = now + 4000L;
+                break;
+            case INITIATE_CHAT:
+                doInitiative();
+                busyUntil = now + 5000L;
+                break;
+            case ANNOY:
+                eyes.setMood(EyePetView.Mood.ANGRY);
+                eyes.blinkNow();
+                speakIfEnabled(lines.annoyed(memory()));
+                busyUntil = now + 4000L;
+                break;
+            case TURN_AWAY:
+                eyes.setMood(EyePetView.Mood.OFFENDED);
+                eyes.lookAway(rnd.nextBoolean() ? 1 : -1);
+                if (rnd.nextInt(100) < 70) speakIfEnabled(lines.sulk());
+                busyUntil = now + 3000L;
+                break;
+            case GAME_DOT:
+                eyes.playAutonomousGame();
+                busyUntil = now + 4500L;
+                applyPlayEffects();
+                if (rnd.nextInt(100) < 40) speakIfEnabled(lines.game("dot"));
+                break;
+            case GAME_BALL: startGame(PlayfieldView.Game.BALL, "ball"); break;
+            case GAME_BUBBLES: startGame(PlayfieldView.Game.BUBBLES, "bubbles"); break;
+            case GAME_FLY: startGame(PlayfieldView.Game.FLY, "fly"); break;
+            case GAME_STARS: startGame(PlayfieldView.Game.STARS, "stars"); break;
+            case GAME_HIDE: startHideAndSeek(); break;
+            default: break;
+        }
+    }
+
+    private void applyPlayEffects() {
+        if (petLife != null) petLife.setNeeds(Math.max(5, petLife.getEnergy() - 2), Math.min(100, petLife.getFun() + 8));
+    }
+
+    /** Charla por iniciativa propia: usa nombre, apodos y gustos; solo pregunta si no hay sesión online. */
+    private void doInitiative() {
+        ConversationMemory m = memory();
+        PetVoiceLines.Talk talk = lines.initiative(m, autonomy.getTrait("irritation"),
+                autonomy.getTrait("affection"), xiaoZhiOnline());
+        eyes.setMood(EyePetView.Mood.HAPPY);
+        if (talk.expect != null && m != null && soundEnabled && localVoice != null) {
+            m.expect(talk.expect, System.currentTimeMillis());
+        }
+        speakIfEnabled(talk.text);
+    }
+
+    // ---- Juegos en la capa de juego ----------------------------------------------
+
+    private void startGame(PlayfieldView.Game game, String key) {
+        if (playfield == null || eyes == null) return;
+        eyes.setMood(EyePetView.Mood.CURIOUS);
+        playfield.setFocus(eyes.getX() + eyes.getWidth() / 2f, eyes.getY() + eyes.getHeight() / 2f);
+        playfield.start(game);
+        if (!playfield.isRunning()) return;
+        busyUntil = System.currentTimeMillis() + 15000L;
+        applyPlayEffects();
+        if (rnd.nextInt(100) < 50) speakIfEnabled(lines.game(key));
+    }
+
+    private void handleGameEvent(PlayfieldView.Game game, String event) {
+        if (eyes == null || event == null) return;
+        switch (event) {
+            case "ball_bounce":
+                if (eyes.getMood() != EyePetView.Mood.HAPPY) eyes.setMood(EyePetView.Mood.HAPPY);
+                eyes.blinkNow();
+                break;
+            case "bubble_pop":
+                eyes.blinkNow();
+                break;
+            case "fly_close":
+                eyes.setMood(EyePetView.Mood.ANGRY);
+                handler.postDelayed(() -> {
+                    if (eyes != null && playfield != null && playfield.currentGame() == PlayfieldView.Game.FLY
+                            && eyes.getMood() == EyePetView.Mood.ANGRY) eyes.setMood(EyePetView.Mood.CURIOUS);
+                }, 900L);
+                if (rnd.nextInt(100) < 30) speakIfEnabled(lines.game("flyClose"));
+                break;
+            case "fly_caught":
+                eyes.setMood(EyePetView.Mood.HAPPY);
+                eyes.bounce();
+                if (rnd.nextInt(100) < 70) speakIfEnabled(lines.game("flyCaught"));
+                break;
+            case "star":
+                eyes.setMood(EyePetView.Mood.SURPRISED);
+                handler.postDelayed(() -> {
+                    if (eyes != null && playfield != null && playfield.currentGame() == PlayfieldView.Game.STARS
+                            && eyes.getMood() == EyePetView.Mood.SURPRISED) eyes.setMood(EyePetView.Mood.CURIOUS);
+                }, 700L);
+                break;
+            default: break;
+        }
+    }
+
+    private void finishGame() {
+        busyUntil = System.currentTimeMillis() + 1500L;
+        if (eyes == null) return;
+        eyes.lookDirection(0f, 0f, 500L);
+        eyes.setMood(EyePetView.Mood.HAPPY);
+    }
+
+    // ---- Escondite: los ojos se esconden fuera de pantalla y se asoman ---------------
+
+    private void startHideAndSeek() {
+        if (petRoot == null || eyes == null || petRoot.getWidth() == 0 || eyes.getWidth() == 0) return;
+        final int token = ++hideSeekToken;
+        hideSeekActive = true;
+        busyUntil = System.currentTimeMillis() + 20000L;
+        applyPlayEffects();
+        final float rw = petRoot.getWidth(), rh = petRoot.getHeight(), ew = eyes.getWidth(), eh = eyes.getHeight();
+        final float cx = (rw - ew) / 2f, cy = (rh - eh) / 2f;
+        final int side = rnd.nextInt(3); // 0 izquierda, 1 derecha, 2 abajo
+        final float hx, hy, px, py, gx, gy;
+        if (side == 0) { hx = -ew * 0.92f; hy = cy; px = -ew * 0.45f; py = cy; gx = 0.34f; gy = 0f; }
+        else if (side == 1) { hx = rw - ew * 0.08f; hy = cy; px = rw - ew * 0.55f; py = cy; gx = -0.34f; gy = 0f; }
+        else { hx = cx; hy = rh - eh * 0.08f; px = cx; py = rh - eh * 0.55f; gx = 0f; gy = -0.2f; }
+        eyes.setMood(EyePetView.Mood.CURIOUS);
+        if (rnd.nextInt(100) < 60) speakIfEnabled(lines.game("hide"));
+        slideEyes(hx, hy, 900L);
+        hideSeekStep(token, 2400L, () -> { slideEyes(px, py, 650L); eyes.lookDirection(gx, gy, 400L); });
+        hideSeekStep(token, 3900L, () -> slideEyes(hx, hy, 600L));
+        hideSeekStep(token, 5600L, () -> { slideEyes(px, py, 650L); eyes.lookDirection(gx, gy, 400L); });
+        hideSeekStep(token, 6900L, () -> {
+            slideEyes(cx, cy, 450L);
+            eyes.lookDirection(0f, 0f, 300L);
+            eyes.setMood(EyePetView.Mood.SURPRISED);
+            if (rnd.nextInt(100) < 70) speakIfEnabled(lines.game("peek"));
+        });
+        hideSeekStep(token, 7600L, () -> { eyes.setMood(EyePetView.Mood.HAPPY); eyes.bounce(); });
+        hideSeekStep(token, 9200L, () -> { hideSeekActive = false; busyUntil = System.currentTimeMillis() + 1000L; });
+    }
+
+    private void hideSeekStep(final int token, long delayMs, final Runnable step) {
+        handler.postDelayed(() -> { if (token == hideSeekToken && hideSeekActive && eyes != null) step.run(); }, delayMs);
+    }
+
+    private void slideEyes(float x, float y, long durationMs) {
+        eyes.animate().cancel();
+        eyes.animate().x(x).y(y).setDuration(durationMs)
+                .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator()).start();
+    }
+
+    /** Corta juegos y escondite en curso (por ejemplo, porque el usuario le habló). */
+    private void cancelActivities() {
+        if (playfield != null) playfield.stop(false);
+        if (hideSeekActive) {
+            hideSeekActive = false;
+            hideSeekToken++;
+            if (petRoot != null && eyes != null && petRoot.getWidth() > 0) {
+                eyes.animate().cancel();
+                eyes.animate().x((petRoot.getWidth() - eyes.getWidth()) / 2f)
+                        .y((petRoot.getHeight() - eyes.getHeight()) / 2f).setDuration(350L).start();
+            }
+        }
+        busyUntil = 0L;
+    }
+
+    // ---- Sueño ----------------------------------------------------------------------
+
+    /** Avisa que se va a dormir; da unos segundos para decirle "no te duermas". */
+    private void startSleepSequence(final String reason) {
+        if (autonomy == null || eyes == null || autonomy.isSleeping() || pendingSleepTask != null) return;
+        cancelActivities();
+        ConversationMemory m = memory();
+        String phrase;
+        switch (reason) {
+            case "bored": phrase = lines.boredSleep(m); break;
+            case "night": phrase = lines.nightSleep(m); break;
+            case "forced": phrase = lines.forcedSleep(); break;
+            case "asked": phrase = lines.askedSleep(m); break;
+            default: phrase = lines.tiredSleep(m); break;
+        }
+        final boolean forced = "forced".equals(reason);
+        eyes.setMood(EyePetView.Mood.SLEEPY);
+        speakIfEnabled(phrase);
+        busyUntil = System.currentTimeMillis() + (forced ? 5000L : 10000L);
+        pendingSleepReason = reason;
+        pendingSleepTask = () -> { pendingSleepTask = null; pendingSleepReason = null; beginSleep(reason); };
+        handler.postDelayed(pendingSleepTask, forced ? 3500L : 8000L);
+    }
+
+    private void beginSleep(String reason) {
+        if (autonomy == null || eyes == null) return;
+        autonomy.startSleep(reason);
+        eyes.setMood(EyePetView.Mood.SLEEPING);
+        dimScreen(true);
+        updateMute();
+        if (petMemory != null) petMemory.remember("sueno", "Bellota se fue a dormir (" + reason + ").");
+    }
+
+    /** Cancela el aviso de sueño si todavía no se durmió (salvo sueño obligatorio). */
+    private boolean cancelPendingSleep() {
+        if (pendingSleepTask == null || "forced".equals(pendingSleepReason)) return false;
+        handler.removeCallbacks(pendingSleepTask);
+        pendingSleepTask = null;
+        pendingSleepReason = null;
+        busyUntil = 0L;
+        if (eyes != null) eyes.setMood(EyePetView.Mood.HAPPY);
+        return true;
+    }
+
+    private void wakeUp(boolean manual, boolean speak) {
+        if (autonomy == null || eyes == null) return;
+        autonomy.wake(manual);
+        dimScreen(false);
+        updateMute();
+        eyes.setMood(manual ? EyePetView.Mood.SURPRISED : EyePetView.Mood.HAPPY);
+        if (manual) {
+            handler.postDelayed(() -> {
+                if (!isAsleep() && eyes != null && eyes.getMood() == EyePetView.Mood.SURPRISED) eyes.setMood(EyePetView.Mood.HAPPY);
+            }, 900L);
+        }
+        eyes.blinkNow();
+        if (speak) speakIfEnabled(lines.wake(manual, memory()));
+        if (petMemory != null) petMemory.remember("sueno", manual ? "La despertaron." : "Bellota despertó descansada.");
+    }
+
+    private void mumbleInSleep() {
+        long now = System.currentTimeMillis();
+        if (now - lastMumbleAt < 6000L) return;
+        lastMumbleAt = now;
+        speakIfEnabled(lines.mumble());
+    }
+
+    private void dimScreen(boolean dim) {
+        WindowManager.LayoutParams attributes = getWindow().getAttributes();
+        attributes.screenBrightness = dim ? 0.03f : WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+        getWindow().setAttributes(attributes);
+    }
+
+    /** Restablece pantalla y ojos según el estado guardado (al abrir o volver a la app). */
+    private void applySleepVisuals() {
+        if (eyes == null || autonomy == null) return;
+        boolean asleep = autonomy.isSleeping();
+        dimScreen(asleep);
+        if (asleep) eyes.setMood(EyePetView.Mood.SLEEPING);
+        updateMute();
+    }
+
+    /** XiaoZhi no recibe audio mientras habla la voz local o en el sueño obligatorio. */
+    private void updateMute() {
+        boolean mute = ttsMuted || (autonomy != null && autonomy.isForcedSleep());
+        if (xiaoZhiVoiceSession != null) xiaoZhiVoiceSession.setMuted(mute);
+        if (xiaoZhiMqttUdpSession != null) xiaoZhiMqttUdpSession.setMuted(mute);
+    }
+
+    // ---- Interacción con el usuario ---------------------------------------------------
+
+    private void onPetTouched(String kind, boolean firm) {
+        if (isForcedState()) { // ya no puede mantenerse despierta
+            if (petMemory != null) petMemory.remember(kind, "Tocaron a Bellota cuando ya no podía mantenerse despierta.");
+            mumbleInSleep();
+            return;
+        }
+        if (cancelPendingSleep() && petMemory != null) petMemory.remember("sueno", "El usuario la tocó y no se durmió.");
+        userInteracted(kind, true);
+        if (petMemory != null) petMemory.remember(kind,
+                firm ? "Toque breve y firme; Bellota lo interpretó como un golpe."
+                        : "Contacto prolongado o suave; Bellota lo interpretó como una caricia.");
+        if (eyes != null && !isAsleep()) {
+            if (firm) eyes.setMood(EyePetView.Mood.SURPRISED);
+            else eyes.reactToAttention();
+        }
+    }
+
+    /** Registra la interacción, despierta si dormía, corta juegos y celebra si estaba fastidiada. */
+    private void userInteracted(String kind, boolean speak) {
+        if (autonomy == null) return;
+        boolean wasSleeping = autonomy.isSleeping();
+        autonomy.onInteraction(petLife, kind);
+        if (wasSleeping) wakeUp(true, speak);
+        cancelActivities();
+        busyUntil = System.currentTimeMillis() + 5000L; // un respiro antes de que vuelva a hacer cosas sola
+        int reconcile = autonomy.takeReconcileStage();
+        if (reconcile >= 4 && !wasSleeping && eyes != null) {
+            eyes.lookDirection(0f, 0f, 400L);
+            eyes.setMood(EyePetView.Mood.HAPPY);
+            eyes.bounce();
+            if (speak) speakIfEnabled(lines.reconcile(reconcile, memory()));
+        }
+    }
+
+    /** "No te duermas", "dormite", "despertate". Devuelve true si el texto era uno de esos comandos. */
+    private boolean handleCompanionCommand(String text, boolean speak) {
+        if (autonomy == null || text == null || text.isEmpty()) return false;
+        if (text.contains("no te duermas") || text.contains("no te vayas a dormir")
+                || text.contains("no te vayas a descansar") || text.contains("quedate despierta")) {
+            onStayAwake(speak);
+            return true;
+        }
+        if (text.contains("dormite") || text.contains("anda a dormir") || text.contains("andate a dormir")
+                || text.contains("anda a descansar")) {
+            if (!autonomy.isSleeping() && pendingSleepTask == null) {
+                autonomy.setStayAwake(false);
+                startSleepSequence("asked");
+            }
+            return true;
+        }
+        if ((text.contains("despertate") || text.contains("levantate") || text.contains("desperta"))
+                && autonomy.isSleeping() && !autonomy.isForcedSleep()) {
+            wakeUp(true, speak);
+            return true;
+        }
+        return false;
+    }
+
+    private void onStayAwake(boolean speak) {
+        if (isForcedState()) { // con 5% de energía el sueño es obligatorio
+            if (speak) speakIfEnabled(lines.cantStayAwake());
+            return;
+        }
+        autonomy.setStayAwake(true); // sigue haciendo compañía hasta quedarse sin energía
+        boolean wasSleeping = autonomy.isSleeping();
+        cancelPendingSleep();
+        if (wasSleeping) wakeUp(true, false);
+        if (eyes != null) eyes.setMood(EyePetView.Mood.HAPPY);
+        if (speak) speakIfEnabled(lines.stayAwake(memory()));
+        if (petMemory != null) petMemory.remember("sueno", "El usuario le pidió que no se duerma.");
     }
 
     private void moveEyesAroundScreen() {
@@ -248,10 +657,11 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
             @Override public void onTranscript(String transcript) {
                 runOnUiThread(() -> {
-                    if (autonomy != null) autonomy.onInteraction(petLife,"attention");
+                    if (handleCompanionCommand(simplify(transcript), false)) return;
+                    userInteracted("attention", false);
                     if (petMemory != null) petMemory.remember("conversacion_usuario", transcript);
                     queueLocalFallback(transcript);
-                    if (eyes != null) eyes.reactToAttention();
+                    if (eyes != null && !isAsleep()) eyes.reactToAttention();
                     android.util.Log.i("BellotaXiaoZhi", "Usuario: " + transcript);
                 });
             }
@@ -260,8 +670,8 @@ public class MainActivity extends Activity implements SensorEventListener {
                     if (speaking) {
                         completeOnlineTurn();
                         if (localVoice != null) localVoice.stop();
-                        if (eyes != null) eyes.setMood(EyePetView.Mood.HAPPY);
-                    } else if (eyes != null) {
+                        if (eyes != null && !isAsleep()) eyes.setMood(EyePetView.Mood.HAPPY);
+                    } else if (eyes != null && !isAsleep()) {
                         eyes.setMood(EyePetView.Mood.CALM);
                     }
                 });
@@ -275,6 +685,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
         });
         xiaoZhiVoiceSession.connect();
+        updateMute();
     }
 
     private void startXiaoZhiMqtt() {
@@ -289,16 +700,17 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
             @Override public void onTranscript(String transcript) {
                 runOnUiThread(() -> {
-                    if (autonomy != null) autonomy.onInteraction(petLife,"attention");
+                    if (handleCompanionCommand(simplify(transcript), false)) return;
+                    userInteracted("attention", false);
                     if (petMemory != null) petMemory.remember("conversacion_usuario", transcript);
                     queueLocalFallback(transcript);
-                    if (eyes != null) eyes.reactToAttention();
+                    if (eyes != null && !isAsleep()) eyes.reactToAttention();
                 });
             }
             @Override public void onSpeaking(boolean speaking) {
                 runOnUiThread(() -> {
-                    if (speaking) { completeOnlineTurn(); if (localVoice != null) localVoice.stop(); if (eyes != null) eyes.setMood(EyePetView.Mood.HAPPY); }
-                    else if (eyes != null) eyes.setMood(EyePetView.Mood.CALM);
+                    if (speaking) { completeOnlineTurn(); if (localVoice != null) localVoice.stop(); if (eyes != null && !isAsleep()) eyes.setMood(EyePetView.Mood.HAPPY); }
+                    else if (eyes != null && !isAsleep()) eyes.setMood(EyePetView.Mood.CALM);
                 });
             }
             @Override public void onError(String message) {
@@ -310,6 +722,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
         });
         xiaoZhiMqttUdpSession.connect();
+        updateMute();
     }
 
     private void queueLocalFallback(String transcript) {
@@ -351,6 +764,13 @@ public class MainActivity extends Activity implements SensorEventListener {
         String text = spoken.toLowerCase(new Locale("es", "AR"))
                 .replace("á", "a").replace("é", "e").replace("í", "i")
                 .replace("ó", "o").replace("ú", "u").trim();
+        if (handleCompanionCommand(text, true)) return;
+        if (autonomy != null && autonomy.isSleeping()) {
+            // Dormida no reacciona al ruido ambiente: solo si le hablan a ella.
+            boolean addressed = text.contains("bellota") || text.contains("hola")
+                    || text.contains("buen dia") || text.contains("buenas");
+            if (!addressed && !text.contains("silencio") && !text.contains("sonido")) return;
+        }
         if (text.contains("silencio")) {
             soundEnabled = false;
             if (localVoice != null) localVoice.stop();
@@ -362,8 +782,9 @@ public class MainActivity extends Activity implements SensorEventListener {
             speakIfEnabled("Ya puedo hablar otra vez.");
             return;
         }
-        if (eyes != null) eyes.reactToAttention();
-        if (autonomy != null) autonomy.onInteraction(petLife,"attention");
+        if (autonomy != null && autonomy.isForcedSleep()) { mumbleInSleep(); return; }
+        userInteracted("attention", true);
+        if (eyes != null && !isAsleep()) eyes.reactToAttention();
         if (petMemory != null) petMemory.remember("voz_usuario", spoken);
         if(text.contains("bateria") || text.contains("carga del telefono")){ BatteryManager b=(BatteryManager)getSystemService(BATTERY_SERVICE); int level=b.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY); speakIfEnabled(level>=0?"El teléfono tiene "+level+" por ciento de batería.":"No pude consultar la batería."); return; }
         if(text.contains("que hora") || text.equals("hora") || text.contains("que dia es") || text.contains("fecha de hoy")){ Date now=new Date(); speakIfEnabled("Son las "+new SimpleDateFormat("HH:mm",new Locale("es","AR")).format(now)+". Hoy es "+new SimpleDateFormat("EEEE d 'de' MMMM",new Locale("es","AR")).format(now)+"."); return; }
@@ -372,7 +793,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         String mood = eyes == null ? "NEUTRAL" : eyes.getMood().name();
         Reply result = conversationEngine == null
                 ? Reply.text(offlineReplies.reply(text, petLife, mood))
-                : conversationEngine.respond(text, petLife, mood);
+                : conversationEngine.respond(spoken, petLife, mood);
         if (result.type == Reply.Type.NEEDS_WEATHER) {
             requestWeather();
             return;
@@ -549,8 +970,13 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void speakIfEnabled(String text) {
-        if (!soundEnabled || localVoice == null || text == null) return;
+        if (!soundEnabled || localVoice == null || text == null || text.isEmpty()) return;
         if (voiceCommands != null) voiceCommands.stop();
+        // Que XiaoZhi no escuche la voz local de Bellota como si fuera el usuario.
+        ttsMuted = true;
+        updateMute();
+        handler.removeCallbacks(unmuteTtsTask);
+        handler.postDelayed(unmuteTtsTask, 4000L + text.length() * 90L);
         localVoice.speak(text);
     }
 
@@ -571,6 +997,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         super.onResume();
         paused = false;
         enterImmersiveMode();
+        applySleepVisuals();
         if(sensorManager!=null&&lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         startVoiceCommands();
@@ -580,6 +1007,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     @Override protected void onPause() {
         paused = true;
+        cancelActivities();
         if (xiaoZhiRetryTask != null) { handler.removeCallbacks(xiaoZhiRetryTask); xiaoZhiRetryTask = null; }
         cancelLocalFallback(false);
         if (voiceCommands != null) voiceCommands.stop();
