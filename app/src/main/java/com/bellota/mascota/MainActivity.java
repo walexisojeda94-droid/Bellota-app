@@ -243,12 +243,17 @@ public class MainActivity extends Activity implements SensorEventListener {
         int hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
         boolean quiet = hour >= 0 && hour < 7;
         if (autonomy.isSleeping()) {
-            if (autonomy.next(petLife, quiet) == AutonomousBehavior.Action.WAKE_UP) wakeUp(false, true);
+            boolean wasForcedSleep = autonomy.isForcedSleep();
+            AutonomousBehavior.Action sleepAction = autonomy.next(petLife, quiet);
+            if (wasForcedSleep != autonomy.isForcedSleep()) updateMute();
+            if (sleepAction == AutonomousBehavior.Action.WAKE_UP) wakeUp(false, true);
             return;
         }
         if (isBusy()) return;
         applyStageMood();
+        boolean wasForcedSleep = autonomy.isForcedSleep();
         AutonomousBehavior.Action action = autonomy.next(petLife, quiet);
+        if (wasForcedSleep != autonomy.isForcedSleep()) updateMute();
         if (action != AutonomousBehavior.Action.NONE && petMemory != null) petMemory.remember("actividad", action.name());
         runAction(action);
     }
