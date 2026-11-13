@@ -119,7 +119,7 @@ public final class LocalConversationEngine {
 
     private static final Pattern NAME = Pattern.compile("(?i)\\b(?:me llamo|mi nombre es)\\s+((?:\\p{L}{2,20})(?:[ '-](?:de|del|la|las|los))?(?:\\s+(?!y\\b|pero\\b|porque\\b|que\\b)\\p{L}{2,20}){0,3})\\b");
     private static final Pattern NICKNAME = Pattern.compile(
-            "(?i)\\b(?:llamame|decime|me dicen|mi apodo es|mi sobrenombre es)\\s+(\\p{L}{2,20})\\s*[.!¡]*\\s*$");
+            "(?i)\\b(?:ll[aá]mame|decime|me dicen|mi apodo es|mi sobrenombre es)\\s+(\\p{L}{2,20})\\s*[.!¡]*\\s*$");
     private static final Pattern LIKE = Pattern.compile("(?i)(?<!no )\\bme (?:gusta|gustan|encanta|encantan)\\s+(.{2,80})$");
     private static final Pattern UNLIKE = Pattern.compile("(?i)\\bya no me (?:gusta|gustan|encanta|encantan)\\s+(.{2,80})$");
     private static final String[] NOT_NAMES = {"algo", "hora", "fecha", "clima", "chiste", "cuando", "como", "que",
