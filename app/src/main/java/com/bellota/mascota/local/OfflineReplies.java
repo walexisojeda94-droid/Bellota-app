@@ -92,6 +92,9 @@ public class OfflineReplies {
     }
     private String moodReply(String mood) {
         String state = mood == null ? "NEUTRAL" : mood.toUpperCase(Locale.ROOT);
+        if (state.contains("ANGRY")) return choose("Estoy un poco fastidiada, para qué voy a mentirte.", "Ando medio enojada, ¡me dejaron sola un buen rato!");
+        if (state.contains("OFFENDED")) return choose("Estoy ofendida, pero si me hablás se me pasa.", "Un poco dolida porque me ignoraron. Ya se me pasa.");
+        if (state.contains("BORED")) return choose("Estoy aburrida, ¿hacemos algo?", "Me aburro un poquito. ¡Qué bueno que me preguntes!");
         if (state.contains("SLEEPY")) return choose("Estoy un poquito soñolienta, me vendría bien descansar.", "Tengo algo de sueño, pero me gusta que me hables.");
         if (state.contains("HAPPY")) return choose("Estoy contenta y con ganas de charlar.", "¡Estoy de buen humor! Me siento animada.");
         if (state.contains("CURIOUS") || state.contains("THINKING")) return choose("Estoy curiosa, con la cabeza llena de preguntas.", "Ando pensativa, tratando de descubrir algo nuevo.");
