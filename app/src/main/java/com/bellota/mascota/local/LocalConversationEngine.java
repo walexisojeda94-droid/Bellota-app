@@ -117,7 +117,7 @@ public final class LocalConversationEngine {
 
     public ConversationMemory memory() { return memory; }
 
-    private static final Pattern NAME = Pattern.compile("(?i)\\b(?:me llamo|mi nombre es)\\s+(\\p{L}{2,20})\\b");
+    private static final Pattern NAME = Pattern.compile("(?i)\\b(?:me llamo|mi nombre es)\\s+((?:\\p{L}{2,20})(?:[ '-](?:de|del|la|las|los))?(?:\\s+(?!y\\b|pero\\b|porque\\b|que\\b)\\p{L}{2,20}){0,3})\\b");
     private static final Pattern NICKNAME = Pattern.compile(
             "(?i)\\b(?:llamame|decime|me dicen|mi apodo es|mi sobrenombre es)\\s+(\\p{L}{2,20})\\s*[.!¡]*\\s*$");
     private static final Pattern LIKE = Pattern.compile("(?i)(?<!no )\\bme (?:gusta|gustan|encanta|encantan)\\s+(.{2,80})$");
@@ -128,7 +128,31 @@ public final class LocalConversationEngine {
     private String extractName(String raw) {
         if (raw == null) return null;
         Matcher m = NAME.matcher(raw);
-        return m.find() ? capitalize(m.group(1)) : null;
+        if (!m.find()) return null;
+        String candidate = m.group(1).trim();
+        String firstName = candidate.split("\\s+")[0];
+        for (String stop : NOT_NAMES) if (stop.equalsIgnoreCase(firstName)) return null;
+        return capitalizeName(candidate);
+    }
+
+    /** Capitaliza cada componente y conserva partículas habituales de apellidos en minúscula. */
+    private static String capitalizeName(String name) {
+        String[] words = name.toLowerCase(new Locale("es", "AR")).split("\\s+");
+        StringBuilder result = new StringBuilder();
+        for (String word : words) {
+            if (result.length() > 0) result.append(' ');
+            if ("de".equals(word) || "del".equals(word) || "la".equals(word)
+                    || "las".equals(word) || "los".equals(word)) {
+                result.append(word);
+                continue;
+            }
+            String[] parts = word.split("-", -1);
+            for (int i = 0; i < parts.length; i++) {
+                if (i > 0) result.append('-');
+                if (!parts[i].isEmpty()) result.append(capitalize(parts[i]));
+            }
+        }
+        return result.toString();
     }
 
     private String extractNickname(String raw) {
