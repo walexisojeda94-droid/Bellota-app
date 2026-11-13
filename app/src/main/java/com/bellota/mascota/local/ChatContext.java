@@ -33,14 +33,15 @@ public final class ChatContext {
         if (m == null) return "neutral";
         String s = m.toUpperCase(Locale.ROOT);
         if (s.contains("SLEEPING") || s.contains("SLEEPY")) return "sleepy";
-        if (s.contains("ANGRY") || s.contains("OFFENDED")) return "sad";
+        if (s.contains("ANGRY")) return "angry";
+        if (s.contains("OFFENDED")) return "offended";
         if (s.contains("HAPPY")) return "happy";
         if (s.contains("CURIOUS") || s.contains("THINKING")) return "curious";
         if (s.contains("SAD")) return "sad";
         return "neutral";
     }
 
-    /** sleepy, happy, curious, sad o neutral. */
+    /** sleepy, happy, curious, angry, offended, sad o neutral. */
     public String moodTag() { return mood; }
 
     /** madrugada, manana, tarde o noche. */
