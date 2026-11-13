@@ -42,6 +42,10 @@ jobs:
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Run JVM unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Run Android lint
+        run: gradle --no-daemon :app:lintDebug
       - name: Build signed release APK
         if: steps.signing.outputs.enabled == 'true'
         env:
