@@ -66,6 +66,11 @@ public final class AutonomousBehavior {
         if ("caress".equals(kind)) {
             affection = clamp(affection + 3); humor = clamp(humor + 1); irritation = clamp(irritation - 3);
             if (life != null) life.setNeeds(Math.min(100, life.getEnergy() + 1), Math.min(100, fun + 8));
+        } else if ("affectionate".equals(kind)) {
+            affection = clamp(affection + 6); humor = clamp(humor + 4); irritation = clamp(irritation - 8);
+            if (life != null) life.setNeeds(life.getEnergy(), Math.min(100, fun + 4));
+        } else if ("apology".equals(kind)) {
+            affection = clamp(affection + 3); humor = clamp(humor + 2); irritation = clamp(irritation - 12);
         } else if ("rough_touch".equals(kind)) {
             affection = clamp(affection - 2); irritation = clamp(irritation + 8);
             if (life != null) life.setNeeds(Math.max(0, life.getEnergy() - 1), Math.max(0, fun - 2));
@@ -298,11 +303,18 @@ public final class AutonomousBehavior {
     }
 
     private void growIrritation(long now, long idle) {
-        long ignoredUpdate = prefs.getLong("last_ignored_update", now);
-        if (idle > 45L * 60000L && now - ignoredUpdate >= 3600000L) {
-            int growth = (int) Math.min(3, (now - ignoredUpdate) / 3600000L);
-            prefs.edit().putInt("irritation", clamp(getTrait("irritation") + growth)).putLong("last_ignored_update", now).apply();
+        long emotionalUpdate = prefs.getLong("last_ignored_update", now);
+        long interval = 30L * 60000L;
+        if (now - emotionalUpdate < interval) return;
+        int periods = (int) Math.min(4L, (now - emotionalUpdate) / interval);
+        int irritation = getTrait("irritation");
+        if (idle > 45L * 60000L) {
+            irritation = clamp(irritation + Math.min(3, periods));
+        } else {
+            // El tiempo tranquilo ayuda a bajar el fastidio, sin borrar de golpe lo ocurrido.
+            irritation = clamp(irritation - periods * 2);
         }
+        prefs.edit().putInt("irritation", irritation).putLong("last_ignored_update", now).apply();
     }
 
     public int getTrait(String name) { return prefs.getInt(name, 50); }
