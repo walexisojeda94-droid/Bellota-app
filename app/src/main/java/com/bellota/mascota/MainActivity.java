@@ -1172,6 +1172,8 @@ public class MainActivity extends Activity implements SensorEventListener {
     @Override protected void onResume() {
         super.onResume();
         paused = false;
+        handler.removeCallbacks(autonomousRoutine);
+        handler.postDelayed(autonomousRoutine, 1800L);
         enterImmersiveMode();
         applySleepVisuals();
         if(sensorManager!=null&&lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL);
@@ -1183,6 +1185,11 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     @Override protected void onPause() {
         paused = true;
+        handler.removeCallbacks(autonomousRoutine);
+        handler.removeCallbacks(unmuteTtsTask);
+        ttsMuted = false;
+        if (localVoice != null) localVoice.stop();
+        updateMute();
         cancelActivities();
         if (xiaoZhiRetryTask != null) { handler.removeCallbacks(xiaoZhiRetryTask); xiaoZhiRetryTask = null; }
         cancelLocalFallback(false);
