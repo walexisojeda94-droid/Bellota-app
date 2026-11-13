@@ -57,3 +57,13 @@
 ## Criterio de versión estable
 
 La versión se considera estable cuando compila, se instala y supera pruebas prolongadas en el J7: modo offline, voz local, vinculación XiaoZhi, audio bidireccional, fallback, recuperación, batería, memoria y temperatura.
+
+
+## Etapa 7. Calidad automatizada
+
+- [x] Pruebas JVM para respuestas locales, memoria y normalización de mensajes.
+- [x] Ejecutar pruebas unitarias y Android Lint en GitHub Actions antes de empaquetar el APK.
+- [x] Corregir las verificaciones de permiso de micrófono detectadas por Lint en los transportes WebSocket y MQTT/UDP.
+- [ ] Resolver advertencias restantes de Lint sin ocultar problemas reales.
+- [ ] Incorporar Gradle Wrapper para compilar localmente sin instalar Gradle por separado.
+- [ ] Ampliar cobertura con pruebas de ciclo de vida, reconexión y persistencia.
