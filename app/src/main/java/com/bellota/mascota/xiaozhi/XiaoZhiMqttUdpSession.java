@@ -55,6 +55,7 @@ public final class XiaoZhiMqttUdpSession {
     private volatile String publishTopic, sessionId;
     private volatile byte[] aesKey, baseNonce;
     private volatile boolean speaking;
+    private volatile boolean muted;
     private final AtomicBoolean firstDownlinkPacket = new AtomicBoolean(false);
     private volatile long txSequence, rxSequence;
     private AudioRecord recorder;
@@ -185,7 +186,7 @@ public final class XiaoZhiMqttUdpSession {
                         int count=Math.min(SAMPLES-filled,n-off);System.arraycopy(read,off,frame,filled,count);filled+=count;off+=count;
                         if(filled==SAMPLES)try{
                             int len=encoder.encode(frame,0,SAMPLES,opus,0,opus.length);
-                            if(len>0)sendAudio(Arrays.copyOf(opus,len));
+                            if(len>0&&!muted)sendAudio(Arrays.copyOf(opus,len));
                             filled=0;
                         }catch(Exception e){fail("Error codificando Opus.");return;}
                     }
@@ -193,6 +194,9 @@ public final class XiaoZhiMqttUdpSession {
             });
         }catch(Exception e){fail("No se pudo iniciar la captura de voz: "+safe(e));}
     }
+
+    /** Con muted=true se sigue leyendo el micrófono pero no se envía audio (p. ej. mientras Bellota habla). */
+    public void setMuted(boolean value){muted=value;}
 
     private void sendAudio(byte[] payload)throws Exception{
         if(payload.length>65535)throw new IllegalArgumentException("Paquete Opus demasiado grande");
