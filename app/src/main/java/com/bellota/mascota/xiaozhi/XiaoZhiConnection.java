@@ -50,6 +50,8 @@ public class XiaoZhiConnection {
         return preferences.getBoolean(KEY_ACTIVATED, false);
     }
 
+    public Context getContext() { return context; }
+
     public String getAccessToken() { return preferences.getString(KEY_ACCESS_TOKEN, ""); }
     public String getDeviceId() { return preferences.getString(KEY_DEVICE_ID, ""); }
     public String getClientId() { return preferences.getString(KEY_CLIENT_ID, ""); }
