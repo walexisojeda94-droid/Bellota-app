@@ -32,7 +32,8 @@ public final class ChatContext {
     private static String normalizeMood(String m) {
         if (m == null) return "neutral";
         String s = m.toUpperCase(Locale.ROOT);
-        if (s.contains("SLEEPY")) return "sleepy";
+        if (s.contains("SLEEPING") || s.contains("SLEEPY")) return "sleepy";
+        if (s.contains("ANGRY") || s.contains("OFFENDED")) return "sad";
         if (s.contains("HAPPY")) return "happy";
         if (s.contains("CURIOUS") || s.contains("THINKING")) return "curious";
         if (s.contains("SAD")) return "sad";
