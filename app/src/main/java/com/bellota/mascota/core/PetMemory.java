@@ -44,6 +44,8 @@ public final class PetMemory {
             }
 
             trimForIncoming(line.length);
+            // Si no se pudo liberar espacio por un error de almacenamiento, no exceder el límite.
+            if (journal.length() + line.length > MAX_JOURNAL_BYTES) return;
             FileOutputStream output = new FileOutputStream(journal, true);
             try { output.write(line); output.flush(); }
             finally { output.close(); }
