@@ -1,6 +1,6 @@
 # Verificación del cliente XiaoZhi contra el protocolo oficial
 
-Contrastado con la documentación de `xiaozhi-esp32` (websocket.md, mqtt-udp.md y flujo OTA/activación). Compilado y probado solo por CI; falta validar en el J7.
+Contrastado con la documentación de `xiaozhi-esp32` (websocket.md, mqtt-udp.md y flujo OTA/activación). La CI compila y empaqueta el APK, pero no ejecuta pruebas funcionales. Falta validar en el J7.
 
 ## Cumple
 - OTA: POST con `Device-Id`, `Client-Id`, `Activation-Version`; código de 6 dígitos; sondeo de `/activate` (200 = listo, 202 = pendiente).
@@ -37,11 +37,16 @@ Correcciones aplicadas durante esta auditoría:
 
 - `WeatherService` consulta únicamente la última ubicación conocida. Puede no existir o estar desactualizada; usa el último clima guardado como respaldo.
 - La CI compila y genera el APK, pero no ejecuta pruebas unitarias o instrumentadas de estos comportamientos.
+- El reconocimiento Android solicita `EXTRA_PREFER_OFFLINE`; esto es una preferencia, no una garantía de funcionamiento sin internet. Depende del motor de voz y del paquete de español instalado.
+- WeatherService descarta ubicaciones de más de dos horas y caché meteorológica de más de seis horas; prueba permisos aproximados y proveedores disponibles en el J7.
+- La pausa detiene TTS, reconocimiento, animaciones y callbacks autónomos; falta verificarlo con la app en segundo plano.
 - Falta validar en el Samsung J7: micrófono al pasar a segundo plano, sueño, animaciones, herramientas MCP, audio bidireccional, reconexión tras caída de red y consumo de batería.
 - `OfflineReplies` normalmente devuelve una respuesta de texto; por eso la rama de respuesta desconocida de `LocalConversationEngine` puede no alcanzarse en el flujo habitual.
 
 ## Mejoras MCP aplicadas después de la revisión
 
 - La dirección se valida contra el host oficial `api.xiaozhi.me`, esquema `wss`, puerto estándar y ruta `/mcp/`.
-- `McpConnection` reintenta automáticamente tras una caída, con espera progresiva de 5 a 60 segundos. Una desconexión solicitada cancela los reintentos.
+- `McpConnection` reintenta automáticamente tras una caída, con espera progresiva de 5 a 60 segundos. El contador solo se reinicia tras 60 segundos de conexión estable; los mensajes de sockets anteriores se descartan. Una desconexión solicitada cancela los reintentos.
+- `XiaoZhiConnection` cierra su executor al destruirse la actividad.
+- El cambio de sueño obligatorio a normal actualiza el mute para volver a aceptar la palabra de activación.
 - Los reintentos se registran en Logcat para evitar mostrar notificaciones repetidas; se muestra un aviso al recuperar la conexión.
