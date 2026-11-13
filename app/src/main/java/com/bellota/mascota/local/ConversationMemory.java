@@ -109,6 +109,61 @@ public final class ConversationMemory {
         store.put("likes", sb.toString());
     }
 
+    public void removeLike(String like) {
+        if (like == null) return;
+        List<String> list = likes();
+        boolean changed = false;
+        for (int i = list.size() - 1; i >= 0; i--) {
+            if (list.get(i).equalsIgnoreCase(like.trim())) { list.remove(i); changed = true; }
+        }
+        if (!changed) return;
+        store.put("likes", join(list));
+    }
+
+    /** Un gusto al azar, o null si todavía no conoce ninguno. */
+    public String randomLike(java.util.Random random) {
+        List<String> list = likes();
+        return list.isEmpty() ? null : list.get(random.nextInt(list.size()));
+    }
+
+    // ---- Apodos ---------------------------------------------------------------
+
+    public List<String> nicknames() {
+        List<String> out = new ArrayList<>();
+        String raw = store.get("nicknames");
+        if (raw == null || raw.isEmpty()) return out;
+        for (String s : raw.split("\\|")) if (!s.isEmpty()) out.add(s);
+        return out;
+    }
+
+    public void addNickname(String nick) {
+        String clean = nick == null ? "" : nick.replace("|", " ").trim();
+        if (clean.isEmpty()) return;
+        List<String> list = nicknames();
+        for (String s : list) if (s.equalsIgnoreCase(clean)) return;
+        list.add(clean);
+        while (list.size() > 5) list.remove(0);
+        store.put("nicknames", join(list));
+    }
+
+    /** Cómo dirigirse al usuario esta vez: su nombre o uno de sus apodos. Null si no sabe ninguno. */
+    public String address(java.util.Random random) {
+        String name = name();
+        List<String> nicks = nicknames();
+        if (name != null && (nicks.isEmpty() || random.nextInt(100) < 50)) return name;
+        if (nicks.isEmpty()) return null;
+        return nicks.get(random.nextInt(nicks.size()));
+    }
+
+    private static String join(List<String> list) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < list.size(); i++) {
+            if (i > 0) sb.append('|');
+            sb.append(list.get(i));
+        }
+        return sb.toString();
+    }
+
     private long readLong(String key) {
         try {
             String v = store.get(key);
