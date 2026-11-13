@@ -59,11 +59,8 @@ public class OfflineReplies {
         if (text.contains(" podes ") || text.startsWith("podes ") || text.contains(" puedes ")) {
             return choose("Puedo intentarlo desde lo que tengo disponible acá. ¿Qué parte querés resolver primero?", "Veamos cómo hacerlo. Contame un poquito más de lo que necesitás.");
         }
-        return choose(
-                "No estoy segura de haber entendido bien. ¿Me lo explicás de otra manera?",
-                "Quiero seguirte la conversación, pero necesito un poquito más de contexto. ¿A qué te referís?",
-                "Eso me dejó pensando. ¿Me contás un detalle más para poder responderte mejor?"
-        );
+        // Las consultas no reconocidas se delegan al fallback contextual de LocalConversationEngine.
+        return null;
     }
 
     public boolean isWeatherQuestion(String input) { return input != null && asksWeather(normalize(input)); }
