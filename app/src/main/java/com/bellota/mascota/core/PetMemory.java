@@ -79,7 +79,7 @@ public final class PetMemory {
             }
 
             int start = 0;
-            while (start < tail.length && tail[start] != '\\n') start++;
+            while (start < tail.length && tail[start] != '\n') start++;
             start = Math.min(start + 1, tail.length); // descartar la primera línea parcial
 
             FileOutputStream output = new FileOutputStream(journal, false);
