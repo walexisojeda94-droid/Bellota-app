@@ -4,7 +4,6 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.pm.PackageManager;
-import android.os.Build;
 import android.os.Bundle;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -169,6 +168,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 boolean firm=!stroke && touchPressure>=0.72f && duration<190L;
                 String kind=firm?"rough_touch":"caress";
                 onPetTouched(kind, firm);
+                view.performClick();
             }
             return false;
         });
@@ -668,14 +668,12 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void requestMicrophonePermission() {
-        if (Build.VERSION.SDK_INT < 23) { startVoiceCommands(); return; }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startVoiceCommands();
         else requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, MICROPHONE_PERMISSION);
     }
 
     private void startVoiceCommands() {
-        if (Build.VERSION.SDK_INT >= 23
-                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         if (xiaoZhiVoiceSession != null || xiaoZhiMqttUdpSession != null) return;
         // Mientras se programa una reconexión, no arrancar el reconocedor local
         // como si fuera el motor principal: XiaoZhi sigue siendo el canal prioritario.
@@ -692,8 +690,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     /** Reconocimiento local de Android; también sirve de respaldo cuando XiaoZhi sigue sin conectar. */
     private void startLocalRecognizer() {
         if (paused || isFinishing()) return;
-        if (Build.VERSION.SDK_INT >= 23
-                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         if (xiaoZhiVoiceSession != null || xiaoZhiMqttUdpSession != null) return;
         if (voiceCommands != null) voiceCommands.stop();
         voiceCommands = new ContinuousVoiceCommands(this, new ContinuousVoiceCommands.Listener() {
@@ -704,8 +701,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void startXiaoZhiVoice() {
-        if (Build.VERSION.SDK_INT >= 23
-                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         if (xiaoZhiVoiceSession != null || xiaoZhiVoiceFailed || xiaoZhiConnection == null || isFinishing() || paused) return;
         if (voiceCommands != null) voiceCommands.stop();
         xiaoZhiVoiceSession = new XiaoZhiVoiceSession(xiaoZhiConnection, new XiaoZhiVoiceSession.Listener() {
@@ -746,8 +742,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void startXiaoZhiMqtt() {
-        if (Build.VERSION.SDK_INT >= 23
-                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         if (xiaoZhiMqttUdpSession != null || xiaoZhiVoiceFailed || xiaoZhiConnection == null || isFinishing() || paused) return;
         if (voiceCommands != null) voiceCommands.stop();
         xiaoZhiMqttUdpSession = new XiaoZhiMqttUdpSession(xiaoZhiConnection, new XiaoZhiMqttUdpSession.Listener() {
@@ -1131,8 +1126,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     @Override public void onAccuracyChanged(Sensor sensor,int accuracy){}
 
     private void requestWeather() {
-        if (Build.VERSION.SDK_INT >= 23 &&
-                checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+        if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
                 checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             waitingForWeatherPermission = true;
             requestPermissions(new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION);
