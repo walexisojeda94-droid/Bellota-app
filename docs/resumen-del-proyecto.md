@@ -35,7 +35,7 @@ Convertir un Samsung Galaxy J7 SM-J710SS en una mascota virtual autónoma. Bello
 
 El núcleo Android mantiene la interfaz, la conducta y el modo local. La integración XiaoZhi se ejecuta en componentes separados. La actividad selecciona el transporte entregado por OTA y, ante un error de sesión, dispone del reconocimiento y TTS locales como respaldo.
 
-La reconexión automática robusta después de una pérdida de servicio todavía debe verificarse y completarse. No se debe afirmar que la experiencia online es estable hasta probar activación, autenticación, audio bidireccional y recuperación en el dispositivo.
+La reconexión automática con backoff acotado ya está implementada. Su estabilidad todavía debe probarse en el dispositivo. No se debe afirmar que la experiencia online es estable hasta probar activación, autenticación, audio bidireccional y recuperación en el J7.
 
 ## Estado real y criterios de aceptación
 
