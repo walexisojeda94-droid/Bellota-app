@@ -60,3 +60,16 @@ Correcciones aplicadas durante esta auditoría:
 - La configuración de CI fija Java 17, Android SDK 35, Gradle 8.7 y Android Gradle Plugin 8.6.1.
 - No se incorporó Gradle Wrapper en esta pasada; sigue pendiente generar y versionar sus scripts, propiedades y JAR oficiales.
 - Las pruebas JVM y Lint no sustituyen las pruebas funcionales en el Samsung Galaxy J7.
+
+
+## Resultado de la pasada de calidad (13/11/2026)
+
+- Las 15 pruebas JVM de JUnit pasan en GitHub Actions.
+- `:app:lintDebug` termina correctamente con cero errores y tres advertencias revisadas:
+  - `ApplySharedPref`: se conserva `commit()` para confirmar la escritura de la configuración MCP cifrada antes de continuar.
+  - `DiscouragedApi`: se conserva orientación horizontal porque la interfaz de ojos está diseñada para ese formato.
+  - `HardwareIds`: se conserva `ANDROID_ID` como identidad estable del dispositivo requerida por la vinculación con XiaoZhi.
+- Se eliminaron las seis comprobaciones `SDK_INT` redundantes para `minSdk 27`, se añadió icono de aplicación y se corrigió la accesibilidad táctil de `EyePetView`.
+- Se mantiene `targetSdk 28` y se desactiva únicamente la regla `ExpiredTargetSdkVersion`, ya que el APK se distribuye de forma privada y el comportamiento en el dispositivo Android 8.1 no debe cambiar sin pruebas específicas. No es una configuración apta para publicación en Google Play.
+- El flujo de CI completó pruebas, Lint, compilación release, verificación del certificado permanente y subida del APK en el commit `452969af`. La última corrección visual del icono y los cambios posteriores deben volver a pasar CI antes de considerar cerrada esta tanda.
+- El Gradle Wrapper sigue pendiente: no se incorporó un JAR incompleto ni scripts que no puedan ejecutarse.
