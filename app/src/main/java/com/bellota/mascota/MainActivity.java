@@ -135,7 +135,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             ttsMuted = false;
             updateMute();
             // No iniciar el reconocedor local mientras el transporte XiaoZhi usa el micrófono.
-            if (!isFinishing() && voiceCommands != null
+            if (!paused && !isFinishing() && voiceCommands != null
                     && xiaoZhiVoiceSession == null && xiaoZhiMqttUdpSession == null) {
                 voiceCommands.start();
             }
