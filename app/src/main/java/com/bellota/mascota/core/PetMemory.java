@@ -22,9 +22,28 @@ public final class PetMemory {
             JSONObject entry = new JSONObject();
             entry.put("timestamp", System.currentTimeMillis());
             entry.put("type", type == null ? "evento" : type);
-            entry.put("detail", detail == null ? "" : detail);
-            trimIfTooLarge();
+            String safeDetail = detail == null ? "" : detail;
+            entry.put("detail", safeDetail);
             byte[] line = (entry.toString() + "\n").getBytes(Charset.forName("UTF-8"));
+
+            // Una sola entrada tampoco puede superar el límite completo del diario.
+            if (line.length > MAX_JOURNAL_BYTES) {
+                int low = 0;
+                int high = safeDetail.codePointCount(0, safeDetail.length());
+                while (low < high) {
+                    int mid = low + (high - low + 1) / 2;
+                    int end = safeDetail.offsetByCodePoints(0, mid);
+                    entry.put("detail", safeDetail.substring(0, end));
+                    byte[] candidate = (entry.toString() + "\n").getBytes(Charset.forName("UTF-8"));
+                    if (candidate.length <= MAX_JOURNAL_BYTES) low = mid;
+                    else high = mid - 1;
+                }
+                int end = safeDetail.offsetByCodePoints(0, low);
+                entry.put("detail", safeDetail.substring(0, end));
+                line = (entry.toString() + "\n").getBytes(Charset.forName("UTF-8"));
+            }
+
+            trimForIncoming(line.length);
             FileOutputStream output = new FileOutputStream(journal, true);
             try { output.write(line); output.flush(); }
             finally { output.close(); }
@@ -33,25 +52,46 @@ public final class PetMemory {
         }
     }
 
-    /** Evita que el diario crezca sin límite en un teléfono con poco almacenamiento. */
-    private void trimIfTooLarge() {
+    /**
+     * Hace espacio para la nueva entrada antes de escribirla.
+     * Conserva las entradas más recientes completas y nunca supera el límite.
+     */
+    private void trimForIncoming(long incomingBytes) {
         try {
-            if (journal.length() <= MAX_JOURNAL_BYTES) return;
+            long currentLength = journal.length();
+            if (currentLength + incomingBytes <= MAX_JOURNAL_BYTES) return;
+
+            long keep = Math.max(0L, MAX_JOURNAL_BYTES - incomingBytes);
+            if (keep == 0L || !journal.exists()) {
+                new FileOutputStream(journal, false).close();
+                return;
+            }
+
             java.io.RandomAccessFile file = new java.io.RandomAccessFile(journal, "r");
             byte[] tail;
             try {
-                long keep = MAX_JOURNAL_BYTES / 2;
-                file.seek(file.length() - keep);
-                tail = new byte[(int) keep];
+                long readLength = Math.min(keep, file.length());
+                file.seek(file.length() - readLength);
+                tail = new byte[(int) readLength];
                 file.readFully(tail);
-            } finally { file.close(); }
+            } finally {
+                file.close();
+            }
+
             int start = 0;
-            while (start < tail.length && tail[start] != '\n') start++; // descartar línea cortada
-            start = Math.min(start + 1, tail.length);
+            while (start < tail.length && tail[start] != '\\n') start++;
+            start = Math.min(start + 1, tail.length); // descartar la primera línea parcial
+
             FileOutputStream output = new FileOutputStream(journal, false);
-            try { output.write(tail, start, tail.length - start); }
-            finally { output.close(); }
-        } catch (Exception ignored) { }
+            try {
+                output.write(tail, start, tail.length - start);
+                output.flush();
+            } finally {
+                output.close();
+            }
+        } catch (Exception ignored) {
+            // Un fallo del diario nunca debe detener la mascota.
+        }
     }
 
     public File getJournalFile() { return journal; }
