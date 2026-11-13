@@ -33,6 +33,7 @@ public final class McpConnection {
     private volatile boolean manuallyDisconnected = true;
     private int reconnectAttempts;
     private Runnable reconnectTask;
+    private Runnable stableConnectionTask;
 
     public interface Listener { void onStatus(String status); }
 
@@ -68,7 +69,14 @@ public final class McpConnection {
                             ws.close(1000, "Conexión cancelada");
                             return;
                         }
-                        reconnectAttempts = 0;
+                        if (stableConnectionTask != null) reconnectHandler.removeCallbacks(stableConnectionTask);
+                        stableConnectionTask = () -> {
+                            synchronized (McpConnection.this) {
+                                if (socket == ws && !manuallyDisconnected) reconnectAttempts = 0;
+                                stableConnectionTask = null;
+                            }
+                        };
+                        reconnectHandler.postDelayed(stableConnectionTask, 60000L);
                     }
                     notifyStatus("MCP conectado. Esperando a XiaoZhi…");
                 }
@@ -81,21 +89,35 @@ public final class McpConnection {
                     boolean retry;
                     synchronized (McpConnection.this) {
                         retry = socket == ws && !manuallyDisconnected;
-                        if (socket == ws) socket = null;
+                        if (socket == ws) {
+                            socket = null;
+                            if (stableConnectionTask != null) {
+                                reconnectHandler.removeCallbacks(stableConnectionTask);
+                                stableConnectionTask = null;
+                            }
+                        }
                     }
+                    if (!retry) return;
                     notifyStatus("Conexión MCP interrumpida: "
                             + (r == null ? String.valueOf(t.getMessage()) : "HTTP " + r.code()));
-                    if (retry) scheduleReconnect();
+                    scheduleReconnect();
                 }
 
                 @Override public void onClosed(WebSocket ws, int code, String reason) {
                     boolean retry;
                     synchronized (McpConnection.this) {
                         retry = socket == ws && !manuallyDisconnected;
-                        if (socket == ws) socket = null;
+                        if (socket == ws) {
+                            socket = null;
+                            if (stableConnectionTask != null) {
+                                reconnectHandler.removeCallbacks(stableConnectionTask);
+                                stableConnectionTask = null;
+                            }
+                        }
                     }
+                    if (!retry) return;
                     notifyStatus("Conexión MCP cerrada.");
-                    if (retry) scheduleReconnect();
+                    scheduleReconnect();
                 }
             });
         } catch (Exception error) {
@@ -140,6 +162,7 @@ public final class McpConnection {
     }
 
     private void handleMessage(WebSocket ws, String raw) {
+        if (ws == null || ws != socket || manuallyDisconnected) return;
         try {
             JSONObject msg = new JSONObject(raw);
             String method = msg.optString("method", "");
@@ -200,6 +223,10 @@ public final class McpConnection {
         manuallyDisconnected = true;
         endpoint = null;
         reconnectAttempts = 0;
+        if (stableConnectionTask != null) {
+            reconnectHandler.removeCallbacks(stableConnectionTask);
+            stableConnectionTask = null;
+        }
         if (reconnectTask != null) {
             reconnectHandler.removeCallbacks(reconnectTask);
             reconnectTask = null;
