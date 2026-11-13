@@ -30,6 +30,13 @@ public class OfflineReplies {
         if (asksName(text)) return choose("Me llamo Bellota.", "Soy Bellota, ¡esa soy yo!", "Bellota. Ese es mi nombre.");
         if (asksWeather(text)) return null; // Se resuelve con ubicación y el servicio meteorológico.
         if (asksHowAreYou(text)) return moodReply(mood);
+        String emotionalState = mood == null ? "NEUTRAL" : mood.toUpperCase(Locale.ROOT);
+        if (emotionalState.contains("OFFENDED") && (text.contains("hola") || text.startsWith("buen dia") || text.startsWith("buenas"))) {
+            return choose("Hola... sí, te escucho.", "Buenas. Todavía estoy un poquito dolida, pero podemos hablar.", "Volviste. Me quedo acá, aunque sigo algo sentida.");
+        }
+        if (emotionalState.contains("ANGRY") && (text.contains("hola") || text.startsWith("buen dia") || text.startsWith("buenas"))) {
+            return choose("Hola. Espero que esta vez compartamos un ratito.", "Buenas... estaba empezando a impacientarme.", "Acá estoy. Un poco fastidiada, pero te escucho.");
+        }
 
         if (text.contains("hola") || text.startsWith("buen dia") || text.startsWith("buenas tardes") || text.startsWith("buenas noches"))
             return choose("¡Hola! Qué bueno escucharte.", "¡Buenas! Acá estoy.", "Hola, te estaba escuchando.");
@@ -92,8 +99,8 @@ public class OfflineReplies {
     }
     private String moodReply(String mood) {
         String state = mood == null ? "NEUTRAL" : mood.toUpperCase(Locale.ROOT);
-        if (state.contains("ANGRY")) return choose("Estoy un poco fastidiada, para qué voy a mentirte.", "Ando medio enojada, ¡me dejaron sola un buen rato!");
-        if (state.contains("OFFENDED")) return choose("Estoy ofendida, pero si me hablás se me pasa.", "Un poco dolida porque me ignoraron. Ya se me pasa.");
+        if (state.contains("ANGRY")) return choose("Estoy fastidiada. Hace rato que no compartimos nada.", "Ando medio enojada, me vendría bien un poco de atención.", "Estoy impaciente, pero todavía tengo ganas de que charlemos.");
+        if (state.contains("OFFENDED")) return choose("Estoy dolida. Necesito un poquito de cariño para que se me pase.", "Todavía estoy sentida, no se me fue del todo.", "No estoy enojada igual... me quedé un poco triste por sentirte lejos.");
         if (state.contains("BORED")) return choose("Estoy aburrida, ¿hacemos algo?", "Me aburro un poquito. ¡Qué bueno que me preguntes!");
         if (state.contains("SLEEPY")) return choose("Estoy un poquito soñolienta, me vendría bien descansar.", "Tengo algo de sueño, pero me gusta que me hables.");
         if (state.contains("HAPPY")) return choose("Estoy contenta y con ganas de charlar.", "¡Estoy de buen humor! Me siento animada.");
