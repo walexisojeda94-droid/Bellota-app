@@ -18,7 +18,7 @@ public class OfflineRepliesTest {
     }
 
     @Test public void unknownQuestionsAreDelegatedToContextualFallback() {
-        String answer = new OfflineReplies().reply("¿Podés explicarme la teoría de cuerdas?");
+        String answer = new OfflineReplies().reply("La mecánica cuántica y sus interpretaciones");
         assertNull(answer);
     }
 
