@@ -64,6 +64,6 @@ La versión se considera estable cuando compila, se instala y supera pruebas pro
 - [x] Pruebas JVM para respuestas locales, memoria y normalización de mensajes.
 - [x] Ejecutar pruebas unitarias y Android Lint en GitHub Actions antes de empaquetar el APK.
 - [x] Corregir las verificaciones de permiso de micrófono detectadas por Lint en los transportes WebSocket y MQTT/UDP.
-- [ ] Resolver advertencias restantes de Lint sin ocultar problemas reales.
+- [x] Revisar advertencias de Lint: quedan tres justificadas por persistencia síncrona de credencial, orientación horizontal fija e identidad estable de XiaoZhi.
 - [ ] Incorporar Gradle Wrapper para compilar localmente sin instalar Gradle por separado.
 - [ ] Ampliar cobertura con pruebas de ciclo de vida, reconexión y persistencia.
