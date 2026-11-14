@@ -758,6 +758,27 @@ public class MainActivity extends Activity implements SensorEventListener {
                 runOnUiThread(() -> {
                     DebugLog.e("BellotaXiaoZhi", message);
                     fallbackPendingTranscript();
+
+                    // Si el servidor acepta el WebSocket pero no responde al hello,
+                    // usar el transporte MQTT/UDP que ya entregó el mismo OTA.
+                    JSONObject mqtt = xiaoZhiConnection == null ? null : xiaoZhiConnection.getMqttConfig();
+                    boolean mqttReady = mqtt != null
+                            && !mqtt.optString("endpoint", "").trim().isEmpty()
+                            && !mqtt.optString("username", "").trim().isEmpty()
+                            && !mqtt.optString("password", "").trim().isEmpty()
+                            && !mqtt.optString("publish_topic", "").trim().isEmpty()
+                            && !mqtt.optString("subscribe_topic", "").trim().isEmpty()
+                            && !"null".equalsIgnoreCase(mqtt.optString("subscribe_topic", "").trim());
+                    if (message != null && message.contains("no completó la negociación hello")
+                            && mqttReady && !paused && !isFinishing()) {
+                        // fail() ya cerró y liberó el socket WebSocket.
+                        xiaoZhiVoiceSession = null;
+                        xiaoZhiVoiceFailed = false;
+                        DebugLog.w("BellotaXiaoZhi",
+                                "WebSocket no completó hello; cambiando automáticamente a MQTT + UDP.");
+                        startXiaoZhiMqtt();
+                        return;
+                    }
                     scheduleXiaoZhiRetry(message);
                 });
             }
