@@ -31,8 +31,11 @@ public final class McpCredentialStore {
         byte[] encrypted = cipher.doFinal(endpoint.getBytes("UTF-8"));
         ByteBuffer buffer = ByteBuffer.allocate(iv.length + encrypted.length);
         buffer.put(iv).put(encrypted);
-        // commit() es intencional: save() confirma la persistencia antes de que el flujo use la credencial.
-        prefs.edit().putString(VALUE, Base64.encodeToString(buffer.array(), Base64.NO_WRAP)).commit();
+        // Confirmar la persistencia antes de que el flujo use la credencial.
+        boolean saved = prefs.edit()
+                .putString(VALUE, Base64.encodeToString(buffer.array(), Base64.NO_WRAP))
+                .commit();
+        if (!saved) throw new IllegalStateException("No se pudo guardar la configuración MCP cifrada.");
     }
 
     public synchronized String read() throws Exception {
