@@ -50,6 +50,8 @@ public final class XiaoZhiMqttUdpSession {
     private final ScheduledExecutorService watchdog=Executors.newSingleThreadScheduledExecutor();
     private volatile ScheduledFuture<?> helloTimeout;
     private final AtomicBoolean active=new AtomicBoolean(false), recording=new AtomicBoolean(false);
+    private final AtomicBoolean terminated=new AtomicBoolean(false);
+    private final java.util.concurrent.atomic.AtomicLong captureGeneration=new java.util.concurrent.atomic.AtomicLong();
     private volatile MqttClient mqtt;
     private volatile DatagramSocket udp;
     private volatile InetAddress udpHost;
@@ -60,7 +62,7 @@ public final class XiaoZhiMqttUdpSession {
     private volatile boolean muted;
     private final AtomicBoolean firstDownlinkPacket = new AtomicBoolean(false);
     private volatile long txSequence, rxSequence;
-    private AudioRecord recorder;
+    private volatile AudioRecord recorder;
     private AudioTrack player;
     private OpusEncoder encoder;
     private OpusDecoder decoder;
@@ -69,7 +71,7 @@ public final class XiaoZhiMqttUdpSession {
     public boolean isRunning(){return active.get();}
 
     public void connect(){
-        if(active.get()) return;
+        if(terminated.get()||active.get()) return;
         JSONObject cfg=identity.getMqttConfig();
         if(cfg==null){fail("XiaoZhi no entregó configuración MQTT.");return;}
         String endpoint=cfg.optString("endpoint","").trim();
@@ -127,6 +129,7 @@ public final class XiaoZhiMqttUdpSession {
     }
 
     private void handleControl(String raw){
+        if(terminated.get()) return;
         try{
             JSONObject msg=new JSONObject(raw); String type=msg.optString("type","");
             if("hello".equals(type)){
@@ -172,7 +175,7 @@ public final class XiaoZhiMqttUdpSession {
     }
 
     private void startListening(){
-        if(!active.get()||speaking||udp==null||recording.get())return;
+        if(terminated.get()||!active.get()||speaking||udp==null||recording.get())return;
         if (identity.getContext().checkSelfPermission(Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED) {
             fail("Bellota necesita permiso de micrófono para iniciar el audio de XiaoZhi.");
@@ -184,18 +187,43 @@ public final class XiaoZhiMqttUdpSession {
             recorder=new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION,RATE,AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT,Math.max(min,SAMPLES*8));
             if(recorder.getState()!=AudioRecord.STATE_INITIALIZED)throw new IllegalStateException("Micrófono no inicializado");
-            recorder.startRecording(); AudioRecord source=recorder; recording.set(true);
+            recorder.startRecording();
+            AudioRecord source=recorder;
+            long generation=captureGeneration.incrementAndGet();
+            recording.set(true);
             capture.execute(()->{
-                short[] read=new short[SAMPLES], frame=new short[SAMPLES];byte[] opus=new byte[4000];int filled=0;
-                while(recording.get()&&active.get()&&!speaking){
-                    int n=source.read(read,0,read.length);if(n<=0)continue;
-                    int off=0;while(off<n&&recording.get()&&!speaking){
-                        int count=Math.min(SAMPLES-filled,n-off);System.arraycopy(read,off,frame,filled,count);filled+=count;off+=count;
+                short[] read=new short[SAMPLES], frame=new short[SAMPLES];
+                byte[] opus=new byte[4000];
+                int filled=0;
+                while(recording.get()&&active.get()&&!speaking
+                        &&captureGeneration.get()==generation&&recorder==source){
+                    int n=source.read(read,0,read.length);
+                    // La liberación puede desbloquear read() después de un reinicio.
+                    // Nunca procesar esos datos como si pertenecieran a la nueva captura.
+                    if(!recording.get()||captureGeneration.get()!=generation||recorder!=source) break;
+                    if(n<0){
+                        if(active.get()&&!speaking&&captureGeneration.get()==generation)
+                            fail("La captura de micrófono terminó con error (código "+n+").");
+                        break;
+                    }
+                    if(n==0){
+                        try{Thread.sleep(8L);}catch(InterruptedException e){Thread.currentThread().interrupt();break;}
+                        continue;
+                    }
+                    int off=0;
+                    while(off<n&&recording.get()&&!speaking&&captureGeneration.get()==generation){
+                        int count=Math.min(SAMPLES-filled,n-off);
+                        System.arraycopy(read,off,frame,filled,count);
+                        filled+=count;
+                        off+=count;
                         if(filled==SAMPLES)try{
                             int len=encoder.encode(frame,0,SAMPLES,opus,0,opus.length);
-                            if(len>0&&!muted)sendAudio(Arrays.copyOf(opus,len));
+                            if(len>0&&!muted&&captureGeneration.get()==generation)sendAudio(Arrays.copyOf(opus,len));
                             filled=0;
-                        }catch(Exception e){fail("Error codificando Opus.");return;}
+                        }catch(Exception e){
+                            if(active.get()&&captureGeneration.get()==generation)fail("Error codificando Opus.");
+                            return;
+                        }
                     }
                 }
             });
@@ -259,8 +287,14 @@ public final class XiaoZhiMqttUdpSession {
         MqttMessage m=new MqttMessage(json.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));m.setQos(1);c.publish(publishTopic,m);
     }
     private void stopCapture(){
-        recording.set(false);AudioRecord r=recorder;recorder=null;
-        if(r!=null){try{r.stop();}catch(Exception ignored){}r.release();}
+        recording.set(false);
+        captureGeneration.incrementAndGet();
+        AudioRecord r=recorder;
+        recorder=null;
+        if(r!=null){
+            try{r.stop();}catch(Exception ignored){}
+            try{r.release();}catch(Exception ignored){}
+        }
     }
     private synchronized void createPlayer(){
         releasePlayer();int min=AudioTrack.getMinBufferSize(downRate,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_16BIT);
@@ -270,14 +304,41 @@ public final class XiaoZhiMqttUdpSession {
     private synchronized void releasePlayer(){if(player!=null){try{player.pause();player.flush();player.stop();}catch(Exception ignored){}player.release();player=null;}}
     private void closeUdp(){stopCapture();DatagramSocket s=udp;udp=null;if(s!=null)s.close();releasePlayer();}
     public void disconnect(){
-        active.set(false);speaking=false;
-        ScheduledFuture<?> timeout=helloTimeout;if(timeout!=null)timeout.cancel(false);
+        if(!terminated.compareAndSet(false,true)) return;
+        active.set(false);
+        speaking=false;
+        ScheduledFuture<?> timeout=helloTimeout;
+        if(timeout!=null)timeout.cancel(false);
         stopCapture();
-        try{if(sessionId!=null&&mqtt!=null&&mqtt.isConnected())publish(new JSONObject().put("session_id",sessionId).put("type","goodbye"));}catch(Exception ignored){}
-        closeUdp();MqttClient c=mqtt;mqtt=null;if(c!=null)try{c.disconnect();c.close();}catch(Exception ignored){}
-        io.shutdownNow();capture.shutdownNow();watchdog.shutdownNow();
+        try{
+            if(sessionId!=null&&mqtt!=null&&mqtt.isConnected())
+                publish(new JSONObject().put("session_id",sessionId).put("type","goodbye"));
+        }catch(Exception ignored){}
+        closeUdp();
+        MqttClient c=mqtt;
+        mqtt=null;
+        if(c!=null)try{c.disconnect();c.close();}catch(Exception ignored){}
+        io.shutdownNow();
+        capture.shutdownNow();
+        watchdog.shutdownNow();
     }
-    private void fail(String message){Log.e(TAG,message);active.set(false);ScheduledFuture<?> timeout=helloTimeout;if(timeout!=null)timeout.cancel(false);closeUdp();MqttClient c=mqtt;mqtt=null;if(c!=null)try{c.disconnect();c.close();}catch(Exception ignored){}if(listener!=null)listener.onError(message);}
+
+    private void fail(String message){
+        if(!terminated.compareAndSet(false,true)) return;
+        Log.e(TAG,message);
+        active.set(false);
+        speaking=false;
+        ScheduledFuture<?> timeout=helloTimeout;
+        if(timeout!=null)timeout.cancel(false);
+        closeUdp();
+        MqttClient c=mqtt;
+        mqtt=null;
+        if(c!=null)try{c.disconnect();c.close();}catch(Exception ignored){}
+        io.shutdownNow();
+        capture.shutdownNow();
+        watchdog.shutdownNow();
+        if(listener!=null)listener.onError(message);
+    }
     private void report(String s){if(listener!=null)listener.onStatus(s);}
     private static String safe(Exception e){String m=e.getMessage();return m==null?"error de conexión":m;}
 }
