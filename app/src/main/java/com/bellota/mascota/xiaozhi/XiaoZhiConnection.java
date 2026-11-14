@@ -156,6 +156,28 @@ public class XiaoZhiConnection {
     }
 
 
+    private static String present(JSONObject object, String key) {
+        if (!object.has(key)) return "ausente";
+        Object value = object.opt(key);
+        if (value == null || value == JSONObject.NULL) return "JSON_NULL";
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) return "vacio";
+        if ("null".equalsIgnoreCase(text)) return "literal_null";
+        return "si";
+    }
+
+    // Los tópicos y el host no son credenciales; se muestran para diagnosticar
+    // una respuesta OTA que contiene claves pero no valores utilizables.
+    private static String safeField(JSONObject object, String key) {
+        if (!object.has(key)) return "<ausente>";
+        Object value = object.opt(key);
+        if (value == null || value == JSONObject.NULL) return "<JSON_NULL>";
+        String text = String.valueOf(value).replace('\\n', ' ').replace('\\r', ' ').trim();
+        if (text.isEmpty()) return "<vacio>";
+        if ("null".equalsIgnoreCase(text)) return "<literal_null>";
+        return text.length() > 180 ? text.substring(0, 180) + "…" : text;
+    }
+
     /** Resumen sin secretos de una respuesta OTA: qué bloques trae y de dónde. */
     private static String summarize(JSONObject r) {
         if (r == null) return "(vacía)";
@@ -168,12 +190,14 @@ public class XiaoZhiConnection {
                 .append(" token=").append(ws.optString("token", "").isEmpty() ? "no" : "si")
                 .append(" version=").append(ws.has("version") ? ws.optInt("version") : -1);
         JSONObject mqtt = r.optJSONObject("mqtt");
-        if (mqtt != null) sb.append(" | mqtt endpoint=").append(mqtt.optString("endpoint", "-"))
-                .append(" user=").append(mqtt.optString("username", "").isEmpty() ? "no" : "si")
-                .append(" pass=").append(mqtt.optString("password", "").isEmpty() ? "no" : "si")
-                .append(" client=").append(mqtt.optString("client_id", "").isEmpty() ? "no" : "si")
-                .append(" pub=").append(mqtt.optString("publish_topic", "").isEmpty() ? "no" : "si")
-                .append(" sub=").append(mqtt.optString("subscribe_topic", "").isEmpty() ? "no" : "si");
+        if (mqtt != null) sb.append(" | mqtt endpoint=").append(safeField(mqtt, "endpoint"))
+                .append(" user=").append(present(mqtt, "username"))
+                .append(" pass=").append(present(mqtt, "password"))
+                .append(" client=").append(present(mqtt, "client_id"))
+                .append(" pub=").append(present(mqtt, "publish_topic"))
+                .append(" pubTopic=").append(safeField(mqtt, "publish_topic"))
+                .append(" sub=").append(present(mqtt, "subscribe_topic"))
+                .append(" subTopic=").append(safeField(mqtt, "subscribe_topic"));
         JSONObject act = r.optJSONObject("activation");
         if (act != null) sb.append(" | activation code=").append(act.optString("code", "-"))
                 .append(" challenge=").append(act.has("challenge") ? "SI" : "no");
