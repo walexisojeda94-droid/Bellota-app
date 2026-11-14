@@ -110,17 +110,21 @@ public class XiaoZhiConnection {
         catch (Exception ignored) { return null; }
     }
     public String getTransport() {
-        JSONObject ws = getWebSocketConfig();
-        if (ws != null && !ws.optString("url", "").trim().isEmpty()
-                && (!ws.optString("token", "").trim().isEmpty()
-                    || !getAccessToken().trim().isEmpty())) return "websocket";
+        // Preferir MQTT/UDP cuando OTA entrega ambos transportes. En este dispositivo
+        // el WebSocket completa HTTP 101 pero el servidor no responde al hello; insistir
+        // primero por WebSocket impide aprovechar el canal MQTT que ya ofrece el OTA.
         JSONObject mqtt = getMqttConfig();
         if (mqtt != null && !mqtt.optString("endpoint", "").trim().isEmpty()
+                && !mqtt.optString("client_id", "").trim().isEmpty()
                 && !mqtt.optString("username", "").trim().isEmpty()
                 && !mqtt.optString("password", "").trim().isEmpty()
                 && !mqtt.optString("publish_topic", "").trim().isEmpty()
                 && !mqtt.optString("subscribe_topic", "").trim().isEmpty()
                 && !"null".equalsIgnoreCase(mqtt.optString("subscribe_topic", "").trim())) return "mqtt";
+        JSONObject ws = getWebSocketConfig();
+        if (ws != null && !ws.optString("url", "").trim().isEmpty()
+                && (!ws.optString("token", "").trim().isEmpty()
+                    || !getAccessToken().trim().isEmpty())) return "websocket";
         return null;
     }
     public boolean hasVoiceConfiguration() {
