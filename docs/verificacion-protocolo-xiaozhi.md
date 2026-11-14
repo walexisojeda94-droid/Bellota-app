@@ -56,7 +56,7 @@ Correcciones aplicadas durante esta auditoría:
 
 - Se agregaron pruebas JVM con JUnit 4.13.2 para respuestas locales, clasificación de estados emocionales, memoria de gustos/apodos, expiración de expectativas y normalización de mensajes.
 - GitHub Actions ejecuta `:app:testDebugUnitTest` y `:app:lintDebug` antes de compilar el APK.
-- La primera ejecución de Lint encontró tres errores de permiso de micrófono en los transportes de audio. Se añadieron comprobaciones explícitas de `RECORD_AUDIO` antes de crear los grabadores de WebSocket y MQTT/UDP. La nueva ejecución debe confirmar que no quedan errores.
+- La primera ejecución de Lint encontró tres errores de permiso de micrófono en los transportes de audio. Se añadieron comprobaciones explícitas de `RECORD_AUDIO` antes de crear los grabadores de WebSocket y MQTT/UDP. La ejecución posterior confirmó que no quedan errores de Lint.
 - La configuración de CI fija Java 17, Android SDK 35, Gradle 8.7 y Android Gradle Plugin 8.6.1.
 - No se incorporó Gradle Wrapper en esta pasada; sigue pendiente generar y versionar sus scripts, propiedades y JAR oficiales.
 - Las pruebas JVM y Lint no sustituyen las pruebas funcionales en el Samsung Galaxy J7.
@@ -71,5 +71,26 @@ Correcciones aplicadas durante esta auditoría:
   - `HardwareIds`: se conserva `ANDROID_ID` como identidad estable del dispositivo requerida por la vinculación con XiaoZhi.
 - Se eliminaron las seis comprobaciones `SDK_INT` redundantes para `minSdk 27`, se añadió icono de aplicación y se corrigió la accesibilidad táctil de `EyePetView`.
 - Se mantiene `targetSdk 28` y se desactiva únicamente la regla `ExpiredTargetSdkVersion`, ya que el APK se distribuye de forma privada y el comportamiento en el dispositivo Android 8.1 no debe cambiar sin pruebas específicas. No es una configuración apta para publicación en Google Play.
-- El flujo de CI completó pruebas, Lint, compilación release, verificación del certificado permanente y subida del APK en el commit `452969af`. La última corrección visual del icono y los cambios posteriores deben volver a pasar CI antes de considerar cerrada esta tanda.
+- El flujo de CI completó pruebas, Lint, compilación release, verificación del certificado permanente y subida del APK en el commit `452969af`. Los cambios posteriores de estabilidad descritos a continuación también completaron CI, incluyendo compilación release y verificación de firma.
 - El Gradle Wrapper sigue pendiente: no se incorporó un JAR incompleto ni scripts que no puedan ejecutarse.
+
+
+## Auditoría de estabilidad y privacidad (14/11/2026)
+
+Correcciones aplicadas en `main`:
+
+1. **Reconocimiento Android:** el inicio local es idempotente; la Activity reutiliza la instancia y no destruye/recrea el reconocedor en cada `onResume`.
+2. **Callbacks de voz:** cada sesión del reconocedor tiene una generación propia. Resultados y errores tardíos de sesiones anteriores se descartan. La falta de permiso detiene el reconocedor sin reintentos infinitos.
+3. **Captura MQTT/UDP:** la captura usa una generación por grabación, valida que el `AudioRecord` siga siendo el actual después de cada lectura y corta ante errores negativos en vez de girar en un bucle caliente. El cierre terminal apaga los ejecutores de I/O, captura y watchdog.
+4. **TextToSpeech:** si Android no inicializa TTS o no dispone de voz española, se libera la frase pendiente y se notifica el fin para permitir reanudar la escucha. Las frases pendientes tienen un timeout y se ignoran callbacks de utterances reemplazadas.
+5. **WebSocket:** se impide abrir dos conexiones durante el handshake; los callbacks solo se procesan si pertenecen al socket actual. El cierre/fallo es de una sola ejecución y se evita continuar capturando ante errores de lectura.
+6. **OTA:** una respuesta que no incluye configuración WebSocket/MQTT conserva la última configuración válida. Solo una respuesta que incluya explícitamente claves de transporte reemplaza la configuración guardada.
+7. **Privacidad:** las transcripciones completas dejaron de escribirse en Logcat. El token de XiaoZhi se cifra con AES-GCM y una clave no exportable del Android Keystore; los tokens heredados se migran al almacenamiento cifrado y se retiran de las preferencias antiguas.
+8. **Persistencia MCP:** el guardado cifrado ahora comprueba el resultado de `commit()` y falla explícitamente si Android no confirma la escritura.
+
+## Validación de esta revisión
+
+- Los cambios de reconocimiento, MQTT/UDP, TTS, WebSocket, OTA, privacidad y almacenamiento seguro pasaron las tareas JVM y Android Lint.
+- La compilación Release, la verificación del certificado permanente y la publicación del artefacto también finalizaron correctamente en GitHub Actions.
+- Un commit intermedio de la migración del token se ejecutó antes de que se añadiera la nueva clase de almacenamiento y falló por esa dependencia ausente. El commit siguiente incorporó la clase; la compilación completa del estado resultante de `main` terminó correctamente.
+- La CI no puede validar el micrófono, el altavoz, la descarga de idioma ni la reconexión física en los teléfonos. Sigue pendiente instalar y probar en ambos dispositivos, especialmente el J7.
