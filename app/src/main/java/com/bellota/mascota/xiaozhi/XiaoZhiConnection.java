@@ -169,6 +169,9 @@ public class XiaoZhiConnection {
                 .append(" version=").append(ws.has("version") ? ws.optInt("version") : -1);
         JSONObject mqtt = r.optJSONObject("mqtt");
         if (mqtt != null) sb.append(" | mqtt endpoint=").append(mqtt.optString("endpoint", "-"))
+                .append(" user=").append(mqtt.optString("username", "").isEmpty() ? "no" : "si")
+                .append(" pass=").append(mqtt.optString("password", "").isEmpty() ? "no" : "si")
+                .append(" client=").append(mqtt.optString("client_id", "").isEmpty() ? "no" : "si")
                 .append(" pub=").append(mqtt.optString("publish_topic", "").isEmpty() ? "no" : "si")
                 .append(" sub=").append(mqtt.optString("subscribe_topic", "").isEmpty() ? "no" : "si");
         JSONObject act = r.optJSONObject("activation");
