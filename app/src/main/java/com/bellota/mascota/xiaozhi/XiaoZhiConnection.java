@@ -177,7 +177,7 @@ public class XiaoZhiConnection {
         if (!object.has(key)) return "<ausente>";
         Object value = object.opt(key);
         if (value == null || value == JSONObject.NULL) return "<JSON_NULL>";
-        String text = String.valueOf(value).replace('\\n', ' ').replace('\\r', ' ').trim();
+        String text = String.valueOf(value).replace("\n", " ").replace("\r", " ").trim();
         if (text.isEmpty()) return "<vacio>";
         if ("null".equalsIgnoreCase(text)) return "<literal_null>";
         return text.length() > 180 ? text.substring(0, 180) + "…" : text;
