@@ -32,6 +32,7 @@ public class XiaoZhiConnection {
     private static final String KEY_MQTT_CONFIG = "mqtt_config";
     private final Context context;
     private final SharedPreferences preferences;
+    private final XiaoZhiTokenStore tokenStore;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     public interface ActivationListener {
@@ -43,7 +44,9 @@ public class XiaoZhiConnection {
     public XiaoZhiConnection(Context context) {
         this.context = context.getApplicationContext();
         preferences = this.context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        tokenStore = new XiaoZhiTokenStore(this.context);
         ensureIdentity();
+        migrateLegacyAccessToken();
     }
 
     public boolean isConfigured() {
@@ -52,7 +55,46 @@ public class XiaoZhiConnection {
 
     public Context getContext() { return context; }
 
-    public String getAccessToken() { return preferences.getString(KEY_ACCESS_TOKEN, ""); }
+    public String getAccessToken() {
+        try {
+            String encrypted = tokenStore.read();
+            if (encrypted != null) return encrypted;
+            String legacy = preferences.getString(KEY_ACCESS_TOKEN, "");
+            if (!legacy.isEmpty()) {
+                tokenStore.save(legacy);
+                preferences.edit().remove(KEY_ACCESS_TOKEN).commit();
+            }
+            return legacy;
+        } catch (Exception ignored) {
+            // Si el Keystore no está disponible, permitir la migración heredada
+            // solo mientras el token antiguo siga presente.
+            return preferences.getString(KEY_ACCESS_TOKEN, "");
+        }
+    }
+
+    private void migrateLegacyAccessToken() {
+        String legacy = preferences.getString(KEY_ACCESS_TOKEN, "");
+        if (legacy.isEmpty()) return;
+        try {
+            tokenStore.save(legacy);
+            if (!preferences.edit().remove(KEY_ACCESS_TOKEN).commit())
+                throw new IllegalStateException("No se pudo eliminar el token heredado.");
+        } catch (Exception e) {
+            android.util.Log.w("BellotaXiaoZhi", "No se pudo migrar el token al almacenamiento seguro.");
+        }
+    }
+
+    private void saveAccessToken(String token) throws Exception {
+        if (token == null || token.isEmpty()) return;
+        tokenStore.save(token);
+        if (!preferences.edit().remove(KEY_ACCESS_TOKEN).commit())
+            throw new IllegalStateException("No se pudo retirar el token heredado.");
+    }
+
+    private void clearAccessToken() {
+        try { tokenStore.clear(); } catch (Exception ignored) { }
+        preferences.edit().remove(KEY_ACCESS_TOKEN).apply();
+    }
     public String getDeviceId() { return preferences.getString(KEY_DEVICE_ID, ""); }
     public String getClientId() { return preferences.getString(KEY_CLIENT_ID, ""); }
 
@@ -165,7 +207,8 @@ public class XiaoZhiConnection {
             if (response.optJSONObject("activation") != null) {
                 // El servidor volvió a pedir vinculación (dispositivo desvinculado o token
                 // revocado): descartar el estado local y repetir el flujo de activación.
-                preferences.edit().putBoolean(KEY_ACTIVATED, false).remove(KEY_ACCESS_TOKEN).apply();
+                clearAccessToken();
+                preferences.edit().putBoolean(KEY_ACTIVATED, false).apply();
                 handleActivationResponse(response, listener);
                 return;
             }
@@ -193,9 +236,8 @@ public class XiaoZhiConnection {
                 // El protocolo oficial considera que un dispositivo sin campo
                 // "activation" no necesita vincularse nuevamente.
                 String token = response.optString("access_token", "");
-                SharedPreferences.Editor editor = preferences.edit().putBoolean(KEY_ACTIVATED, true);
-                if (!token.isEmpty()) editor.putString(KEY_ACCESS_TOKEN, token);
-                editor.apply();
+                saveAccessToken(token);
+                preferences.edit().putBoolean(KEY_ACTIVATED, true).apply();
                 if (listener != null) listener.onActivated();
                 return;
             }
@@ -215,7 +257,8 @@ public class XiaoZhiConnection {
                 if (result.status == 200) {
                     String token = result.json.optString("access_token", "");
                     saveServerConfiguration(result.json);
-                    preferences.edit().putString(KEY_ACCESS_TOKEN, token).putBoolean(KEY_ACTIVATED, true).apply();
+                    saveAccessToken(token);
+                    preferences.edit().putBoolean(KEY_ACTIVATED, true).apply();
                     if (listener != null) listener.onActivated();
                     return;
                 }
