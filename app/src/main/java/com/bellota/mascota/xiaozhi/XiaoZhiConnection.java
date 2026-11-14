@@ -109,17 +109,22 @@ public class XiaoZhiConnection {
         try { String raw = preferences.getString(KEY_MQTT_CONFIG, null); return raw == null ? null : new JSONObject(raw); }
         catch (Exception ignored) { return null; }
     }
+    private static boolean usable(JSONObject object, String key) {
+        if (object == null || !object.has(key)) return false;
+        Object value = object.opt(key);
+        if (value == null || value == JSONObject.NULL) return false;
+        String text = String.valueOf(value).trim();
+        return !text.isEmpty() && !"null".equalsIgnoreCase(text);
+    }
+
     public String getTransport() {
         // Preferir MQTT/UDP cuando OTA entrega ambos transportes. En este dispositivo
         // el WebSocket completa HTTP 101 pero el servidor no responde al hello; insistir
         // primero por WebSocket impide aprovechar el canal MQTT que ya ofrece el OTA.
         JSONObject mqtt = getMqttConfig();
-        if (mqtt != null && !mqtt.optString("endpoint", "").trim().isEmpty()
-                && !mqtt.optString("username", "").trim().isEmpty()
-                && !mqtt.optString("password", "").trim().isEmpty()
-                && !mqtt.optString("publish_topic", "").trim().isEmpty()
-                && !mqtt.optString("subscribe_topic", "").trim().isEmpty()
-                && !"null".equalsIgnoreCase(mqtt.optString("subscribe_topic", "").trim())) return "mqtt";
+        if (mqtt != null && usable(mqtt, "endpoint") && usable(mqtt, "username")
+                && usable(mqtt, "password") && usable(mqtt, "publish_topic")
+                && usable(mqtt, "subscribe_topic")) return "mqtt";
         JSONObject ws = getWebSocketConfig();
         if (ws != null && !ws.optString("url", "").trim().isEmpty()
                 && (!ws.optString("token", "").trim().isEmpty()
