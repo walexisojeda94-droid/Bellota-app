@@ -8,10 +8,12 @@ import android.os.Looper;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
+import com.bellota.mascota.core.DebugLog;
 import java.util.ArrayList;
 
 /** Reconocimiento continuo con recuperación de idioma y del servicio Android. */
 public class ContinuousVoiceCommands {
+ private static final String TAG = "BellotaSpeech";
  public interface Listener { void onRecognized(String text); void onStatus(String status); }
 
  // ERROR_LANGUAGE_NOT_SUPPORTED se incorporó en versiones nuevas de Android.
@@ -102,6 +104,8 @@ public class ContinuousVoiceCommands {
     // reconocimiento online y luego se prueban variantes de español.
     intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline);
     intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
+    DebugLog.i(TAG, "startListening: locale=" + (language == null ? "sistema" : language)
+      + "; offline=" + preferOffline + "; generation=" + session + ".");
     current.startListening(intent);
     status("Escucha solicitada a Android (" + (language == null ? "idioma del sistema" : language)
       + (preferOffline ? ", modo sin conexión" : ", modo en línea") + ").");
@@ -157,10 +161,16 @@ public class ContinuousVoiceCommands {
    }
   }
   @Override public void onBeginningOfSpeech() {
-   if (isCurrent(session, source)) status("Android detectó el comienzo de voz.");
+   if (isCurrent(session, source)) {
+    DebugLog.i(TAG, "onBeginningOfSpeech; locale=" + (languageTag() == null ? "sistema" : languageTag()) + ".");
+    status("Android detectó el comienzo de voz.");
+   }
   }
   @Override public void onEndOfSpeech() {
-   if (isCurrent(session, source)) status("Android detectó el fin de voz; esperando el resultado.");
+   if (isCurrent(session, source)) {
+    DebugLog.i(TAG, "onEndOfSpeech; esperando resultado.");
+    status("Android detectó el fin de voz; esperando el resultado.");
+   }
   }
   @Override public void onResults(Bundle results) {
    if (!isCurrent(session, source)) return;
@@ -169,15 +179,20 @@ public class ContinuousVoiceCommands {
    if (matches != null && !matches.isEmpty() && matches.get(0) != null
      && !matches.get(0).trim().isEmpty()) {
     String recognized = matches.get(0).trim();
+    DebugLog.i(TAG, "onResults: candidatos=" + matches.size() + "; primerResultadoChars=" + recognized.length() + ".");
     status("Android entregó una transcripción (" + recognized.length() + " caracteres).");
     if (listener != null && isCurrent(session, source)) listener.onRecognized(recognized);
    } else {
+    DebugLog.w(TAG, "onResults sin candidatos de transcripción.");
     status("Android finalizó la escucha, pero no entregó ninguna transcripción.");
    }
    listenAgain(session, 450);
   }
   @Override public void onError(int error) {
    if (!isCurrent(session, source)) return;
+   DebugLog.w(TAG, "onError=" + error + " (" + errorName(error) + "); locale="
+     + (languageTag() == null ? "sistema" : languageTag()) + "; offline=" + preferOffline
+     + "; languageMode=" + languageMode + ".");
    status("Error de reconocimiento: " + errorName(error) + " (código " + error + ").");
    if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
     running = false;
