@@ -50,6 +50,7 @@ public final class XiaoZhiMqttUdpSession {
     private final ScheduledExecutorService watchdog=Executors.newSingleThreadScheduledExecutor();
     private volatile ScheduledFuture<?> helloTimeout;
     private final AtomicBoolean active=new AtomicBoolean(false), recording=new AtomicBoolean(false);
+    private final AtomicBoolean connecting=new AtomicBoolean(false);
     private final AtomicBoolean terminated=new AtomicBoolean(false);
     private final java.util.concurrent.atomic.AtomicLong captureGeneration=new java.util.concurrent.atomic.AtomicLong();
     private volatile MqttClient mqtt;
@@ -71,7 +72,7 @@ public final class XiaoZhiMqttUdpSession {
     public boolean isRunning(){return active.get();}
 
     public void connect(){
-        if(terminated.get()||active.get()) return;
+        if(terminated.get()||active.get()||!connecting.compareAndSet(false,true)) return;
         JSONObject cfg=identity.getMqttConfig();
         if(cfg==null){fail("XiaoZhi no entregó configuración MQTT.");return;}
         String endpoint=cfg.optString("endpoint","").trim();
@@ -111,7 +112,9 @@ public final class XiaoZhiMqttUdpSession {
                     @Override public void deliveryComplete(IMqttDeliveryToken token){}
                 });
                 client.connect(options);
-                mqtt=client; active.set(true);
+                mqtt=client;
+                active.set(true);
+                connecting.set(false);
                 client.subscribe(sub,1);
                 JSONObject hello=new JSONObject().put("type","hello").put("version",3).put("transport","udp")
                         .put("features",new JSONObject().put("mcp",false))
