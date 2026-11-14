@@ -734,7 +734,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                     if (petMemory != null) petMemory.remember("conversacion_usuario", transcript);
                     queueLocalFallback(transcript);
                     if (eyes != null && !isAsleep()) eyes.reactToAttention();
-                    android.util.Log.i("BellotaXiaoZhi", "Usuario: " + transcript);
+                    android.util.Log.i("BellotaXiaoZhi", "Transcripción de usuario procesada.");
                 });
             }
             @Override public void onSpeaking(boolean speaking) {
