@@ -115,7 +115,6 @@ public class XiaoZhiConnection {
         // primero por WebSocket impide aprovechar el canal MQTT que ya ofrece el OTA.
         JSONObject mqtt = getMqttConfig();
         if (mqtt != null && !mqtt.optString("endpoint", "").trim().isEmpty()
-                && !mqtt.optString("client_id", "").trim().isEmpty()
                 && !mqtt.optString("username", "").trim().isEmpty()
                 && !mqtt.optString("password", "").trim().isEmpty()
                 && !mqtt.optString("publish_topic", "").trim().isEmpty()
