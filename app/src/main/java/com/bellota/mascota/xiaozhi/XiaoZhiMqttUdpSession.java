@@ -94,10 +94,13 @@ public final class XiaoZhiMqttUdpSession {
             endpoint = endpoint.endsWith(":1883") ? "tcp://" + endpoint : "ssl://" + endpoint;
         }
         final String broker=endpoint, cid=clientId, user=username, pass=password, sub=subscribeTopic;
-        io.execute(()->{
+        try {
+            io.execute(()->{
+            MqttClient client=null;
             try{
+                if(terminated.get()) return;
                 report("Conectando al canal de control MQTT…");
-                MqttClient client=new MqttClient(broker,cid,new MemoryPersistence());
+                client=new MqttClient(broker,cid,new MemoryPersistence());
                 MqttConnectOptions options=new MqttConnectOptions();
                 options.setUserName(user); options.setPassword(pass.toCharArray());
                 options.setCleanSession(true); options.setAutomaticReconnect(true);
@@ -112,6 +115,10 @@ public final class XiaoZhiMqttUdpSession {
                     @Override public void deliveryComplete(IMqttDeliveryToken token){}
                 });
                 client.connect(options);
+                if(terminated.get()){
+                    try{client.disconnect();client.close();}catch(Exception ignored){}
+                    return;
+                }
                 mqtt=client;
                 active.set(true);
                 connecting.set(false);
@@ -127,8 +134,18 @@ public final class XiaoZhiMqttUdpSession {
                     }
                 }, 12, TimeUnit.SECONDS);
                 report("MQTT conectado. Esperando negociación del canal UDP…");
-            }catch(Exception e){fail("No se pudo conectar o negociar MQTT: "+safe(e));}
-        });
+            }catch(Exception e){
+                if(client!=null&&terminated.get()){
+                    try{if(client.isConnected())client.disconnect();client.close();}catch(Exception ignored){}
+                } else {
+                    fail("No se pudo conectar o negociar MQTT: "+safe(e));
+                }
+            }
+            });
+        } catch(java.util.concurrent.RejectedExecutionException e) {
+            connecting.set(false);
+            if(!terminated.get()) fail("No se pudo iniciar el hilo de conexión MQTT.");
+        }
     }
 
     private void handleControl(String raw){
