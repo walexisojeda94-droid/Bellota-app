@@ -111,7 +111,7 @@ public final class XiaoZhiVoiceSession {
 
         try {
             // El OTA oficial suele no mandar "version": el protocolo por defecto es 1.
-            int protocolVersion = cfg.optInt("version", 1);
+            int protocolVersion = cfg.optInt("version", 2);
             if (protocolVersion < 1 || protocolVersion > 3) {
                 fail("XiaoZhi solicitó el protocolo binario " + protocolVersion + ", que Bellota no implementa (soporta 1, 2 y 3).");
                 return;
@@ -144,13 +144,13 @@ public final class XiaoZhiVoiceSession {
                         JSONObject hello = new JSONObject();
                         hello.put("type", "hello");
                         hello.put("version", protocolVersion);
-                        hello.put("features", new JSONObject().put("mcp", false));
+                        hello.put("features", new JSONObject().put("aec", true).put("mcp", false));
                         hello.put("transport", "websocket");
                         hello.put("audio_params", new JSONObject().put("format", "opus")
                                 .put("sample_rate", UPLINK_RATE).put("channels", 1)
                                 .put("frame_duration", FRAME_MS));
                         boolean queued = webSocket.send(hello.toString());
-                        DebugLog.i(TAG, "Hello encolado=" + queued + "; version=" + protocolVersion + "; transport=websocket; opus=" + UPLINK_RATE + "Hz/mono/" + FRAME_MS + "ms.");
+                        DebugLog.i(TAG, "Hello enviado=" + queued + "; payload=" + hello.toString() + ".");
                         if (!queued) fail("OkHttp rechazó el envío del mensaje hello de XiaoZhi.");
                     } catch (Exception e) { fail("No pude iniciar el protocolo de XiaoZhi."); }
                 }
