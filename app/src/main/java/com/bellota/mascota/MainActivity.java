@@ -693,7 +693,12 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (paused || isFinishing()) return;
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         if (xiaoZhiVoiceSession != null || xiaoZhiMqttUdpSession != null) return;
-        if (voiceCommands != null) voiceCommands.stop();
+        // Reutilizar la instancia evita destruir y recrear el reconocedor en cada onResume.
+        // start() ya es idempotente y permite reanudar una instancia detenida por TTS/XiaoZhi.
+        if (voiceCommands != null) {
+            voiceCommands.start();
+            return;
+        }
         voiceCommands = new ContinuousVoiceCommands(this, new ContinuousVoiceCommands.Listener() {
             @Override public void onRecognized(String spoken) {
                 android.util.Log.i("BellotaVoice", "Transcripción recibida; se procesa el comando.");
