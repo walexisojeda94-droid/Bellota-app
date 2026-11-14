@@ -68,6 +68,10 @@ public final class XiaoZhiMqttUdpSession {
     private OpusEncoder encoder;
     private OpusDecoder decoder;
 
+    private static boolean missing(String value) {
+        return value == null || value.trim().isEmpty() || "null".equalsIgnoreCase(value.trim());
+    }
+
     public XiaoZhiMqttUdpSession(XiaoZhiConnection c, Listener l){identity=c;listener=l;}
     public boolean isRunning(){return active.get();}
 
@@ -81,8 +85,8 @@ public final class XiaoZhiMqttUdpSession {
         String password=cfg.optString("password","");
         publishTopic=cfg.optString("publish_topic","");
         String subscribeTopic=cfg.optString("subscribe_topic","");
-        if(endpoint.isEmpty()||clientId.isEmpty()||username.isEmpty()||password.isEmpty()
-                ||publishTopic.isEmpty()||subscribeTopic.isEmpty()){
+        if(missing(endpoint)||missing(clientId)||missing(username)||missing(password)
+                ||missing(publishTopic)||missing(subscribeTopic)){
             fail("La configuración MQTT está incompleta. Se requieren endpoint, credenciales y tópicos de publicación y suscripción; no se supondrá ningún tópico.");
             return;
         }
