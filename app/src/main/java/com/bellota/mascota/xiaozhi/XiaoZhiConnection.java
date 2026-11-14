@@ -83,16 +83,10 @@ public class XiaoZhiConnection {
         return getTransport() != null;
     }
     private void replaceServerConfiguration(JSONObject response) {
-        SharedPreferences.Editor editor = preferences.edit()
-                .remove(KEY_WEBSOCKET_CONFIG)
-                .remove(KEY_MQTT_CONFIG);
-        if (response != null) {
-            JSONObject ws = response.optJSONObject("websocket");
-            JSONObject mqtt = response.optJSONObject("mqtt");
-            if (ws != null) editor.putString(KEY_WEBSOCKET_CONFIG, ws.toString());
-            if (mqtt != null) editor.putString(KEY_MQTT_CONFIG, mqtt.toString());
-        }
-        editor.apply();
+        // Una respuesta OTA que no incluya transporte no debe borrar la última
+        // configuración válida. Si incluye websocket o mqtt, sí reemplaza el
+        // conjunto anterior para respetar cambios explícitos del servidor.
+        saveServerConfiguration(response);
     }
 
     private void saveServerConfiguration(JSONObject response) {
