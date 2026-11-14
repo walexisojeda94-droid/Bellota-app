@@ -22,6 +22,12 @@ import android.widget.FrameLayout;
 import android.widget.EditText;
 import android.text.InputType;
 import android.widget.Toast;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
+import com.bellota.mascota.core.DebugLog;
 import com.bellota.mascota.core.PetLife;
 import com.bellota.mascota.core.PetMemory;
 import com.bellota.mascota.core.AutonomousBehavior;
@@ -188,7 +194,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         root.addView(playfield, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         // Acceso oculto: mantener pulsados los ojos para configurar MCP.
-        eyes.setOnLongClickListener(v -> { showMcpSetupDialog(); return true; });
+        eyes.setOnLongClickListener(v -> { showHiddenMenu(); return true; });
         setContentView(root);
     }
 
@@ -701,12 +707,12 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
         voiceCommands = new ContinuousVoiceCommands(this, new ContinuousVoiceCommands.Listener() {
             @Override public void onRecognized(String spoken) {
-                android.util.Log.i("BellotaVoice", "Transcripción recibida; se procesa el comando.");
+                DebugLog.i("BellotaVoice", "Transcripción recibida; se procesa el comando.");
                 handleVoiceCommand(spoken);
             }
             @Override public void onStatus(String status) {
                 if (status == null) return;
-                android.util.Log.i("BellotaVoice", status);
+                DebugLog.i("BellotaVoice", status);
                 if (status.startsWith("Error de reconocimiento:")) {
                     long now = System.currentTimeMillis();
                     if (now - lastVoiceDiagnosticToastAt >= 10000L) {
@@ -725,7 +731,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (voiceCommands != null) voiceCommands.stop();
         xiaoZhiVoiceSession = new XiaoZhiVoiceSession(xiaoZhiConnection, new XiaoZhiVoiceSession.Listener() {
             @Override public void onStatus(String status) {
-                android.util.Log.i("BellotaXiaoZhi", status);
+                DebugLog.i("BellotaXiaoZhi", status);
                 if (status != null && status.contains("conectada a XiaoZhi")) markXiaoZhiConnected();
             }
             @Override public void onTranscript(String transcript) {
@@ -734,7 +740,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                     if (petMemory != null) petMemory.remember("conversacion_usuario", transcript);
                     queueLocalFallback(transcript);
                     if (eyes != null && !isAsleep()) eyes.reactToAttention();
-                    android.util.Log.i("BellotaXiaoZhi", "Transcripción de usuario procesada.");
+                    DebugLog.i("BellotaXiaoZhi", "Transcripción de usuario procesada.");
                 });
             }
             @Override public void onSpeaking(boolean speaking) {
@@ -750,7 +756,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
             @Override public void onError(String message) {
                 runOnUiThread(() -> {
-                    android.util.Log.e("BellotaXiaoZhi", message);
+                    DebugLog.e("BellotaXiaoZhi", message);
                     fallbackPendingTranscript();
                     scheduleXiaoZhiRetry(message);
                 });
@@ -766,7 +772,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (voiceCommands != null) voiceCommands.stop();
         xiaoZhiMqttUdpSession = new XiaoZhiMqttUdpSession(xiaoZhiConnection, new XiaoZhiMqttUdpSession.Listener() {
             @Override public void onStatus(String status) {
-                android.util.Log.i("BellotaXiaoZhi", status);
+                DebugLog.i("BellotaXiaoZhi", status);
                 if (status != null && status.contains("Canal UDP negociado")) markXiaoZhiConnected();
             }
             @Override public void onTranscript(String transcript) {
@@ -785,7 +791,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
             @Override public void onError(String message) {
                 runOnUiThread(() -> {
-                    android.util.Log.e("BellotaXiaoZhi", message);
+                    DebugLog.e("BellotaXiaoZhi", message);
                     fallbackPendingTranscript();
                     scheduleXiaoZhiRetry(message);
                 });
@@ -804,7 +810,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             pendingXiaoZhiTranscript = null;
             pendingXiaoZhiFallback = null;
             if (!isFinishing() && unanswered != null) {
-                android.util.Log.w("BellotaVoice", "XiaoZhi no inició TTS; usando respuesta local.");
+                DebugLog.w("BellotaVoice", "XiaoZhi no inició TTS; usando respuesta local.");
                 handleVoiceCommand(unanswered, true);
             }
         };
@@ -906,7 +912,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                     xiaoZhiActivationInFlight = false;
                     xiaoZhiRefreshPending = false;
                     String transport = xiaoZhiConnection.getTransport();
-                    android.util.Log.i("BellotaXiaoZhi", "OTA actualizado. Transporte recibido: "
+                    DebugLog.i("BellotaXiaoZhi", "OTA actualizado. Transporte recibido: "
                             + (transport == null ? "ninguno" : transport));
                     if ("websocket".equals(transport) && xiaoZhiConnection.hasVoiceConfiguration()) {
                         xiaoZhiVoiceFailed = false;
@@ -915,7 +921,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                         xiaoZhiVoiceFailed = false;
                         startXiaoZhiMqtt();
                     } else {
-                        android.util.Log.w("BellotaXiaoZhi", "El OTA no entregó un transporte de voz utilizable.");
+                        DebugLog.w("BellotaXiaoZhi", "El OTA no entregó un transporte de voz utilizable.");
                         scheduleXiaoZhiRetry("El OTA no entregó una configuración de voz utilizable.");
                     }
                 });
@@ -924,7 +930,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 runOnUiThread(() -> {
                     xiaoZhiActivationInFlight = false;
                     xiaoZhiRefreshPending = false;
-                    android.util.Log.e("BellotaXiaoZhi", "No se pudo actualizar OTA: " + message);
+                    DebugLog.e("BellotaXiaoZhi", "No se pudo actualizar OTA: " + message);
                     scheduleXiaoZhiRetry(message);
                 });
             }
@@ -939,7 +945,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 handler.removeCallbacks(xiaoZhiRetryTask);
                 xiaoZhiRetryTask = null;
             }
-            android.util.Log.i("BellotaXiaoZhi", "Canal de voz XiaoZhi operativo.");
+            DebugLog.i("BellotaXiaoZhi", "Canal de voz XiaoZhi operativo.");
         });
     }
 
@@ -964,7 +970,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         int exponent = Math.min(xiaoZhiRetryAttempts, 4);
         long delay = Math.min(60000L, 5000L * (1L << exponent));
         xiaoZhiRetryAttempts++;
-        android.util.Log.w("BellotaXiaoZhi", "Reintento " + xiaoZhiRetryAttempts
+        DebugLog.w("BellotaXiaoZhi", "Reintento " + xiaoZhiRetryAttempts
                 + " en " + (delay / 1000L) + " s. Motivo: " + reason);
         xiaoZhiRetryTask = () -> {
             xiaoZhiRetryTask = null;
@@ -976,6 +982,42 @@ public class MainActivity extends Activity implements SensorEventListener {
         handler.postDelayed(xiaoZhiRetryTask, delay);
         // Si XiaoZhi sigue sin conectar, Bellota no se queda sorda: usa el reconocimiento local.
         if (xiaoZhiRetryAttempts >= LOCAL_FALLBACK_AFTER_RETRIES) startLocalRecognizer();
+    }
+
+    private void showHiddenMenu() {
+        String[] items = {"Ver registro de conexión XiaoZhi", "Configurar MCP"};
+        new AlertDialog.Builder(this)
+                .setItems(items, (dialog, which) -> {
+                    if (which == 0) showDebugLogDialog();
+                    else showMcpSetupDialog();
+                })
+                .show();
+    }
+
+    /** Muestra el estado de la vinculación y los últimos eventos de conexión (sin tokens). */
+    private void showDebugLogDialog() {
+        StringBuilder text = new StringBuilder();
+        if (xiaoZhiConnection != null) text.append(xiaoZhiConnection.describeState()).append('\n');
+        text.append(DebugLog.dump());
+        final String body = text.toString();
+        TextView view = new TextView(this);
+        view.setText(body);
+        view.setTextSize(10f);
+        view.setTypeface(android.graphics.Typeface.MONOSPACE);
+        view.setTextIsSelectable(true);
+        view.setPadding(24, 16, 24, 16);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(view);
+        new AlertDialog.Builder(this)
+                .setTitle("Registro XiaoZhi")
+                .setView(scroll)
+                .setPositiveButton("Copiar", (dialog, which) -> {
+                    ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText("Bellota", body));
+                    Toast.makeText(this, "Registro copiado.", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cerrar", null)
+                .show();
     }
 
     private void showMcpSetupDialog() {
@@ -1129,14 +1171,14 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (mcpConnection == null) mcpConnection = new McpConnection();
             JSONArray tools = buildMcpTools();
             mcpConnection.connect(endpoint, tools, this::executeMcpTool, status -> {
-                android.util.Log.i("BellotaMCP", status);
+                DebugLog.i("BellotaMCP", status);
                 // Los reintentos se registran en Logcat; solo avisar con un Toast al conectar.
                 if (status != null && status.startsWith("MCP conectado.")) {
                     runOnUiThread(() -> Toast.makeText(MainActivity.this, status, Toast.LENGTH_SHORT).show());
                 }
             });
         } catch (Exception e) {
-            android.util.Log.e("BellotaMCP", "No se pudo configurar la conexión MCP.", e);
+            DebugLog.e("BellotaMCP", "No se pudo configurar la conexión MCP.", e);
         }
     }
 

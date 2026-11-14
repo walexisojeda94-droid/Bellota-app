@@ -9,7 +9,7 @@ import android.media.MediaRecorder;
 import android.media.AudioManager;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Log;
+import com.bellota.mascota.core.DebugLog;
 
 import org.concentus.OpusApplication;
 import org.concentus.OpusDecoder;
@@ -131,10 +131,14 @@ public final class XiaoZhiVoiceSession {
                     .header("Client-Id", identity.getClientId())
                     .build();
             reportStatus("Conectando con XiaoZhi…");
+            DebugLog.i(TAG, "Abriendo WebSocket " + url.split("\\?")[0] + " (protocolo v" + protocolVersion + ", bajada " + downlinkRate + " Hz).");
             socket = http.newWebSocket(request, new WebSocketListener() {
                 @Override public void onOpen(WebSocket webSocket, Response response) {
-                    if (!isCurrentSocket(webSocket)) return;
-                    Log.i(TAG, "Handshake WebSocket HTTP " + response.code() + "; enviando hello.");
+                    if (!isCurrentSocket(webSocket)) {
+                        DebugLog.w(TAG, "onOpen ignorado: el socket ya no es el actual.");
+                        return;
+                    }
+                    DebugLog.i(TAG, "Handshake WebSocket HTTP " + response.code() + "; enviando hello.");
                     mainHandler.postDelayed(helloTimeout, 10000L);
                     try {
                         JSONObject hello = new JSONObject();
@@ -159,8 +163,9 @@ public final class XiaoZhiVoiceSession {
 
                 @Override public void onFailure(WebSocket webSocket, Throwable t, Response response) {
                     if (isCurrentSocket(webSocket)) {
+                        DebugLog.e(TAG, "WebSocket onFailure", t);
                         fail("Se perdió la conexión de voz con XiaoZhi: " +
-                                (response != null ? "HTTP " + response.code() : t.getMessage()));
+                                (response != null ? "HTTP " + response.code() : String.valueOf(t)));
                     }
                 }
 
@@ -187,6 +192,9 @@ public final class XiaoZhiVoiceSession {
     }
 
     private boolean isCurrentSocket(WebSocket candidate) {
+        // newWebSocket() puede devolver después de que dispare onOpen u onFailure: sin esta
+        // asignación el hello nunca se enviaba (o el fallo se ignoraba) y la sesión se colgaba.
+        if (candidate != null && socket == null && !terminated.get() && !intentionalClose.get()) socket = candidate;
         return candidate != null && candidate == socket && !intentionalClose.get() && !terminated.get();
     }
 
@@ -195,6 +203,8 @@ public final class XiaoZhiVoiceSession {
         try {
             JSONObject msg = new JSONObject(raw);
             String type = msg.optString("type", "");
+            DebugLog.i(TAG, "<- " + type + ("hello".equals(type) ? " " + raw : "")
+                    + ("tts".equals(type) ? " " + msg.optString("state", "") : ""));
             if ("hello".equals(type)) {
                 if (!"websocket".equals(msg.optString("transport", ""))) {
                     fail("XiaoZhi respondió con un transporte distinto de WebSocket. Bellota no enviará audio.");
@@ -242,7 +252,7 @@ public final class XiaoZhiVoiceSession {
                 recreatePlayer();
                 audioNegotiated = true;
                 running.set(true);
-                Log.i(TAG, "Hello aceptado. Opus mono; subida 16000 Hz, bajada " + downlinkRate + " Hz.");
+                DebugLog.i(TAG, "Hello aceptado. Opus mono; subida 16000 Hz, bajada " + downlinkRate + " Hz.");
                 reportStatus("Bellota está conectada a XiaoZhi.");
                 startListening();
             } else if ("stt".equals(type)) {
@@ -251,7 +261,7 @@ public final class XiaoZhiVoiceSession {
             } else if ("tts".equals(type)) {
                 String state = msg.optString("state", "");
                 if ("start".equals(state)) {
-                    Log.i(TAG, "XiaoZhi inició TTS.");
+                    DebugLog.i(TAG, "XiaoZhi inició TTS.");
                     serverSpeaking = true;
                     stopCapture();
                     if (listener != null) listener.onSpeaking(true);
@@ -265,7 +275,7 @@ public final class XiaoZhiVoiceSession {
                 reportStatus(emotion.isEmpty() ? "XiaoZhi está pensando…" : "Bellota: " + emotion);
             }
         } catch (Exception e) {
-            Log.w(TAG, "Mensaje JSON de XiaoZhi no válido", e);
+            DebugLog.w(TAG, "Mensaje JSON de XiaoZhi no válido", e);
         }
     }
 
@@ -341,7 +351,7 @@ public final class XiaoZhiVoiceSession {
                                 }
                             }
                         } catch (Exception e) {
-                            Log.e(TAG, "Error codificando audio", e);
+                            DebugLog.e(TAG, "Error codificando audio", e);
                             fail("Falló la codificación de audio Opus.");
                             return;
                         }
@@ -407,7 +417,7 @@ public final class XiaoZhiVoiceSession {
         packet = unwrapDownlink(packet);
         if (packet == null || packet.length == 0) return;
         if (firstDownlinkPacket.compareAndSet(false, true)) {
-            Log.i(TAG, "Primer paquete Opus recibido desde XiaoZhi: " + packet.length + " bytes.");
+            DebugLog.i(TAG, "Primer paquete Opus recibido desde XiaoZhi: " + packet.length + " bytes.");
         }
         try {
             if (player == null) createPlayer();
@@ -418,7 +428,7 @@ public final class XiaoZhiVoiceSession {
                 player.write(pcm, 0, samples);
             }
         } catch (Exception e) {
-            Log.w(TAG, "No se pudo decodificar audio Opus", e);
+            DebugLog.w(TAG, "No se pudo decodificar audio Opus", e);
         }
     }
 

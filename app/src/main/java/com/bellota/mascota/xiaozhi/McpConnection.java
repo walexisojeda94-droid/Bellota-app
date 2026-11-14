@@ -1,6 +1,6 @@
 package com.bellota.mascota.xiaozhi;
 
-import android.util.Log;
+import com.bellota.mascota.core.DebugLog;
 import android.os.Handler;
 import android.os.Looper;
 import okhttp3.OkHttpClient;
@@ -206,7 +206,7 @@ public final class McpConnection {
                     ws.send(new JSONObject().put("jsonrpc", "2.0").put("id", id).put("error", err).toString());
                 }
             }
-        } catch (Exception e) { Log.w(TAG, "No se pudo interpretar un mensaje MCP", e); }
+        } catch (Exception e) { DebugLog.w(TAG, "No se pudo interpretar un mensaje MCP", e); }
     }
 
     private void reply(WebSocket ws, Object id, JSONObject result) throws Exception {
@@ -216,7 +216,7 @@ public final class McpConnection {
     private void notifyStatus(String status) {
         Listener l = listener;
         if (l != null) l.onStatus(status);
-        Log.i(TAG, status);
+        DebugLog.i(TAG, status);
     }
 
     public synchronized void disconnect() {

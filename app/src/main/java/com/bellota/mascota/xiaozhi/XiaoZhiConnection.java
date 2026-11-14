@@ -3,6 +3,7 @@ package com.bellota.mascota.xiaozhi;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.provider.Settings;
+import com.bellota.mascota.core.DebugLog;
 import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -23,6 +24,7 @@ import java.util.concurrent.Executors;
  */
 public class XiaoZhiConnection {
     private static final String OTA_URL = "https://api.tenclass.net/xiaozhi/ota/";
+    private static final String TAG = "BellotaXiaoZhi";
     private static final String PREFS = "bellota_xiaozhi";
     private static final String KEY_CLIENT_ID = "client_id";
     private static final String KEY_DEVICE_ID = "device_id";
@@ -80,7 +82,7 @@ public class XiaoZhiConnection {
             if (!preferences.edit().remove(KEY_ACCESS_TOKEN).commit())
                 throw new IllegalStateException("No se pudo eliminar el token heredado.");
         } catch (Exception e) {
-            android.util.Log.w("BellotaXiaoZhi", "No se pudo migrar el token al almacenamiento seguro.");
+            DebugLog.w(TAG, "No se pudo migrar el token al almacenamiento seguro.");
         }
     }
 
@@ -150,6 +152,48 @@ public class XiaoZhiConnection {
         editor.apply();
     }
 
+
+    /** Resumen sin secretos de una respuesta OTA: qué bloques trae y de dónde. */
+    private static String summarize(JSONObject r) {
+        if (r == null) return "(vacía)";
+        StringBuilder sb = new StringBuilder("claves=");
+        java.util.Iterator<String> keys = r.keys();
+        boolean first = true;
+        while (keys.hasNext()) { if (!first) sb.append(','); sb.append(keys.next()); first = false; }
+        JSONObject ws = r.optJSONObject("websocket");
+        if (ws != null) sb.append(" | ws url=").append(ws.optString("url", "-").split("\\?")[0])
+                .append(" token=").append(ws.optString("token", "").isEmpty() ? "no" : "si")
+                .append(" version=").append(ws.has("version") ? ws.optInt("version") : -1);
+        JSONObject mqtt = r.optJSONObject("mqtt");
+        if (mqtt != null) sb.append(" | mqtt endpoint=").append(mqtt.optString("endpoint", "-"))
+                .append(" pub=").append(mqtt.optString("publish_topic", "").isEmpty() ? "no" : "si")
+                .append(" sub=").append(mqtt.optString("subscribe_topic", "").isEmpty() ? "no" : "si");
+        JSONObject act = r.optJSONObject("activation");
+        if (act != null) sb.append(" | activation code=").append(act.optString("code", "-"))
+                .append(" challenge=").append(act.has("challenge") ? "SI" : "no");
+        return sb.toString();
+    }
+
+    /** Estado de la vinculación para mostrar en pantalla (sin tokens). */
+    public String describeState() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("vinculada=").append(isConfigured())
+          .append(" transporte=").append(getTransport() == null ? "ninguno" : getTransport()).append('\n');
+        JSONObject ws = getWebSocketConfig();
+        sb.append("ws: ").append(ws == null ? "sin config" : summarize(wrap("websocket", ws))).append('\n');
+        JSONObject mqtt = getMqttConfig();
+        sb.append("mqtt: ").append(mqtt == null ? "sin config" : summarize(wrap("mqtt", mqtt))).append('\n');
+        sb.append("token propio=").append(getAccessToken().isEmpty() ? "no" : "si")
+          .append(" device=").append(getDeviceId()).append('\n');
+        return sb.toString();
+    }
+
+    private static JSONObject wrap(String key, JSONObject value) {
+        JSONObject o = new JSONObject();
+        try { o.put(key, value); } catch (Exception ignored) { }
+        return o;
+    }
+
     /** Libera el hilo de trabajo cuando la Activity termina definitivamente. */
     public void shutdown() {
         executor.shutdownNow();
@@ -204,6 +248,7 @@ public class XiaoZhiConnection {
     private void refreshConfiguration(ActivationListener listener) {
         try {
             JSONObject response = request("POST", OTA_URL, buildDeviceReport());
+            DebugLog.i(TAG, "OTA (refresco): " + summarize(response));
             if (response.optJSONObject("activation") != null) {
                 // El servidor volvió a pedir vinculación (dispositivo desvinculado o token
                 // revocado): descartar el estado local y repetir el flujo de activación.
@@ -222,7 +267,9 @@ public class XiaoZhiConnection {
 
     private void activate(ActivationListener listener) {
         try {
-            handleActivationResponse(request("POST", OTA_URL, buildDeviceReport()), listener);
+            JSONObject first = request("POST", OTA_URL, buildDeviceReport());
+            DebugLog.i(TAG, "OTA (alta): " + summarize(first));
+            handleActivationResponse(first, listener);
         } catch (Exception e) {
             if (listener != null) listener.onError(e.getMessage() == null ? "No se pudo conectar con XiaoZhi." : e.getMessage());
         }
@@ -254,11 +301,22 @@ public class XiaoZhiConnection {
             String activateUrl = OTA_URL.endsWith("/") ? OTA_URL + "activate" : OTA_URL + "/activate";
             for (int attempt = 0; attempt < 40; attempt++) {
                 HttpResult result = postActivation(activateUrl);
+                DebugLog.i(TAG, "activate intento " + (attempt + 1) + ": HTTP " + result.status
+                        + (result.status == 200 ? " " + summarize(result.json) : ""));
                 if (result.status == 200) {
                     String token = result.json.optString("access_token", "");
                     saveServerConfiguration(result.json);
                     saveAccessToken(token);
                     preferences.edit().putBoolean(KEY_ACTIVATED, true).apply();
+                    // Tras vincular, el firmware oficial vuelve a consultar el OTA para obtener la
+                    // configuración de voz definitiva; la de antes de vincular puede no servir.
+                    try {
+                        JSONObject fresh = request("POST", OTA_URL, buildDeviceReport());
+                        DebugLog.i(TAG, "OTA tras vincular: " + summarize(fresh));
+                        if (fresh.optJSONObject("activation") == null) saveServerConfiguration(fresh);
+                    } catch (Exception e) {
+                        DebugLog.w(TAG, "No pude releer el OTA tras vincular", e);
+                    }
                     if (listener != null) listener.onActivated();
                     return;
                 }

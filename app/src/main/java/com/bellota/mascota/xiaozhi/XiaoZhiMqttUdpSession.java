@@ -7,7 +7,7 @@ import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.AudioManager;
 import android.media.MediaRecorder;
-import android.util.Log;
+import com.bellota.mascota.core.DebugLog;
 
 import org.concentus.OpusApplication;
 import org.concentus.OpusDecoder;
@@ -177,7 +177,7 @@ public final class XiaoZhiMqttUdpSession {
                 rxSequence=0; txSequence=0; firstDownlinkPacket.set(false); sessionId=sid; aesKey=key; baseNonce=nonce; udpHost=socket.getInetAddress();udpPort=port;udp=socket;
                 downRate=rate; decoder=new OpusDecoder(rate,1); encoder=new OpusEncoder(RATE,1,OpusApplication.OPUS_APPLICATION_VOIP);
                 createPlayer(); report("Canal UDP negociado. Audio Opus "+rate+" Hz con AES-128-CTR.");
-                Log.i(TAG, "Hello MQTT aceptado; canal UDP listo, audio de bajada " + rate + " Hz.");
+                DebugLog.i(TAG, "Hello MQTT aceptado; canal UDP listo, audio de bajada " + rate + " Hz.");
                 Thread receiver=new Thread(this::receiveLoop,"Bellota-UDP-RX");receiver.setDaemon(true);receiver.start();
                 startListening();
             }else if("stt".equals(type)){
@@ -282,13 +282,13 @@ public final class XiaoZhiMqttUdpSession {
                 if(len!=p.getLength()-HEADER||seq<=rxSequence)continue;
                 rxSequence=seq;
                 if (firstDownlinkPacket.compareAndSet(false, true)) {
-                    Log.i(TAG, "Primer paquete Opus UDP recibido: " + len + " bytes.");
+                    DebugLog.i(TAG, "Primer paquete Opus UDP recibido: " + len + " bytes.");
                 }
                 byte[] iv=Arrays.copyOfRange(buffer,0,HEADER), cipher=Arrays.copyOfRange(buffer,HEADER,p.getLength());
                 byte[] plain=crypt(cipher,iv);short[] pcm=new short[5760];
                 int samples=decoder.decode(plain,0,plain.length,pcm,0,pcm.length,false);
                 if(samples>0&&player!=null){if(player.getPlayState()!=AudioTrack.PLAYSTATE_PLAYING)player.play();player.write(pcm,0,samples);}
-            }catch(Exception e){if(active.get())Log.w(TAG,"Paquete UDP descartado",e);}
+            }catch(Exception e){if(active.get())DebugLog.w(TAG,"Paquete UDP descartado",e);}
         }
     }
 
@@ -345,7 +345,7 @@ public final class XiaoZhiMqttUdpSession {
 
     private void fail(String message){
         if(!terminated.compareAndSet(false,true)) return;
-        Log.e(TAG,message);
+        DebugLog.e(TAG,message);
         active.set(false);
         speaking=false;
         ScheduledFuture<?> timeout=helloTimeout;
