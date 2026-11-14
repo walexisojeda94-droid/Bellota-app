@@ -77,6 +77,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     private McpConnection mcpConnection;
     private McpCredentialStore mcpCredentialStore;
     private String pendingXiaoZhiCode;
+    private long lastVoiceDiagnosticToastAt;
     private boolean soundEnabled = true;
     private boolean waitingForWeatherPermission;
     private PlayfieldView playfield;
@@ -694,8 +695,21 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (xiaoZhiVoiceSession != null || xiaoZhiMqttUdpSession != null) return;
         if (voiceCommands != null) voiceCommands.stop();
         voiceCommands = new ContinuousVoiceCommands(this, new ContinuousVoiceCommands.Listener() {
-            @Override public void onRecognized(String spoken) { handleVoiceCommand(spoken); }
-            @Override public void onStatus(String status) { }
+            @Override public void onRecognized(String spoken) {
+                android.util.Log.i("BellotaVoice", "Transcripción recibida; se procesa el comando.");
+                handleVoiceCommand(spoken);
+            }
+            @Override public void onStatus(String status) {
+                if (status == null) return;
+                android.util.Log.i("BellotaVoice", status);
+                if (status.startsWith("Error de reconocimiento:")) {
+                    long now = System.currentTimeMillis();
+                    if (now - lastVoiceDiagnosticToastAt >= 10000L) {
+                        lastVoiceDiagnosticToastAt = now;
+                        runOnUiThread(() -> Toast.makeText(MainActivity.this, status, Toast.LENGTH_LONG).show());
+                    }
+                }
+            }
         });
         voiceCommands.start();
     }
