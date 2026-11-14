@@ -138,7 +138,7 @@ public final class XiaoZhiVoiceSession {
                         DebugLog.w(TAG, "onOpen ignorado: el socket ya no es el actual.");
                         return;
                     }
-                    DebugLog.i(TAG, "Handshake WebSocket HTTP " + response.code() + "; enviando hello.");
+                    DebugLog.i(TAG, "Handshake WebSocket HTTP " + response.code() + " (" + response.message() + "); Protocol-Version respuesta=" + response.header("Protocol-Version", "no informado") + "; enviando hello.");
                     mainHandler.postDelayed(helloTimeout, 10000L);
                     try {
                         JSONObject hello = new JSONObject();
@@ -149,29 +149,51 @@ public final class XiaoZhiVoiceSession {
                         hello.put("audio_params", new JSONObject().put("format", "opus")
                                 .put("sample_rate", UPLINK_RATE).put("channels", 1)
                                 .put("frame_duration", FRAME_MS));
-                        webSocket.send(hello.toString());
+                        boolean queued = webSocket.send(hello.toString());
+                        DebugLog.i(TAG, "Hello encolado=" + queued + "; version=" + protocolVersion + "; transport=websocket; opus=" + UPLINK_RATE + "Hz/mono/" + FRAME_MS + "ms.");
+                        if (!queued) fail("OkHttp rechazó el envío del mensaje hello de XiaoZhi.");
                     } catch (Exception e) { fail("No pude iniciar el protocolo de XiaoZhi."); }
                 }
 
                 @Override public void onMessage(WebSocket webSocket, String text) {
-                    if (isCurrentSocket(webSocket)) handleJson(webSocket, text);
+                    if (!isCurrentSocket(webSocket)) return;
+                    try {
+                        JSONObject incoming = new JSONObject(text);
+                        JSONObject params = incoming.optJSONObject("audio_params");
+                        String type = incoming.optString("type", "(sin type)");
+                        DebugLog.i(TAG, "Texto servidor: type=" + type + "; chars=" + text.length()
+                                + (incoming.has("transport") ? "; transport=" + incoming.optString("transport") : "")
+                                + (incoming.has("version") ? "; version=" + incoming.optInt("version", -999) : "")
+                                + (params != null ? "; audio_format=" + params.optString("format", "omitido")
+                                + "; audio_rate=" + params.optInt("sample_rate", -1)
+                                + "; audio_channels=" + params.optInt("channels", -1)
+                                + "; frame_ms=" + params.optInt("frame_duration", -1) : ""));
+                    } catch (Exception ignored) {
+                        DebugLog.w(TAG, "Texto servidor no JSON; chars=" + text.length());
+                    }
+                    handleJson(webSocket, text);
                 }
 
                 @Override public void onMessage(WebSocket webSocket, ByteString bytes) {
-                    if (isCurrentSocket(webSocket)) handleAudio(bytes.toByteArray());
+                    if (!isCurrentSocket(webSocket)) return;
+                    DebugLog.i(TAG, "Binario servidor: " + bytes.size() + " bytes.");
+                    handleAudio(bytes.toByteArray());
                 }
 
                 @Override public void onFailure(WebSocket webSocket, Throwable t, Response response) {
                     if (isCurrentSocket(webSocket)) {
-                        DebugLog.e(TAG, "WebSocket onFailure", t);
+                        DebugLog.e(TAG, "WebSocket onFailure: " + t.getClass().getSimpleName()
+                                + "; HTTP=" + (response == null ? "sin respuesta HTTP" : response.code() + " " + response.message()));
                         fail("Se perdió la conexión de voz con XiaoZhi: " +
-                                (response != null ? "HTTP " + response.code() : String.valueOf(t)));
+                                (response != null ? "HTTP " + response.code() : t.getClass().getSimpleName()));
                     }
                 }
 
                 @Override public void onClosed(WebSocket webSocket, int code, String reason) {
                     if (webSocket != socket || !terminated.compareAndSet(false, true)) return;
                     boolean unexpected = !intentionalClose.get();
+                    DebugLog.w(TAG, "WebSocket cerrado: code=" + code + "; reasonChars="
+                            + (reason == null ? 0 : reason.length()) + "; inesperado=" + unexpected + ".");
                     socket = null;
                     connecting.set(false);
                     mainHandler.removeCallbacks(helloTimeout);
@@ -203,8 +225,12 @@ public final class XiaoZhiVoiceSession {
         try {
             JSONObject msg = new JSONObject(raw);
             String type = msg.optString("type", "");
-            DebugLog.i(TAG, "<- " + type + ("hello".equals(type) ? " " + raw : "")
-                    + ("tts".equals(type) ? " " + msg.optString("state", "") : ""));
+            DebugLog.i(TAG, "<- JSON type=" + type
+                    + ("hello".equals(type) ? "; transport=" + msg.optString("transport", "(omitido)")
+                    + "; version=" + (msg.has("version") ? msg.optInt("version", -999) : "omitida")
+                    + "; session_id_present=" + msg.has("session_id")
+                    + "; audio_params_present=" + (msg.optJSONObject("audio_params") != null) : "")
+                    + ("tts".equals(type) ? "; state=" + msg.optString("state", "") : ""));
             if ("hello".equals(type)) {
                 if (!"websocket".equals(msg.optString("transport", ""))) {
                     fail("XiaoZhi respondió con un transporte distinto de WebSocket. Bellota no enviará audio.");
