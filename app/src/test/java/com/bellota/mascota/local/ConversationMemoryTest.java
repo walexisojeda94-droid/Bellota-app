@@ -39,6 +39,14 @@ public class ConversationMemoryTest {
         assertFalse(memory.takeWelcomeBack());
     }
 
+    @Test public void negatedLikePhrasesAreNotLearnedAsPreferences() {
+        assertTrue(LocalConversationEngine.hasNegatedLikePrefix("No"));
+        assertTrue(LocalConversationEngine.hasNegatedLikePrefix("No, "));
+        assertTrue(LocalConversationEngine.hasNegatedLikePrefix("No, definitivamente"));
+        assertFalse(LocalConversationEngine.hasNegatedLikePrefix(""));
+        assertFalse(LocalConversationEngine.hasNegatedLikePrefix("Sí, claro"));
+    }
+
     @Test public void expectedAnswerExpiresAfterThreeMinutes() {
         ConversationMemory memory = ConversationMemory.inMemory();
         memory.expect("like:Pokémon", 10_000L);
