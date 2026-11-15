@@ -27,6 +27,7 @@ public class ContinuousVoiceCommands {
  private boolean preferOffline = true;
  private boolean systemLanguageFallback;
  private int clientErrorCount;
+ private int throttleCount;
  private long generation;
 
  public ContinuousVoiceCommands(Context context, Listener listener) {
@@ -44,6 +45,7 @@ public class ContinuousVoiceCommands {
   preferOffline = true;
   systemLanguageFallback = false;
   clientErrorCount = 0;
+  throttleCount = 0;
   final long session = ++generation;
   try {
    createRecognizer(session);
@@ -152,7 +154,6 @@ public class ContinuousVoiceCommands {
 
   @Override public void onReadyForSpeech(Bundle b) {
    if (isCurrent(session, source)) {
-    clientErrorCount = 0;
     status("Android está listo para escuchar.");
    }
   }
@@ -170,6 +171,8 @@ public class ContinuousVoiceCommands {
   }
   @Override public void onResults(Bundle results) {
    if (!isCurrent(session, source)) return;
+   clientErrorCount = 0;
+   throttleCount = 0;
    ArrayList<String> matches = results == null ? null
      : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
    if (matches != null && !matches.isEmpty() && matches.get(0) != null
@@ -198,7 +201,7 @@ public class ContinuousVoiceCommands {
     status("Reconocimiento detenido: Android no concedió permiso de micrófono.");
     return;
    }
-   if (error == ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT) {
+   if (error == ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {
     if (preferOffline) {
      preferOffline = false;
      status("El idioma del teléfono no está disponible sin conexión; probando reconocimiento en línea.");
@@ -211,7 +214,14 @@ public class ContinuousVoiceCommands {
     listenAgain(session, preferOffline ? 900 : 5000);
     return;
    }
-   if (error == SpeechRecognizer.ERROR_CLIENT) {
+   if (error == SpeechRecognizer.ERROR_TOO_MANY_REQUESTS) {
+    long delay = Math.min(60000L, 10000L * (1L << Math.min(throttleCount++, 3)));
+    status("Android limitó temporalmente las solicitudes de reconocimiento; se esperará antes de reintentar.");
+    listenAgain(session, delay);
+    return;
+   }
+   if (error == SpeechRecognizer.ERROR_CLIENT || error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED
+     || error == SpeechRecognizer.ERROR_AUDIO) {
     recoverClientError(session);
     return;
    }
