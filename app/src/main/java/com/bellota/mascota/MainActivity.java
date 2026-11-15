@@ -181,7 +181,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 view.performClick();
                 return true;
             }
-            return event.getActionMasked() == MotionEvent.ACTION_CANCEL;
+            return true;
         });
         int width = (int)(getResources().getDisplayMetrics().widthPixels * 0.42f);
         int height = (int)(getResources().getDisplayMetrics().heightPixels * 0.34f);
