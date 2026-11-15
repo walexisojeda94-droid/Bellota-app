@@ -20,6 +20,15 @@ public class UtteranceTest {
         assertTrue(Utterance.of("   ").isEmpty());
     }
 
+    @Test public void matchingNormalizesTheExpectedPhraseToo() {
+        Utterance utterance = Utterance.of("¿Cómo estás, Bellota?");
+        assertTrue(utterance.hasPhrase("cómo estás"));
+        assertTrue(utterance.hasWord("estás"));
+        assertTrue(utterance.startsWith("¿cómo estás"));
+        assertFalse(utterance.hasPhrase(null));
+        assertFalse(utterance.hasWord("  "));
+    }
+
     @Test public void startsWithRequiresAWholePhrase() {
         Utterance utterance = Utterance.of("buenas tardes bellota");
         assertTrue(utterance.startsWith("buenas tardes"));
