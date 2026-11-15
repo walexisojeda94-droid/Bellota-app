@@ -76,6 +76,7 @@ public final class XiaoZhiVoiceSession {
     private volatile String sessionId;
     private volatile boolean serverSpeaking;
     private volatile boolean audioNegotiated;
+    private volatile boolean mcpReady;
     private volatile int negotiatedProtocolVersion;
     private volatile int downlinkRate = 24000;
     private volatile boolean muted;
@@ -111,6 +112,7 @@ public final class XiaoZhiVoiceSession {
         if (terminated.get() || !connecting.compareAndSet(false, true)) return;
         intentionalClose.set(false);
         audioNegotiated = false;
+        mcpReady = false;
         firstDownlinkPacket.set(false);
         JSONObject cfg = identity.getWebSocketConfig();
         if (cfg == null) {
@@ -400,6 +402,15 @@ public final class XiaoZhiVoiceSession {
                 DebugLog.w(TAG, "OkHttp rechazó la respuesta MCP para método " + method + ".");
             } else {
                 DebugLog.i(TAG, "Respuesta MCP enviada: " + method + ".");
+                if ("tools/list".equals(method)) {
+                    // El flujo oficial completa initialize + tools/list antes de comenzar
+                    // a transmitir audio de la conversación.
+                    mcpReady = true;
+                    if (running.get() && !serverSpeaking && !capturing.get()) {
+                        try { startCapture(); }
+                        catch (Exception e) { fail("No pude iniciar el micrófono después de inicializar MCP."); }
+                    }
+                }
             }
         } catch (Exception error) {
             DebugLog.e(TAG, "No se pudo responder al mensaje MCP " + method + ".", error);
@@ -419,7 +430,7 @@ public final class XiaoZhiVoiceSession {
                 fail("No pude iniciar la escucha de XiaoZhi.");
                 return;
             }
-            startCapture();
+            if (mcpHandler == null || mcpReady) startCapture();
         } catch (Exception e) { fail("No pude iniciar el micrófono."); }
     }
 
