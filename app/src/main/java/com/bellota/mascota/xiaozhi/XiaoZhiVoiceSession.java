@@ -323,6 +323,17 @@ public final class XiaoZhiVoiceSession {
             } else if ("llm".equals(type)) {
                 String emotion = msg.optString("emotion", "");
                 reportStatus(emotion.isEmpty() ? "XiaoZhi está pensando…" : "Bellota: " + emotion);
+            } else if ("goodbye".equals(type)) {
+                DebugLog.i(TAG, "XiaoZhi envió goodbye; cerrando la sesión de forma ordenada.");
+                intentionalClose.set(true);
+                mainHandler.removeCallbacks(helloTimeout);
+                connecting.set(false);
+                running.set(false);
+                serverSpeaking = false;
+                stopAudio();
+                WebSocket current = socket;
+                if (current != null) current.close(1000, "XiaoZhi goodbye");
+                reportStatus("XiaoZhi finalizó la sesión de voz.");
             }
         } catch (Exception e) {
             DebugLog.w(TAG, "Mensaje JSON de XiaoZhi no válido", e);
@@ -609,6 +620,14 @@ public final class XiaoZhiVoiceSession {
         stopAudio();
         audioExecutor.shutdownNow();
         WebSocket ws = socket;
+        if (ws != null && sessionId != null && !sessionId.isEmpty()) {
+            try {
+                ws.send(new JSONObject().put("session_id", sessionId)
+                        .put("type", "goodbye").toString());
+            } catch (Exception e) {
+                DebugLog.w(TAG, "No se pudo enviar goodbye antes del cierre.", e);
+            }
+        }
         socket = null;
         if (ws != null) ws.close(1000, "Bellota cerrando sesión");
     }
