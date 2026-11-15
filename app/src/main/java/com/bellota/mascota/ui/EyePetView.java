@@ -174,6 +174,7 @@ public class EyePetView extends View {
     }
 
     private void animateGaze(float x, float y, long duration) {
+        if (!active || !isAttachedToWindow()) return;
         if (gazeAnimator != null) gazeAnimator.cancel();
         gazeAnimator = ValueAnimator.ofFloat(0f, 1f);
         final float fromX = gazeX, fromY = gazeY;
