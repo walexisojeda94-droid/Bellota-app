@@ -60,6 +60,8 @@ public class ContinuousVoiceCommands {
  }
 
  public void stop() {
+  // No repetir destrucción ni registrar detenciones si ya estaba inactivo.
+  if (!running && !restarting && recognizer == null) return;
   running = false;
   restarting = false;
   generation++;
