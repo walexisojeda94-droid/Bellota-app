@@ -109,7 +109,9 @@ Cambios aplicados en Bellota:
 5. **Listen:** usa `state=start` y `mode=realtime`, como el flujo de prueba WebSocket oficial.
 6. **Audio binario v2:** usa el encabezado de 16 bytes `!HHIII` en orden de red: versión 2, tipo 0 (Opus), reservado 0, timestamp 0 y tamaño exacto del payload. La recepción valida versión, reservado y longitud; también reconoce tipo 1 (JSON) y lo deriva al procesador de mensajes.
 7. **MCP dentro del WebSocket de voz:** Bellota anuncia MCP solo cuando el manejador está conectado. Responde a `initialize`, `tools/list`, `tools/call` y `ping`; procesa notificaciones sin responder y encapsula las respuestas en `{session_id, type: "mcp", payload}`. Reutiliza las cinco herramientas existentes de Bellota.
-8. **Diagnóstico:** el vencimiento de 30 segundos sigue siendo una advertencia, no cancela el WebSocket. Los cierres ahora registran el código y el motivo recibido.
+8. **Orden de sesión:** después del hello envía `listen` en modo `realtime`; si MCP está habilitado, espera a responder `tools/list` antes de empezar a capturar y enviar audio, siguiendo la secuencia del test oficial.
+9. **Cierre:** procesa el `goodbye` del servidor, cierra ordenadamente y vuelve a abrir el canal para mantener Bellota disponible; al desconectar envía también su propio `goodbye` cuando ya existe `session_id`.
+10. **Diagnóstico:** el vencimiento de 30 segundos sigue siendo una advertencia, no cancela el WebSocket. Los cierres ahora registran el código y el motivo recibido.
 
 ### Límite de identidad en Android
 
