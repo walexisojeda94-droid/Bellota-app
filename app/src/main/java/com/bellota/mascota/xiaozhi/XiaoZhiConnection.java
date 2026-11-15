@@ -2,7 +2,6 @@ package com.bellota.mascota.xiaozhi;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.provider.Settings;
 import com.bellota.mascota.core.DebugLog;
 import org.json.JSONObject;
 import java.io.BufferedReader;
@@ -12,7 +11,6 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,6 +30,9 @@ public class XiaoZhiConnection {
     private static final String KEY_ACCESS_TOKEN = "access_token";
     private static final String KEY_WEBSOCKET_CONFIG = "websocket_config";
     private static final String KEY_MQTT_CONFIG = "mqtt_config";
+    // MAC física confirmada en Ajustes del Motorola moto g52 usado para esta prueba.
+    // Android 10+ restringe la lectura programática de la MAC real a aplicaciones normales.
+    private static final String DEVICE_MAC_ADDRESS = "68:87:1C:F0:44:A8";
     private final Context context;
     private final SharedPreferences preferences;
     private final XiaoZhiTokenStore tokenStore;
@@ -245,39 +246,18 @@ public class XiaoZhiConnection {
     }
 
     private void ensureIdentity() {
-        // ANDROID_ID permanece estable para la misma app/dispositivo entre actualizaciones
-        // y reinstalaciones normales. No generar un Client-Id nuevo en cada instalación.
-        String androidId = Settings.Secure.getString(
-                context.getContentResolver(), Settings.Secure.ANDROID_ID);
-        if (androidId == null || androidId.trim().isEmpty()) {
-            androidId = "bellota-device-bellota";
-        }
         SharedPreferences.Editor editor = preferences.edit();
+        // Para esta compilación de prueba se usa la MAC física verificada del moto g52.
+        // Se sobrescribe cualquier ID derivado anterior para que OTA y WebSocket
+        // reciban exactamente el mismo Device-Id, incluso si quedan preferencias viejas.
+        editor.putString(KEY_DEVICE_ID, DEVICE_MAC_ADDRESS);
+
         if (!preferences.contains(KEY_CLIENT_ID)) {
-            // XiaoZhi espera un UUID de cliente; se genera una sola vez y se
-            // conserva en preferencias para mantener la identidad entre sesiones.
+            // XiaoZhi espera un UUID de cliente independiente de la MAC del dispositivo.
             String stableClientId = UUID.randomUUID().toString();
             editor.putString(KEY_CLIENT_ID, stableClientId);
         }
-        if (!preferences.contains(KEY_DEVICE_ID)) {
-            editor.putString(KEY_DEVICE_ID, createStableDeviceId(androidId));
-        }
         editor.apply();
-    }
-
-    private String createStableDeviceId(String source) {
-        try {
-            byte[] hash = MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8));
-            hash[0] = (byte) ((hash[0] & 0xFE) | 0x02);
-            StringBuilder mac = new StringBuilder();
-            for (int i = 0; i < 6; i++) {
-                if (i > 0) mac.append(":");
-                mac.append(String.format(java.util.Locale.US, "%02X", hash[i] & 0xFF));
-            }
-            return mac.toString();
-        } catch (Exception e) {
-            return "02:00:00:00:00:01";
-        }
     }
 
     private void refreshConfiguration(ActivationListener listener) {
