@@ -12,6 +12,7 @@ import android.graphics.RectF;
 import android.view.View;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import java.util.Random;
+import java.util.ArrayList;
 
 /** Ojos vectoriales vivos: expresiones, parpadeo y mirada independientes de clips GIF. */
 public class EyePetView extends View {
@@ -38,6 +39,7 @@ public class EyePetView extends View {
     private ValueAnimator blinkAnimator;
     private ValueAnimator gazeAnimator;
     private final Handler animationHandler = new Handler(Looper.getMainLooper());
+    private final ArrayList<Runnable> transientCallbacks = new ArrayList<>();
     private final Runnable idleAnimation = new Runnable() {
         @Override public void run() {
             if (!active || !isAttachedToWindow()) return;
@@ -85,7 +87,7 @@ public class EyePetView extends View {
         if (mood == Mood.SLEEPING) return;
         setMood(Mood.CURIOUS);
         animateGaze(random.nextFloat() * 0.5f - 0.25f, random.nextFloat() * 0.25f - 0.12f, 420);
-        postDelayed(() -> { if (active && mood == Mood.CURIOUS) setMood(Mood.HAPPY); }, 1000L);
+        postTransient(() -> { if (mood == Mood.CURIOUS) setMood(Mood.HAPPY); }, 1000L);
     }
 
     // ---- Mirada, rebote y bostezo (usados por la rutina autónoma) ---------------
@@ -155,7 +157,7 @@ public class EyePetView extends View {
                     random.nextFloat() * 0.45f - 0.22f, 1400 + random.nextInt(1000));
         }
         if (random.nextInt(2) == 0) blinkOnce();
-        postDelayed(() -> { if(active){autonomousScene=0;invalidate();} },6500L);
+        postTransient(() -> { autonomousScene=0; invalidate(); },6500L);
     }
 
     /** Juego breve: Bellota persigue un punto luminoso con la mirada. */
@@ -166,9 +168,9 @@ public class EyePetView extends View {
         final float[][] targets={{-0.34f,-0.12f},{0.30f,-0.18f},{0.22f,0.16f},{-0.28f,0.12f},{0f,0f}};
         for(int i=0;i<targets.length;i++) {
             final float tx=targets[i][0], ty=targets[i][1];
-            postDelayed(() -> { if(active) animateGaze(tx,ty,520L); },i*620L);
+            postTransient(() -> animateGaze(tx,ty,520L),i*620L);
         }
-        postDelayed(() -> { if(active) { autonomousScene=0; setMood(Mood.CURIOUS); invalidate(); } },3900L);
+        postTransient(() -> { autonomousScene=0; setMood(Mood.CURIOUS); invalidate(); },3900L);
     }
 
     private void animateGaze(float x, float y, long duration) {
@@ -194,6 +196,21 @@ public class EyePetView extends View {
         blinkAnimator.start();
     }
 
+    private void postTransient(Runnable action, long delayMs) {
+        final Runnable[] holder = new Runnable[1];
+        holder[0] = () -> {
+            transientCallbacks.remove(holder[0]);
+            if (active && isAttachedToWindow()) action.run();
+        };
+        transientCallbacks.add(holder[0]);
+        animationHandler.postDelayed(holder[0], delayMs);
+    }
+
+    private void clearTransientCallbacks() {
+        for (Runnable callback : transientCallbacks) animationHandler.removeCallbacks(callback);
+        transientCallbacks.clear();
+    }
+
     private void scheduleIdleAnimation() {
         animationHandler.removeCallbacks(idleAnimation);
         if (active && isAttachedToWindow()) animationHandler.postDelayed(idleAnimation, 1200L);
@@ -208,6 +225,7 @@ public class EyePetView extends View {
     @Override protected void onDetachedFromWindow() {
         active = false;
         animationHandler.removeCallbacks(idleAnimation);
+        clearTransientCallbacks();
         if (blinkAnimator != null) blinkAnimator.cancel();
         if (gazeAnimator != null) gazeAnimator.cancel();
         if (bounceAnimator != null) bounceAnimator.cancel();
