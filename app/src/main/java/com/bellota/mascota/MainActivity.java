@@ -160,24 +160,28 @@ public class MainActivity extends Activity implements SensorEventListener {
         eyes.setLightTheme(false);
         eyes.setOnClickListener(v -> { }); // la reacción al toque se resuelve en ACTION_UP (onPetTouched)
         eyes.setOnTouchListener((view, event) -> {
-            if(event.getPointerCount()>1) {
-                if(event.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN && petMemory!=null)
+            if (event.getPointerCount() > 1) {
+                if (event.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN && petMemory != null)
                     petMemory.remember("contacto_multiple", "Bellota recibió un toque con varios dedos.");
-                return false;
+                return true;
             }
-            if(event.getActionMasked()==MotionEvent.ACTION_DOWN) {
-                touchStartedAt=System.currentTimeMillis();
-                touchStartX=event.getX(); touchStartY=event.getY(); touchPressure=event.getPressure();
-            } else if(event.getActionMasked()==MotionEvent.ACTION_UP) {
-                long duration=System.currentTimeMillis()-touchStartedAt;
-                float distance=(float)Math.hypot(event.getX()-touchStartX,event.getY()-touchStartY);
-                boolean stroke=distance>24f || duration>420L;
-                boolean firm=!stroke && touchPressure>=0.72f && duration<190L;
-                String kind=firm?"rough_touch":"caress";
-                onPetTouched(kind, firm);
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                touchStartedAt = System.currentTimeMillis();
+                touchStartX = event.getX();
+                touchStartY = event.getY();
+                touchPressure = event.getPressure();
+                return true;
+            }
+            if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                long duration = System.currentTimeMillis() - touchStartedAt;
+                float distance = (float) Math.hypot(event.getX() - touchStartX, event.getY() - touchStartY);
+                boolean stroke = distance > 24f || duration > 420L;
+                boolean firm = !stroke && touchPressure >= 0.72f && duration < 190L;
+                onPetTouched(firm ? "rough_touch" : "caress", firm);
                 view.performClick();
+                return true;
             }
-            return false;
+            return event.getActionMasked() == MotionEvent.ACTION_CANCEL;
         });
         int width = (int)(getResources().getDisplayMetrics().widthPixels * 0.42f);
         int height = (int)(getResources().getDisplayMetrics().heightPixels * 0.34f);
