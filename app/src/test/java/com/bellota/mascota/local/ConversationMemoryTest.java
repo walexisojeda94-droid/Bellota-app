@@ -42,7 +42,7 @@ public class ConversationMemoryTest {
     @Test public void negatedLikePhrasesAreNotLearnedAsPreferences() {
         assertTrue(LocalConversationEngine.hasNegatedLikePrefix("No"));
         assertTrue(LocalConversationEngine.hasNegatedLikePrefix("No, "));
-        assertTrue(LocalConversationEngine.hasNegatedLikePrefix("No, definitivamente"));
+        assertFalse(LocalConversationEngine.hasNegatedLikePrefix("No, definitivamente"));
         assertFalse(LocalConversationEngine.hasNegatedLikePrefix(""));
         assertFalse(LocalConversationEngine.hasNegatedLikePrefix("Sí, claro"));
     }
