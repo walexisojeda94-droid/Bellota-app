@@ -23,21 +23,29 @@ public final class Utterance {
     public boolean isEmpty() { return tokens.length == 0; }
 
     /** Frase completa respetando límites de palabra ("hola" no matchea "peholazo"). */
-    public boolean hasPhrase(String phrase) { return padded.contains(" " + phrase + " "); }
+    public boolean hasPhrase(String phrase) {
+        String normalized = TextUtil.normalize(phrase);
+        return !normalized.isEmpty() && padded.contains(" " + normalized + " ");
+    }
 
     /** Palabra suelta, con tolerancia a errores solo si es larga. */
     public boolean hasWord(String word) {
-        for (String t : tokens) if (TextUtil.similar(t, word)) return true;
+        String normalized = TextUtil.normalize(word);
+        if (normalized.isEmpty()) return false;
+        for (String t : tokens) if (TextUtil.similar(t, normalized)) return true;
         return false;
     }
 
     /** Alguna palabra empieza con la raíz dada ("content" matchea "contenta"). */
     public boolean hasStem(String stem) {
-        for (String t : tokens) if (t.startsWith(stem)) return true;
+        String normalized = TextUtil.normalize(stem);
+        if (normalized.isEmpty()) return false;
+        for (String t : tokens) if (t.startsWith(normalized)) return true;
         return false;
     }
 
     public boolean startsWith(String phrase) {
-        return text.equals(phrase) || text.startsWith(phrase + " ");
+        String normalized = TextUtil.normalize(phrase);
+        return !normalized.isEmpty() && (text.equals(normalized) || text.startsWith(normalized + " "));
     }
 }
