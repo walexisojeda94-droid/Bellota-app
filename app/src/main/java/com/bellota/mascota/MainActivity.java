@@ -733,6 +733,17 @@ public class MainActivity extends Activity implements SensorEventListener {
             @Override public void onStatus(String status) {
                 DebugLog.i("BellotaXiaoZhi", status);
                 if (status != null && status.contains("conectada a XiaoZhi")) markXiaoZhiConnected();
+                if (status != null && status.startsWith("XiaoZhi finalizó la sesión de voz")) {
+                    runOnUiThread(() -> {
+                        xiaoZhiVoiceSession = null;
+                        if (!paused && !isFinishing()) {
+                            handler.postDelayed(() -> {
+                                if (xiaoZhiVoiceSession == null && !xiaoZhiVoiceFailed)
+                                    startXiaoZhiVoice();
+                            }, 1200L);
+                        }
+                    });
+                }
             }
             @Override public void onTranscript(String transcript) {
                 runOnUiThread(() -> {
