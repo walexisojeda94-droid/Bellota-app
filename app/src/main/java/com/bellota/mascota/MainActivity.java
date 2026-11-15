@@ -137,7 +137,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
         });
         localVoice.setOnSpeechFinished(() -> {
-            handler.removeCallbacks(unmuteTtsTask);            ttsMuted = false;
+            handler.removeCallbacks(unmuteTtsTask);
+            ttsMuted = false;
             updateMute();
             // No iniciar el reconocedor local mientras el transporte XiaoZhi usa el micrófono.
             if (!paused && !isFinishing() && voiceCommands != null
@@ -282,7 +283,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (irritation >= 65) {
             if (mood != EyePetView.Mood.OFFENDED) {
                 eyes.setMood(EyePetView.Mood.OFFENDED);
-                eyes.lookAway(rnd.nextBoolean() ? 1 : -1);            }
+                eyes.lookAway(rnd.nextBoolean() ? 1 : -1);
+            }
         } else if (irritation >= 40) {
             if (mood != EyePetView.Mood.ANGRY && mood != EyePetView.Mood.OFFENDED)
                 eyes.setMood(EyePetView.Mood.ANGRY);
@@ -422,6 +424,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             default: break;
         }
     }
+
     private void finishGame() {
         busyUntil = System.currentTimeMillis() + 1500L;
         if (eyes == null) return;
@@ -560,7 +563,8 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     /** Restablece pantalla y ojos según el estado guardado (al abrir o volver a la app). */
     private void applySleepVisuals() {
-        if (eyes == null || autonomy == null) return;        boolean asleep = autonomy.isSleeping();
+        if (eyes == null || autonomy == null) return;
+        boolean asleep = autonomy.isSleeping();
         dimScreen(asleep);
         if (asleep) eyes.setMood(EyePetView.Mood.SLEEPING);
         updateMute();
@@ -838,7 +842,8 @@ public class MainActivity extends Activity implements SensorEventListener {
                     DebugLog.e("BellotaXiaoZhi", message);
                     fallbackPendingTranscript();
                     scheduleXiaoZhiRetry(message);
-                });            }
+                });
+            }
         });
         xiaoZhiMqttUdpSession.connect();
         updateMute();
@@ -977,7 +982,8 @@ public class MainActivity extends Activity implements SensorEventListener {
                     scheduleXiaoZhiRetry(message);
                 });
             }
-        });    }
+        });
+    }
 
     private void markXiaoZhiConnected() {
         handler.post(() -> {
@@ -1096,7 +1102,6 @@ public class MainActivity extends Activity implements SensorEventListener {
                     }
                 }).show();
     }
-
     private JSONArray buildMcpTools() throws org.json.JSONException {
         JSONArray definitions = new JSONArray();
         definitions.put(new JSONObject()
@@ -1116,7 +1121,8 @@ public class MainActivity extends Activity implements SensorEventListener {
                 .put("name", "speak_as_bellota")
                 .put("description", "Hace que Bellota diga una frase breve en voz alta.")
                 .put("inputSchema", new JSONObject().put("type", "object")
-                        .put("properties", new JSONObject().put("text", new JSONObject()                                .put("type", "string").put("description", "Frase de hasta 240 caracteres.")))
+                        .put("properties", new JSONObject().put("text", new JSONObject()
+                                .put("type", "string").put("description", "Frase de hasta 240 caracteres.")))
                         .put("required", new JSONArray().put("text"))));
         definitions.put(new JSONObject()
                 .put("name", "interact_with_bellota")
@@ -1255,7 +1261,8 @@ public class MainActivity extends Activity implements SensorEventListener {
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == MICROPHONE_PERMISSION) {
-            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startVoiceCommands();            else Toast.makeText(this, "Bellota necesita permiso de micrófono para escucharte.", Toast.LENGTH_LONG).show();
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startVoiceCommands();
+            else Toast.makeText(this, "Bellota necesita permiso de micrófono para escucharte.", Toast.LENGTH_LONG).show();
         } else if (requestCode == LOCATION_PERMISSION && waitingForWeatherPermission) {
             waitingForWeatherPermission = false;
             if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
