@@ -94,3 +94,27 @@ Correcciones aplicadas en `main`:
 - La compilación Release, la verificación del certificado permanente y la publicación del artefacto también finalizaron correctamente en GitHub Actions.
 - Un commit intermedio de la migración del token se ejecutó antes de que se añadiera la nueva clase de almacenamiento y falló por esa dependencia ausente. El commit siguiente incorporó la clase; la compilación completa del estado resultante de `main` terminó correctamente.
 - La CI no puede validar el micrófono, el altavoz, la descarga de idioma ni la reconexión física en los teléfonos. Sigue pendiente instalar y probar en ambos dispositivos, especialmente el J7.
+
+
+## Auditoría de conformidad WebSocket (15/11/2026)
+
+Se contrastó la implementación con el cliente de referencia del proyecto oficial `tenclass/xiaozhi-protocols`, en particular `tests/test_websocket.py`, `tests/instances.py` y `basemodel/audio.py`.
+
+Cambios aplicados en Bellota:
+
+1. **Versión WebSocket fija en 2:** el cliente oficial establece `PROTOCOL_VERSION = 2` para WebSocket y usa ese mismo valor en `Protocol-Version` y en `hello.version`. Bellota ya no toma la versión binaria de un campo opcional `websocket.version` del OTA ni cae a v1 por ausencia.
+2. **Hello:** envía `type=hello`, `version=2`, `features.aec=true`, `features.mcp=true` cuando el manejador MCP está conectado, `transport=websocket` y Opus mono a 16.000 Hz / 60 ms.
+3. **Identidad y autenticación:** mantiene los mismos `Device-Id` y `Client-Id` usados por OTA; envía `Authorization: Bearer`, `Protocol-Version: 2`, `Device-Id` y `Client-Id` en el handshake. El `Client-Id` es un UUID persistente.
+4. **Respuesta hello:** exige `transport=websocket`, versión compatible si el servidor la incluye y un `session_id` no vacío antes de empezar a transmitir audio.
+5. **Listen:** usa `state=start` y `mode=realtime`, como el flujo de prueba WebSocket oficial.
+6. **Audio binario v2:** usa el encabezado de 16 bytes `!HHIII` en orden de red: versión 2, tipo 0 (Opus), reservado 0, timestamp 0 y tamaño exacto del payload. La recepción valida versión, reservado y longitud; también reconoce tipo 1 (JSON) y lo deriva al procesador de mensajes.
+7. **MCP dentro del WebSocket de voz:** Bellota anuncia MCP solo cuando el manejador está conectado. Responde a `initialize`, `tools/list`, `tools/call` y `ping`; procesa notificaciones sin responder y encapsula las respuestas en `{session_id, type: "mcp", payload}`. Reutiliza las cinco herramientas existentes de Bellota.
+8. **Diagnóstico:** el vencimiento de 30 segundos sigue siendo una advertencia, no cancela el WebSocket. Los cierres ahora registran el código y el motivo recibido.
+
+### Límite de identidad en Android
+
+La especificación de firmware describe `Device-Id` como MAC física. Android no permite a una aplicación común leer de forma fiable la MAC Wi-Fi física en versiones modernas. Bellota conserva el identificador estable ya vinculado: una dirección MAC localmente administrada derivada de `ANDROID_ID`. Tiene formato MAC y permanece idéntica entre OTA y WebSocket, pero no debe describirse como la MAC física del teléfono. No se cambia para no romper la identidad ya registrada.
+
+### Validación pendiente
+
+Los cambios están guardados en `main`. La conformidad de código se contrastó con el cliente de referencia, pero la compilación y las pruebas automáticas del último commit deben terminar correctamente antes de considerar validado el artefacto. La CI no demuestra por sí sola micrófono, altavoz ni conversación real con el servidor.
