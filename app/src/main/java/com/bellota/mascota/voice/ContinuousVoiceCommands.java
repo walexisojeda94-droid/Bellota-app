@@ -25,7 +25,7 @@ public class ContinuousVoiceCommands {
  private boolean running;
  private boolean restarting;
  private boolean preferOffline = true;
- private int languageMode;
+ private boolean systemLanguageFallback;
  private int clientErrorCount;
  private long generation;
 
@@ -42,7 +42,7 @@ public class ContinuousVoiceCommands {
   }
   running = true;
   preferOffline = true;
-  languageMode = 0;
+  systemLanguageFallback = false;
   clientErrorCount = 0;
   final long session = ++generation;
   try {
@@ -100,8 +100,7 @@ public class ContinuousVoiceCommands {
      intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, language);
     }
     intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
-    // Primero intenta el modelo descargado. Si Android devuelve 12, se permite
-    // reconocimiento online y luego se prueban variantes de español.
+    // El idioma se toma de la configuración regional del teléfono.
     intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline);
     intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
     DebugLog.i(TAG, "startListening: locale=" + (language == null ? "sistema" : language)
@@ -118,12 +117,9 @@ public class ContinuousVoiceCommands {
  }
 
  private String languageTag() {
-  switch (languageMode) {
-   case 0: return "es-AR";
-   case 1: return "es-ES";
-   case 2: return "es";
-   default: return null; // dejar que el servicio elija el idioma configurado en Android
-  }
+  if (systemLanguageFallback) return null;
+  String tag = java.util.Locale.getDefault().toLanguageTag();
+  return tag == null || tag.isEmpty() || "und".equalsIgnoreCase(tag) ? null : tag;
  }
 
  private void recoverClientError(long session) {
@@ -192,7 +188,7 @@ public class ContinuousVoiceCommands {
    if (!isCurrent(session, source)) return;
    DebugLog.w(TAG, "onError=" + error + " (" + errorName(error) + "); locale="
      + (languageTag() == null ? "sistema" : languageTag()) + "; offline=" + preferOffline
-     + "; languageMode=" + languageMode + ".");
+     + "; systemLanguageFallback=" + systemLanguageFallback + ".");
    status("Error de reconocimiento: " + errorName(error) + " (código " + error + ").");
    if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
     running = false;
@@ -205,14 +201,14 @@ public class ContinuousVoiceCommands {
    if (error == ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT) {
     if (preferOffline) {
      preferOffline = false;
-     status("El modelo de español sin conexión no está disponible; probando reconocimiento en línea.");
-    } else if (languageMode < 3) {
-     languageMode++;
-     status("El servicio no admite el idioma solicitado; probando otra variante de español.");
+     status("El idioma del teléfono no está disponible sin conexión; probando reconocimiento en línea.");
+    } else if (!systemLanguageFallback) {
+     systemLanguageFallback = true;
+     status("El servicio no admite el idioma del teléfono; se deja que Android seleccione su idioma predeterminado.");
     } else {
-     status("Android no admite las variantes de español probadas. Se intentará con el idioma del sistema.");
+     status("El servicio no admite el idioma predeterminado de Android; se reintentará más tarde.");
     }
-    listenAgain(session, 900);
+    listenAgain(session, preferOffline ? 900 : 5000);
     return;
    }
    if (error == SpeechRecognizer.ERROR_CLIENT) {
@@ -238,6 +234,9 @@ public class ContinuousVoiceCommands {
    case SpeechRecognizer.ERROR_NO_MATCH: return "no se pudo reconocer lo dicho";
    case SpeechRecognizer.ERROR_RECOGNIZER_BUSY: return "reconocedor ocupado";
    case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: return "permiso de micrófono insuficiente";
+   case SpeechRecognizer.ERROR_TOO_MANY_REQUESTS: return "demasiadas solicitudes al servicio";
+   case SpeechRecognizer.ERROR_SERVER_DISCONNECTED: return "servicio de reconocimiento desconectado";
+   case SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE: return "idioma no disponible";
    case ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT: return "idioma no compatible";
    default: return "error no clasificado";
   }
