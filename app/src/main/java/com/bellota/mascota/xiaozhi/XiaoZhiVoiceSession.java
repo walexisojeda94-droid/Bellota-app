@@ -19,6 +19,7 @@ import org.json.JSONObject;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import org.json.JSONArray;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -77,7 +78,6 @@ public final class XiaoZhiVoiceSession {
     private volatile boolean audioNegotiated;
     private volatile int negotiatedProtocolVersion;
     private volatile int downlinkRate = 24000;
-    private volatile long sessionStartMs;
     private volatile boolean muted;
     private AudioRecord recorder;
     private AudioTrack player;
@@ -133,7 +133,6 @@ public final class XiaoZhiVoiceSession {
             // El cliente de referencia oficial fija WebSocket en protocolo binario v2.
             // No se debe inferir la versión desde un campo OTA ajeno al protocolo WS.
             final int protocolVersion = PROTOCOL_VERSION;
-            sessionStartMs = System.currentTimeMillis();
             negotiatedProtocolVersion = PROTOCOL_VERSION;
             encoder = new OpusEncoder(UPLINK_RATE, 1, OpusApplication.OPUS_APPLICATION_VOIP);
             int rate = cfg.optInt("sample_rate", 24000);
@@ -194,7 +193,7 @@ public final class XiaoZhiVoiceSession {
                 @Override public void onMessage(WebSocket webSocket, ByteString bytes) {
                     if (!isCurrentSocket(webSocket)) return;
                     DebugLog.i(TAG, "Binario servidor: " + bytes.size() + " bytes.");
-                    handleAudio(bytes.toByteArray());
+                    handleBinaryFrame(webSocket, bytes.toByteArray());
                 }
 
                 @Override public void onFailure(WebSocket webSocket, Throwable t, Response response) {
@@ -516,29 +515,37 @@ public final class XiaoZhiVoiceSession {
         return b.array();
     }
 
-    private byte[] unwrapDownlink(byte[] packet) {
-        if (negotiatedProtocolVersion != PROTOCOL_VERSION || packet == null || packet.length < 16) return null;
-        ByteBuffer header = ByteBuffer.wrap(packet).order(ByteOrder.BIG_ENDIAN);
+    /** Decodifica el encabezado BinaryProtocol2 y despacha Opus (type 0) o JSON (type 1). */
+    private void handleBinaryFrame(WebSocket ws, byte[] frame) {
+        if (negotiatedProtocolVersion != PROTOCOL_VERSION || frame == null || frame.length < 16) {
+            DebugLog.w(TAG, "Trama binaria WebSocket demasiado corta o versión no negociada.");
+            return;
+        }
+        ByteBuffer header = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
         int version = header.getShort() & 0xFFFF;
         int type = header.getShort() & 0xFFFF;
         long reserved = header.getInt() & 0xFFFFFFFFL;
-        header.getInt(); // timestamp
+        header.getInt(); // timestamp en milisegundos
         long payloadSize = header.getInt() & 0xFFFFFFFFL;
-        if (version != PROTOCOL_VERSION || type != 0 || reserved != 0
-                || payloadSize != packet.length - 16L) {
+        if (version != PROTOCOL_VERSION || reserved != 0 || payloadSize != frame.length - 16L) {
             DebugLog.w(TAG, "Trama BinaryProtocol2 inválida: version=" + version
                     + "; type=" + type + "; reserved=" + reserved
-                    + "; payload_size=" + payloadSize + "; bytes=" + packet.length + ".");
-            return null;
+                    + "; payload_size=" + payloadSize + "; bytes=" + frame.length + ".");
+            return;
         }
-        return java.util.Arrays.copyOfRange(packet, 16, packet.length);
+        byte[] payload = java.util.Arrays.copyOfRange(frame, 16, frame.length);
+        if (type == 0) {
+            handleAudio(payload);
+        } else if (type == 1) {
+            handleJson(ws, new String(payload, StandardCharsets.UTF_8));
+        } else {
+            DebugLog.w(TAG, "Tipo de trama BinaryProtocol2 no admitido: " + type + ".");
+        }
     }
 
     private void handleAudio(byte[] packet) {
-        if (!running.get() || !audioNegotiated || negotiatedProtocolVersion < 1
-                || !serverSpeaking || packet.length == 0) return;
-        packet = unwrapDownlink(packet);
-        if (packet == null || packet.length == 0) return;
+        if (!running.get() || !audioNegotiated || negotiatedProtocolVersion != PROTOCOL_VERSION
+                || !serverSpeaking || packet == null || packet.length == 0) return;
         if (firstDownlinkPacket.compareAndSet(false, true)) {
             DebugLog.i(TAG, "Primer paquete Opus recibido desde XiaoZhi: " + packet.length + " bytes.");
         }
