@@ -235,6 +235,7 @@ public class EyePetView extends View {
     public void pauseAnimation() {
         active = false;
         animationHandler.removeCallbacks(idleAnimation);
+        clearTransientCallbacks();
         if (blinkAnimator != null) blinkAnimator.cancel();
         if (gazeAnimator != null) gazeAnimator.cancel();
         if (bounceAnimator != null) bounceAnimator.cancel();
