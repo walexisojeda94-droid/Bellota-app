@@ -11,6 +11,7 @@ public final class TextUtil {
 
     /** Minúsculas, sin tildes ni signos, con espacios simples. */
     public static String normalize(String value) {
+        if (value == null || value.isEmpty()) return "";
         String n = Normalizer.normalize(value.toLowerCase(AR), Normalizer.Form.NFD);
         return n.replaceAll("\\p{M}", "")
                 .replaceAll("[¿?¡!,.;:()\"]", " ")
