@@ -34,12 +34,12 @@ import okhttp3.WebSocketListener;
 import okio.ByteString;
 
 /**
- * Cliente de voz XiaoZhi WebSocket conforme al cliente de referencia oficial:
- * protocolo binario v2, Opus mono a 16 kHz y paquetes de 60 ms.
+ * Cliente de voz XiaoZhi WebSocket:
+ * protocolo v1 (Opus crudo), Opus mono a 16 kHz y paquetes de 60 ms.
  */
 public final class XiaoZhiVoiceSession {
     private static final String TAG = "BellotaXiaoZhiVoice";
-    private static final int PROTOCOL_VERSION = 2;
+    private static final int PROTOCOL_VERSION = 1;
     private static final int UPLINK_RATE = 16000;
     private static final int FRAME_MS = 60;
     private static final long HELLO_TIMEOUT_MS = 30000L;
@@ -132,8 +132,9 @@ public final class XiaoZhiVoiceSession {
         }
 
         try {
-            // El cliente de referencia oficial fija WebSocket en protocolo binario v2.
-            // No se debe inferir la versión desde un campo OTA ajeno al protocolo WS.
+            // OTA no informa una versión WebSocket válida (version=-1 en esta cuenta).
+            // XiaoZhi documenta v1 como versión predeterminada: Opus crudo en tramas
+            // binarias, sin cabecera BinaryProtocol2.
             final int protocolVersion = PROTOCOL_VERSION;
             negotiatedProtocolVersion = PROTOCOL_VERSION;
             encoder = new OpusEncoder(UPLINK_RATE, 1, OpusApplication.OPUS_APPLICATION_VOIP);
@@ -521,48 +522,21 @@ public final class XiaoZhiVoiceSession {
         }
     }
 
-    /** WebSocket BinaryProtocol2: |u16 version|u16 type|u32 reserved|u32 timestamp|u32 payload_size|Opus|. */
     /** Con muted=true se sigue leyendo el micrófono pero no se envía audio (p. ej. mientras Bellota habla). */
     public void setMuted(boolean value) { muted = value; }
 
+    /** Protocolo v1: cada trama binaria contiene únicamente un paquete Opus. */
     private byte[] wrapUplink(byte[] opus) {
-        // El cliente oficial envía timestamp=0 incluso con AEC anunciado.
-        ByteBuffer b = ByteBuffer.allocate(16 + opus.length).order(ByteOrder.BIG_ENDIAN);
-        b.putShort((short) PROTOCOL_VERSION)
-                .putShort((short) 0) // type 0 = Opus
-                .putInt(0)           // reserved
-                .putInt(0)           // timestamp
-                .putInt(opus.length)
-                .put(opus);
-        return b.array();
+        return opus;
     }
 
-    /** Decodifica el encabezado BinaryProtocol2 y despacha Opus (type 0) o JSON (type 1). */
+    /** En v1, WebSocket ya distingue JSON (texto) de audio Opus (binario). */
     private void handleBinaryFrame(WebSocket ws, byte[] frame) {
-        if (negotiatedProtocolVersion != PROTOCOL_VERSION || frame == null || frame.length < 16) {
-            DebugLog.w(TAG, "Trama binaria WebSocket demasiado corta o versión no negociada.");
+        if (negotiatedProtocolVersion != PROTOCOL_VERSION || frame == null || frame.length == 0) {
+            DebugLog.w(TAG, "Trama Opus vacía o protocolo v1 no negociado.");
             return;
         }
-        ByteBuffer header = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
-        int version = header.getShort() & 0xFFFF;
-        int type = header.getShort() & 0xFFFF;
-        long reserved = header.getInt() & 0xFFFFFFFFL;
-        header.getInt(); // timestamp en milisegundos
-        long payloadSize = header.getInt() & 0xFFFFFFFFL;
-        if (version != PROTOCOL_VERSION || reserved != 0 || payloadSize != frame.length - 16L) {
-            DebugLog.w(TAG, "Trama BinaryProtocol2 inválida: version=" + version
-                    + "; type=" + type + "; reserved=" + reserved
-                    + "; payload_size=" + payloadSize + "; bytes=" + frame.length + ".");
-            return;
-        }
-        byte[] payload = java.util.Arrays.copyOfRange(frame, 16, frame.length);
-        if (type == 0) {
-            handleAudio(payload);
-        } else if (type == 1) {
-            handleJson(ws, new String(payload, StandardCharsets.UTF_8));
-        } else {
-            DebugLog.w(TAG, "Tipo de trama BinaryProtocol2 no admitido: " + type + ".");
-        }
+        handleAudio(frame);
     }
 
     private void handleAudio(byte[] packet) {
