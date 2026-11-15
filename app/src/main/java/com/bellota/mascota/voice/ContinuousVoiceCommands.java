@@ -29,6 +29,8 @@ public class ContinuousVoiceCommands {
  private int clientErrorCount;
  private int throttleCount;
  private long generation;
+ private final ArrayList<String> languageCandidates = new ArrayList<>();
+ private int languageCandidateIndex;
 
  public ContinuousVoiceCommands(Context context, Listener listener) {
   this.context = context.getApplicationContext();
@@ -44,6 +46,8 @@ public class ContinuousVoiceCommands {
   running = true;
   preferOffline = true;
   systemLanguageFallback = false;
+  prepareLanguageCandidates();
+  languageCandidateIndex = 0;
   clientErrorCount = 0;
   throttleCount = 0;
   final long session = ++generation;
@@ -120,10 +124,33 @@ public class ContinuousVoiceCommands {
   }, delay);
  }
 
+ private void prepareLanguageCandidates() {
+  languageCandidates.clear();
+  String systemTag = java.util.Locale.getDefault().toLanguageTag();
+  boolean systemSpanish = systemTag != null && systemTag.toLowerCase(java.util.Locale.ROOT).startsWith("es");
+  if (systemSpanish) addLanguageCandidate(systemTag);
+  // Bellota reconoce comandos en español. Se prueban las variantes instaladas
+  // habituales antes de dejar que Android elija un idioma por su cuenta.
+  addLanguageCandidate("es-ES");
+  addLanguageCandidate("es-US");
+  if (!systemSpanish && systemTag != null && !systemTag.isEmpty()
+    && !"und".equalsIgnoreCase(systemTag)) {
+   addLanguageCandidate(systemTag);
+  }
+  DebugLog.i(TAG, "Idiomas candidatos para reconocimiento: " + languageCandidates + ".");
+ }
+
+ private void addLanguageCandidate(String tag) {
+  if (tag == null || tag.trim().isEmpty() || "und".equalsIgnoreCase(tag)) return;
+  for (String existing : languageCandidates) {
+   if (existing.equalsIgnoreCase(tag)) return;
+  }
+  languageCandidates.add(tag);
+ }
+
  private String languageTag() {
-  if (systemLanguageFallback) return null;
-  String tag = java.util.Locale.getDefault().toLanguageTag();
-  return tag == null || tag.isEmpty() || "und".equalsIgnoreCase(tag) ? null : tag;
+  if (systemLanguageFallback || languageCandidateIndex >= languageCandidates.size()) return null;
+  return languageCandidates.get(languageCandidateIndex);
  }
 
  private void recoverClientError(long session) {
@@ -206,12 +233,17 @@ public class ContinuousVoiceCommands {
    if (error == ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {
     if (preferOffline) {
      preferOffline = false;
-     status("El idioma del teléfono no está disponible sin conexión; probando reconocimiento en línea.");
+     status("El idioma " + (languageTag() == null ? "seleccionado" : languageTag())
+       + " no está disponible sin conexión; probando reconocimiento en línea.");
+    } else if (languageCandidateIndex + 1 < languageCandidates.size()) {
+     languageCandidateIndex++;
+     preferOffline = true;
+     status("La variante anterior no está disponible; probando " + languageTag() + " sin conexión.");
     } else if (!systemLanguageFallback) {
      systemLanguageFallback = true;
-     status("El servicio no admite el idioma del teléfono; se deja que Android seleccione su idioma predeterminado.");
+     status("Las variantes de español probadas no están disponibles; se deja que Android seleccione su idioma predeterminado.");
     } else {
-     status("El servicio no admite el idioma predeterminado de Android; se reintentará más tarde.");
+     status("Android no ofrece un idioma compatible para el reconocimiento; se reintentará más tarde.");
     }
     listenAgain(session, preferOffline ? 900 : 5000);
     return;
