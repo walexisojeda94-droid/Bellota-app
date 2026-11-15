@@ -119,7 +119,7 @@ public final class LocalConversationEngine {
     private static final Pattern NAME = Pattern.compile("(?i)\\b(?:me llamo|mi nombre es)\\s+((?:\\p{L}{2,20})(?:[ '-](?:de|del|la|las|los))?(?:\\s+(?!y\\b|pero\\b|porque\\b|que\\b)\\p{L}{2,20}){0,3})\\b");
     private static final Pattern NICKNAME = Pattern.compile(
             "(?i)\\b(?:ll[aá]mame|decime|me dicen|mi apodo es|mi sobrenombre es)\\s+(\\p{L}{2,20})\\s*[.!¡]*\\s*$");
-    private static final Pattern LIKE = Pattern.compile("(?i)(?<!no )\\bme (?:gusta|gustan|encanta|encantan)\\s+(.{2,80})$");
+    private static final Pattern LIKE = Pattern.compile("(?i)\\bme (?:gusta|gustan|encanta|encantan)\\s+(.{2,80})$");
     private static final Pattern UNLIKE = Pattern.compile("(?i)\\bya no me (?:gusta|gustan|encanta|encantan)\\s+(.{2,80})$");
     private static final String[] NOT_NAMES = {"algo", "hora", "fecha", "clima", "chiste", "cuando", "como", "que",
             "donde", "quien", "por", "si", "no", "la", "el", "una", "un", "lo", "los", "las", "mas"};
@@ -166,7 +166,13 @@ public final class LocalConversationEngine {
     private String extractLike(String raw) {
         if (raw == null) return null;
         Matcher m = LIKE.matcher(raw.trim());
-        return m.find() ? cleanTail(m.group(1)) : null;
+        if (!m.find() || hasNegatedLikePrefix(raw.substring(0, m.start()))) return null;
+        return cleanTail(m.group(1));
+    }
+
+    static boolean hasNegatedLikePrefix(String prefix) {
+        String normalized = TextUtil.normalize(prefix);
+        return "no".equals(normalized) || normalized.endsWith(" no");
     }
 
     private String extractUnlike(String raw) {
