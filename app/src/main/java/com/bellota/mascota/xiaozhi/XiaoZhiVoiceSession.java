@@ -17,9 +17,6 @@ import org.concentus.OpusEncoder;
 import org.concentus.OpusException;
 import org.json.JSONObject;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
 import org.json.JSONArray;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
