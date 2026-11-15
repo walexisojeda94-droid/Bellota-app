@@ -39,6 +39,7 @@ public final class XiaoZhiVoiceSession {
     private static final String TAG = "BellotaXiaoZhiVoice";
     private static final int UPLINK_RATE = 16000;
     private static final int FRAME_MS = 60;
+    private static final long HELLO_TIMEOUT_MS = 30000L;
     private static final int UPLINK_FRAME = UPLINK_RATE * FRAME_MS / 1000;
 
     public interface Listener {
@@ -76,7 +77,12 @@ public final class XiaoZhiVoiceSession {
 
     private void checkHelloTimeout() {
         if (connecting.get() && socket != null && !audioNegotiated) {
-            fail("XiaoZhi abrió WebSocket pero no completó la negociación hello en 10 segundos.");
+            // El timeout es diagnóstico, no una orden de desconexión: algunos servidores
+            // pueden tardar en responder al hello. Se conserva el WebSocket para aceptar
+            // una respuesta tardía y evitar cancelar una sesión que sigue abierta.
+            DebugLog.w(TAG, "XiaoZhi todavía no respondió al hello después de "
+                    + (HELLO_TIMEOUT_MS / 1000L) + " segundos; se mantiene el WebSocket abierto.");
+            reportStatus("Esperando respuesta de XiaoZhi… la conexión sigue abierta.");
         }
     }
 
@@ -139,12 +145,12 @@ public final class XiaoZhiVoiceSession {
                         return;
                     }
                     DebugLog.i(TAG, "Handshake WebSocket HTTP " + response.code() + " (" + response.message() + "); Protocol-Version respuesta=" + response.header("Protocol-Version", "no informado") + "; enviando hello.");
-                    mainHandler.postDelayed(helloTimeout, 10000L);
+                    mainHandler.postDelayed(helloTimeout, HELLO_TIMEOUT_MS);
                     try {
                         JSONObject hello = new JSONObject();
                         hello.put("type", "hello");
                         hello.put("version", protocolVersion);
-                        hello.put("features", new JSONObject().put("aec", true).put("mcp", false));
+                        hello.put("features", new JSONObject().put("aec", true).put("mcp", true));
                         hello.put("transport", "websocket");
                         hello.put("audio_params", new JSONObject().put("format", "opus")
                                 .put("sample_rate", UPLINK_RATE).put("channels", 1)
