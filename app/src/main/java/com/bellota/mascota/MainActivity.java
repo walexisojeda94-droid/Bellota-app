@@ -782,6 +782,13 @@ public class MainActivity extends Activity implements SensorEventListener {
                     scheduleXiaoZhiRetry(message);
                 });
             }
+        }, new XiaoZhiVoiceSession.McpHandler() {
+            @Override public JSONArray getTools() throws Exception {
+                return buildMcpTools();
+            }
+            @Override public String executeTool(String name, JSONObject arguments) throws Exception {
+                return executeMcpTool(name, arguments);
+            }
         });
         xiaoZhiVoiceSession.connect();
         updateMute();
