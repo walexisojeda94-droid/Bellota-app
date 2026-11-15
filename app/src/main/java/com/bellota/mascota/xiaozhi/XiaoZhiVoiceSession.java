@@ -18,6 +18,8 @@ import org.concentus.OpusException;
 import org.json.JSONObject;
 
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import org.json.JSONArray;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executors;
@@ -31,12 +33,12 @@ import okhttp3.WebSocketListener;
 import okio.ByteString;
 
 /**
- * Cliente de voz XiaoZhi WebSocket, protocolo binario v1 (Opus crudo).
- * Captura PCM mono a 16 kHz, lo codifica en paquetes Opus de 60 ms
- * y reproduce los paquetes Opus recibidos del servidor.
+ * Cliente de voz XiaoZhi WebSocket conforme al cliente de referencia oficial:
+ * protocolo binario v2, Opus mono a 16 kHz y paquetes de 60 ms.
  */
 public final class XiaoZhiVoiceSession {
     private static final String TAG = "BellotaXiaoZhiVoice";
+    private static final int PROTOCOL_VERSION = 2;
     private static final int UPLINK_RATE = 16000;
     private static final int FRAME_MS = 60;
     private static final long HELLO_TIMEOUT_MS = 30000L;
@@ -49,8 +51,15 @@ public final class XiaoZhiVoiceSession {
         void onError(String message);
     }
 
+    /** Puente hacia las herramientas MCP reales de Bellota. */
+    public interface McpHandler {
+        JSONArray getTools() throws Exception;
+        String executeTool(String name, JSONObject arguments) throws Exception;
+    }
+
     private final XiaoZhiConnection identity;
     private final Listener listener;
+    private final McpHandler mcpHandler;
     private final OkHttpClient http = new OkHttpClient.Builder()
             .retryOnConnectionFailure(true).pingInterval(30, TimeUnit.SECONDS).build();
     private final ExecutorService audioExecutor = Executors.newSingleThreadExecutor();
@@ -87,8 +96,13 @@ public final class XiaoZhiVoiceSession {
     }
 
     public XiaoZhiVoiceSession(XiaoZhiConnection identity, Listener listener) {
+        this(identity, listener, null);
+    }
+
+    public XiaoZhiVoiceSession(XiaoZhiConnection identity, Listener listener, McpHandler mcpHandler) {
         this.identity = identity;
         this.listener = listener;
+        this.mcpHandler = mcpHandler;
     }
 
     public boolean isRunning() { return running.get(); }
@@ -116,14 +130,11 @@ public final class XiaoZhiVoiceSession {
         }
 
         try {
-            // El OTA oficial suele no mandar "version": el protocolo por defecto es 1.
-            int protocolVersion = cfg.optInt("version", 2);
-            if (protocolVersion < 1 || protocolVersion > 3) {
-                fail("XiaoZhi solicitó el protocolo binario " + protocolVersion + ", que Bellota no implementa (soporta 1, 2 y 3).");
-                return;
-            }
+            // El cliente de referencia oficial fija WebSocket en protocolo binario v2.
+            // No se debe inferir la versión desde un campo OTA ajeno al protocolo WS.
+            final int protocolVersion = PROTOCOL_VERSION;
             sessionStartMs = System.currentTimeMillis();
-            negotiatedProtocolVersion = protocolVersion; // FIX: antes quedaba en 0 y rechazaba el hello / descartaba todo el audio
+            negotiatedProtocolVersion = PROTOCOL_VERSION;
             encoder = new OpusEncoder(UPLINK_RATE, 1, OpusApplication.OPUS_APPLICATION_VOIP);
             int rate = cfg.optInt("sample_rate", 24000);
             if (rate != 8000 && rate != 12000 && rate != 16000 && rate != 24000 && rate != 48000) rate = 24000;
@@ -132,7 +143,7 @@ public final class XiaoZhiVoiceSession {
 
             Request request = new Request.Builder().url(url)
                     .header("Authorization", token.startsWith("Bearer ") ? token : "Bearer " + token)
-                    .header("Protocol-Version", String.valueOf(protocolVersion))
+                    .header("Protocol-Version", String.valueOf(PROTOCOL_VERSION))
                     .header("Device-Id", identity.getDeviceId())
                     .header("Client-Id", identity.getClientId())
                     .build();
@@ -150,7 +161,7 @@ public final class XiaoZhiVoiceSession {
                         JSONObject hello = new JSONObject();
                         hello.put("type", "hello");
                         hello.put("version", protocolVersion);
-                        hello.put("features", new JSONObject().put("aec", true).put("mcp", true));
+                        hello.put("features", new JSONObject().put("aec", true).put("mcp", mcpHandler != null));
                         hello.put("transport", "websocket");
                         hello.put("audio_params", new JSONObject().put("format", "opus")
                                 .put("sample_rate", UPLINK_RATE).put("channels", 1)
@@ -198,8 +209,9 @@ public final class XiaoZhiVoiceSession {
                 @Override public void onClosed(WebSocket webSocket, int code, String reason) {
                     if (webSocket != socket || !terminated.compareAndSet(false, true)) return;
                     boolean unexpected = !intentionalClose.get();
-                    DebugLog.w(TAG, "WebSocket cerrado: code=" + code + "; reasonChars="
-                            + (reason == null ? 0 : reason.length()) + "; inesperado=" + unexpected + ".");
+                    DebugLog.w(TAG, "WebSocket cerrado: code=" + code + "; reason="
+                            + (reason == null || reason.isEmpty() ? "(sin motivo)" : reason)
+                            + "; inesperado=" + unexpected + ".");
                     socket = null;
                     connecting.set(false);
                     mainHandler.removeCallbacks(helloTimeout);
@@ -274,9 +286,12 @@ public final class XiaoZhiVoiceSession {
                     fail("XiaoZhi solicitó paquetes de " + frameDuration + " ms. Bellota solo tiene implementados paquetes de " + FRAME_MS + " ms.");
                     return;
                 }
-                // El protocolo permite que el hello omita session_id; en ese caso
-                // los mensajes posteriores llevan el campo vacío.
-                sessionId = msg.optString("session_id", "");
+                String negotiatedSessionId = msg.optString("session_id", "").trim();
+                if (negotiatedSessionId.isEmpty()) {
+                    fail("La respuesta hello de XiaoZhi no contiene session_id; no se puede continuar la sesión.");
+                    return;
+                }
+                sessionId = negotiatedSessionId;
                 negotiatedProtocolVersion = serverVersion;
                 connecting.set(false);
                 downlinkRate = rate;
@@ -287,6 +302,8 @@ public final class XiaoZhiVoiceSession {
                 DebugLog.i(TAG, "Hello aceptado. Opus mono; subida 16000 Hz, bajada " + downlinkRate + " Hz.");
                 reportStatus("Bellota está conectada a XiaoZhi.");
                 startListening();
+            } else if ("mcp".equals(type)) {
+                handleMcp(ws, msg);
             } else if ("stt".equals(type)) {
                 String transcript = msg.optString("text", "");
                 if (!transcript.isEmpty() && listener != null) listener.onTranscript(transcript);
@@ -311,6 +328,85 @@ public final class XiaoZhiVoiceSession {
         }
     }
 
+    /** Procesa MCP encapsulado en el sobre de sesión WebSocket de XiaoZhi. */
+    private void handleMcp(WebSocket ws, JSONObject envelope) {
+        if (mcpHandler == null) {
+            DebugLog.w(TAG, "El servidor envió MCP, pero Bellota no registró un manejador.");
+            return;
+        }
+        JSONObject request = envelope.optJSONObject("payload");
+        if (request == null) {
+            DebugLog.w(TAG, "Mensaje MCP sin payload JSON-RPC.");
+            return;
+        }
+        if (!request.has("id") || request.isNull("id")) {
+            // notifications/initialized y demás notificaciones no llevan respuesta.
+            DebugLog.i(TAG, "Notificación MCP recibida: " + request.optString("method", "(sin método)") + ".");
+            return;
+        }
+        Object id = request.opt("id");
+        String method = request.optString("method", "");
+        try {
+            JSONObject response;
+            if ("initialize".equals(method)) {
+                response = new JSONObject()
+                        .put("jsonrpc", "2.0")
+                        .put("id", id)
+                        .put("result", new JSONObject()
+                                .put("protocolVersion", "2024-11-05")
+                                .put("capabilities", new JSONObject().put("tools", new JSONObject()))
+                                .put("serverInfo", new JSONObject()
+                                        .put("name", "Bellota").put("version", "0.4.4")));
+            } else if ("tools/list".equals(method)) {
+                JSONArray tools = mcpHandler.getTools();
+                response = new JSONObject()
+                        .put("jsonrpc", "2.0")
+                        .put("id", id)
+                        .put("result", new JSONObject().put("tools", tools == null ? new JSONArray() : tools));
+            } else if ("tools/call".equals(method)) {
+                JSONObject params = request.optJSONObject("params");
+                String name = params == null ? "" : params.optString("name", "");
+                JSONObject arguments = params == null ? null : params.optJSONObject("arguments");
+                if (arguments == null) arguments = new JSONObject();
+                boolean isError = false;
+                String resultText;
+                try {
+                    resultText = mcpHandler.executeTool(name, arguments);
+                    if (resultText == null) resultText = "";
+                } catch (Exception toolError) {
+                    isError = true;
+                    resultText = toolError.getMessage() == null
+                            ? toolError.getClass().getSimpleName() : toolError.getMessage();
+                }
+                response = new JSONObject()
+                        .put("jsonrpc", "2.0")
+                        .put("id", id)
+                        .put("result", new JSONObject()
+                                .put("content", new JSONArray().put(new JSONObject()
+                                        .put("type", "text").put("text", resultText)))
+                                .put("isError", isError));
+            } else if ("ping".equals(method)) {
+                response = new JSONObject().put("jsonrpc", "2.0")
+                        .put("id", id).put("result", new JSONObject());
+            } else {
+                response = new JSONObject().put("jsonrpc", "2.0").put("id", id)
+                        .put("error", new JSONObject().put("code", -32601)
+                                .put("message", "Method not found: " + method));
+            }
+            JSONObject outbound = new JSONObject()
+                    .put("session_id", sessionId)
+                    .put("type", "mcp")
+                    .put("payload", response);
+            if (!ws.send(outbound.toString())) {
+                DebugLog.w(TAG, "OkHttp rechazó la respuesta MCP para método " + method + ".");
+            } else {
+                DebugLog.i(TAG, "Respuesta MCP enviada: " + method + ".");
+            }
+        } catch (Exception error) {
+            DebugLog.e(TAG, "No se pudo responder al mensaje MCP " + method + ".", error);
+        }
+    }
+
     private synchronized void startListening() {
         if (terminated.get() || !running.get() || serverSpeaking || capturing.get()) return;
         try {
@@ -318,7 +414,7 @@ public final class XiaoZhiVoiceSession {
             listen.put("session_id", sessionId);
             listen.put("type", "listen");
             listen.put("state", "start");
-            listen.put("mode", "auto");
+            listen.put("mode", "realtime");
             WebSocket ws = socket;
             if (ws == null || !ws.send(listen.toString())) {
                 fail("No pude iniciar la escucha de XiaoZhi.");
@@ -404,43 +500,38 @@ public final class XiaoZhiVoiceSession {
         }
     }
 
-    /** v1: Opus crudo. v2: cabecera de 16 B. v3: cabecera de 4 B (todo en orden de red). */
+    /** WebSocket BinaryProtocol2: |u16 version|u16 type|u32 reserved|u32 timestamp|u32 payload_size|Opus|. */
     /** Con muted=true se sigue leyendo el micrófono pero no se envía audio (p. ej. mientras Bellota habla). */
     public void setMuted(boolean value) { muted = value; }
 
     private byte[] wrapUplink(byte[] opus) {
-        int v = negotiatedProtocolVersion;
-        if (v == 2) {
-            ByteBuffer b = ByteBuffer.allocate(16 + opus.length);
-            b.putShort((short) 2).putShort((short) 0).putInt(0)
-                    .putInt((int) (System.currentTimeMillis() - sessionStartMs)).putInt(opus.length).put(opus);
-            return b.array();
-        }
-        if (v == 3) {
-            ByteBuffer b = ByteBuffer.allocate(4 + opus.length);
-            b.put((byte) 0).put((byte) 0).putShort((short) opus.length).put(opus);
-            return b.array();
-        }
-        return opus;
+        // El cliente oficial envía timestamp=0 incluso con AEC anunciado.
+        ByteBuffer b = ByteBuffer.allocate(16 + opus.length).order(ByteOrder.BIG_ENDIAN);
+        b.putShort((short) PROTOCOL_VERSION)
+                .putShort((short) 0) // type 0 = Opus
+                .putInt(0)           // reserved
+                .putInt(0)           // timestamp
+                .putInt(opus.length)
+                .put(opus);
+        return b.array();
     }
 
-    private byte[] unwrapDownlink(byte[] p) {
-        int v = negotiatedProtocolVersion;
-        if (v == 2) {
-            if (p.length < 16) return null;
-            ByteBuffer b = ByteBuffer.wrap(p);
-            b.getShort(); int type = b.getShort() & 0xFFFF; b.getInt(); b.getInt();
-            long size = b.getInt() & 0xFFFFFFFFL;
-            if (type != 0 || size != p.length - 16) return null;
-            return java.util.Arrays.copyOfRange(p, 16, p.length);
+    private byte[] unwrapDownlink(byte[] packet) {
+        if (negotiatedProtocolVersion != PROTOCOL_VERSION || packet == null || packet.length < 16) return null;
+        ByteBuffer header = ByteBuffer.wrap(packet).order(ByteOrder.BIG_ENDIAN);
+        int version = header.getShort() & 0xFFFF;
+        int type = header.getShort() & 0xFFFF;
+        long reserved = header.getInt() & 0xFFFFFFFFL;
+        header.getInt(); // timestamp
+        long payloadSize = header.getInt() & 0xFFFFFFFFL;
+        if (version != PROTOCOL_VERSION || type != 0 || reserved != 0
+                || payloadSize != packet.length - 16L) {
+            DebugLog.w(TAG, "Trama BinaryProtocol2 inválida: version=" + version
+                    + "; type=" + type + "; reserved=" + reserved
+                    + "; payload_size=" + payloadSize + "; bytes=" + packet.length + ".");
+            return null;
         }
-        if (v == 3) {
-            if (p.length < 4) return null;
-            int type = p[0] & 0xFF, size = ((p[2] & 0xFF) << 8) | (p[3] & 0xFF);
-            if (type != 0 || size != p.length - 4) return null;
-            return java.util.Arrays.copyOfRange(p, 4, p.length);
-        }
-        return p;
+        return java.util.Arrays.copyOfRange(packet, 16, packet.length);
     }
 
     private void handleAudio(byte[] packet) {
