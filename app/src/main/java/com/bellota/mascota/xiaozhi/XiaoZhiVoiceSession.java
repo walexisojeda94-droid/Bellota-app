@@ -213,8 +213,17 @@ public final class XiaoZhiVoiceSession {
 
                 @Override public void onClosing(WebSocket webSocket, int code, String reason) {
                     if (!isCurrentSocket(webSocket)) return;
-                    DebugLog.w(TAG, "WebSocket onClosing: code=" + code + "; reason="
-                            + (reason == null || reason.isEmpty() ? "(sin motivo)" : reason) + ".");
+                    DebugLog.w(TAG, "Servidor inició cierre WebSocket: code=" + code + "; reason="
+                            + (reason == null || reason.isEmpty() ? "(sin motivo)" : reason)
+                            + "; hello_aceptado=" + audioNegotiated + ".");
+                    // OkHttp requiere que el cliente complete el handshake de cierre.
+                    // 1005 significa que el servidor no envió un código en el frame y
+                    // es reservado: no se puede reenviar como código de cierre.
+                    int replyCode = (code >= 1000 && code < 5000 && code != 1005 && code != 1006 && code != 1015)
+                            ? code : 1000;
+                    boolean queued = webSocket.close(replyCode, "Cierre confirmado por Bellota");
+                    DebugLog.i(TAG, "Respuesta al cierre del servidor enviada=" + queued
+                            + "; codigo_respuesta=" + replyCode + ".");
                 }
 
                 @Override public void onClosed(WebSocket webSocket, int code, String reason) {
