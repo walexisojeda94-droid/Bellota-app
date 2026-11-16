@@ -145,6 +145,8 @@ public final class XiaoZhiVoiceSession {
                     .header("Protocol-Version", String.valueOf(PROTOCOL_VERSION))
                     .header("Device-Id", identity.getDeviceId())
                     .header("Client-Id", identity.getClientId())
+                    .header("User-Agent", "Bellota-Android/0.4.4")
+                    .header("Accept-Language", "es-ES")
                     .build();
             reportStatus("Conectando con XiaoZhi…");
             DebugLog.i(TAG, "Abriendo WebSocket " + url.split("\\?")[0] + " (protocolo v" + protocolVersion + ", bajada " + downlinkRate + " Hz).");
@@ -154,7 +156,7 @@ public final class XiaoZhiVoiceSession {
                         DebugLog.w(TAG, "onOpen ignorado: el socket ya no es el actual.");
                         return;
                     }
-                    DebugLog.i(TAG, "Handshake WebSocket HTTP " + response.code() + " (" + response.message() + "); Protocol-Version respuesta=" + response.header("Protocol-Version", "no informado") + "; enviando hello.");
+                    DebugLog.i(TAG, "Handshake WebSocket HTTP " + response.code() + " (" + response.message() + "); Protocol-Version respuesta=" + response.header("Protocol-Version", "no informado") + "; Server=" + response.header("Server", "no informado") + "; Date=" + response.header("Date", "no informado") + "; enviando hello.");
                     mainHandler.postDelayed(helloTimeout, HELLO_TIMEOUT_MS);
                     try {
                         JSONObject hello = new JSONObject();
@@ -199,10 +201,20 @@ public final class XiaoZhiVoiceSession {
                 @Override public void onFailure(WebSocket webSocket, Throwable t, Response response) {
                     if (isCurrentSocket(webSocket)) {
                         DebugLog.e(TAG, "WebSocket onFailure: " + t.getClass().getSimpleName()
-                                + "; HTTP=" + (response == null ? "sin respuesta HTTP" : response.code() + " " + response.message()));
+                                + "; detalle=" + (t.getMessage() == null ? "(sin detalle)" : t.getMessage())
+                                + "; HTTP=" + (response == null ? "sin respuesta HTTP" : response.code() + " " + response.message())
+                                + "; Protocol-Version=" + (response == null ? "n/d" : response.header("Protocol-Version", "no informado"))
+                                + "; WWW-Authenticate=" + (response == null ? "n/d" : response.header("WWW-Authenticate", "no informado"))
+                                + "; Server=" + (response == null ? "n/d" : response.header("Server", "no informado")));
                         fail("Se perdió la conexión de voz con XiaoZhi: " +
                                 (response != null ? "HTTP " + response.code() : t.getClass().getSimpleName()));
                     }
+                }
+
+                @Override public void onClosing(WebSocket webSocket, int code, String reason) {
+                    if (!isCurrentSocket(webSocket)) return;
+                    DebugLog.w(TAG, "WebSocket onClosing: code=" + code + "; reason="
+                            + (reason == null || reason.isEmpty() ? "(sin motivo)" : reason) + ".");
                 }
 
                 @Override public void onClosed(WebSocket webSocket, int code, String reason) {
