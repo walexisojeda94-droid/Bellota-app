@@ -162,7 +162,7 @@ public final class XiaoZhiVoiceSession {
                         JSONObject hello = new JSONObject();
                         hello.put("type", "hello");
                         hello.put("version", protocolVersion);
-                        hello.put("features", new JSONObject().put("aec", true).put("mcp", mcpHandler != null));
+                        hello.put("features", new JSONObject().put("mcp", mcpHandler != null));
                         hello.put("transport", "websocket");
                         hello.put("audio_params", new JSONObject().put("format", "opus")
                                 .put("sample_rate", UPLINK_RATE).put("channels", 1)
