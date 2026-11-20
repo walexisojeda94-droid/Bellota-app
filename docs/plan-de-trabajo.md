@@ -67,3 +67,15 @@ La versión se considera estable cuando compila, se instala y supera pruebas pro
 - [x] Revisar advertencias de Lint: quedan tres justificadas por persistencia síncrona de credencial, orientación horizontal fija e identidad estable de XiaoZhi.
 - [ ] Incorporar Gradle Wrapper para compilar localmente sin instalar Gradle por separado.
 - [ ] Ampliar cobertura con pruebas de ciclo de vida, reconexión y persistencia.
+
+
+## Etapa 8. Motores conversacionales online
+
+- [x] Definir OpenAI Realtime como proveedor principal y Gemini Live como segundo proveedor.
+- [x] Definir arquitectura independiente del proveedor, autenticación temporal y criterios de resiliencia.
+- [ ] Auditar y separar los puntos de entrada/salida de voz y conversación actuales.
+- [ ] Implementar backend seguro para credenciales temporales de OpenAI.
+- [ ] Integrar OpenAI Realtime mediante WebRTC en Android.
+- [ ] Validar audio bidireccional, interrupciones, reconexión, sesiones largas y límites de cuenta.
+- [ ] Integrar Gemini Live bajo el mismo contrato.
+- [ ] Validar cambio entre proveedores y fallback local antes de retirar XiaoZhi.
