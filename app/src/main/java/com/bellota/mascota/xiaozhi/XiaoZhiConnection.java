@@ -2,6 +2,7 @@ package com.bellota.mascota.xiaozhi;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Build;
 import com.bellota.mascota.core.DebugLog;
 import org.json.JSONObject;
 import java.io.BufferedReader;
@@ -11,6 +12,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -349,21 +351,34 @@ public class XiaoZhiConnection {
     private String buildDeviceReport() throws Exception {
         String deviceId = preferences.getString(KEY_DEVICE_ID, "");
         String clientId = preferences.getString(KEY_CLIENT_ID, "");
+        String model = Build.MODEL == null || Build.MODEL.trim().isEmpty()
+                ? "android" : Build.MODEL;
+        String manufacturer = Build.MANUFACTURER == null || Build.MANUFACTURER.trim().isEmpty()
+                ? "unknown" : Build.MANUFACTURER;
+
         JSONObject report = new JSONObject();
         report.put("version", 2);
-        report.put("language", "es-ES");
+        report.put("language", Locale.getDefault().toLanguageTag());
+        report.put("minimum_free_heap_size", 0);
         report.put("mac_address", deviceId);
         report.put("uuid", clientId);
-        report.put("chip_model_name", "Android");
+        report.put("chip_model_name", "android");
+
         JSONObject application = new JSONObject();
         application.put("name", "Bellota");
         application.put("version", "0.4.4");
-        application.put("idf_version", "Android");
+        application.put("compile_time", "");
+        application.put("idf_version", "android-" + Build.VERSION.SDK_INT);
         application.put("elf_sha256", "");
         report.put("application", application);
+
         JSONObject board = new JSONObject();
         board.put("type", "android");
-        board.put("name", "Bellota");
+        board.put("name", model);
+        board.put("mac", deviceId);
+        board.put("manufacturer", manufacturer);
+        board.put("model", model);
+        board.put("sdk", Build.VERSION.SDK_INT);
         report.put("board", board);
         return report.toString();
     }
