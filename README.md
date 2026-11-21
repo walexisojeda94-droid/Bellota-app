@@ -55,6 +55,7 @@ Las pruebas cubren respuestas locales, estados emocionales, memoria conversacion
 - [Arquitectura local-first](docs/arquitectura-j7-offline.md)
 - [Integración XiaoZhi](docs/integracion-xiaozhi-me.md)
 - [Arquitectura de motores de voz OpenAI y Gemini](docs/arquitectura-motores-voz.md)
+- [Backend seguro y alta de dispositivos](docs/backend-seguro-dispositivos.md)
 - [Plan de trabajo](docs/plan-de-trabajo.md)
 - [Referencias técnicas XiaoZhi](docs/references/xiaozhi/README.md)
 
