@@ -1,65 +1,64 @@
 # Backend seguro y alta de dispositivos Bellota
 
-## Objetivo
+## Decisión confirmada
 
-El backend de Bellota debe emitir credenciales efímeras de OpenAI Realtime sin incluir la clave permanente de OpenAI en el APK. Cada instalación debe tener una identidad revocable. No se utilizará una clave maestra compartida embebida en la aplicación.
+El alta inicial utilizará **un código de un solo uso**. El propietario lo genera desde un canal administrativo seguro y lo ingresa una única vez en Bellota. No se utilizará QR ni una clave maestra embebida en el APK.
 
-## Alta inicial propuesta
+## Flujo implementado en el Worker
 
-1. El propietario crea desde un canal administrativo un código de emparejamiento aleatorio, de un solo uso y con vencimiento corto.
-2. El usuario introduce ese código una sola vez en Bellota. No se compila ni se distribuye dentro del APK.
-3. El Worker valida el código, lo consume atómicamente y registra una instalación con identificador aleatorio.
-4. El Worker entrega un refresh token aleatorio de alta entropía. En la base de datos se almacena únicamente su hash.
-5. Android guarda el refresh token mediante Android Keystore. El token no se registra en logs ni se incluye en backups.
-6. El dispositivo intercambia su refresh token por una credencial de acceso de corta duración para llamar al endpoint de sesión.
-7. El propietario puede revocar la instalación. La revocación invalida futuras renovaciones y emisiones de credenciales.
+1. El administrador solicita `POST /admin/pairing-code` con `ADMIN_TOKEN`.
+2. El Worker genera un código aleatorio, guarda únicamente su hash en D1 y lo hace vencer a los 10 minutos.
+3. El usuario ingresa el código en Bellota.
+4. `POST /v1/pair` consume el código mediante una actualización SQL condicional, evitando que se utilice dos veces.
+5. El Worker crea el dispositivo y devuelve un refresh token aleatorio y un access token firmado de 15 minutos.
+6. El backend guarda solo el hash del refresh token.
+7. El dispositivo usa el access token para solicitar credenciales temporales de OpenAI Realtime.
+8. El refresh token se rota cuando se renueva la sesión de autenticación del dispositivo.
 
-## Renovación
+## Endpoints del Worker
 
-- La aplicación solicita una credencial temporal nueva al backend antes de crear cada sesión Realtime.
-- Si el token de acceso del dispositivo vence, usa el refresh token almacenado para renovarlo automáticamente.
-- La rotación del refresh token debe ser atómica: el token anterior queda invalidado cuando se emite el nuevo.
-- Si se detecta reutilización de un refresh token ya rotado, se revoca la familia de tokens de esa instalación.
-- Los errores 401/403 se reintentan como máximo una vez tras renovar. Los errores 429, 402, 5xx y de red no se tratan como errores de credenciales.
-- El vencimiento de la credencial temporal de Realtime no debe confundirse con el vencimiento del refresh token del dispositivo ni con la duración de una sesión activa.
+- `POST /admin/pairing-code`: crea un código de vinculación de un solo uso.
+- `POST /v1/pair`: consume el código y registra el dispositivo.
+- `POST /v1/auth/refresh`: rota el refresh token y emite un access token nuevo.
+- `POST /v1/realtime/client-secret`: emite una credencial temporal OpenAI.
+- `GET /health`: comprobación de disponibilidad.
 
-## Endpoint de sesión Realtime
+Los detalles de cuerpos y respuestas están en `backend/openai-realtime/README.md`.
 
-- Requiere autenticación del dispositivo.
-- Aplica límite de frecuencia por dispositivo y controles globales de consumo.
-- Crea una credencial temporal mediante la API oficial de OpenAI Realtime Client Secrets.
-- Devuelve solo la credencial temporal y los metadatos de expiración necesarios para iniciar WebRTC.
-- Nunca devuelve la clave permanente de OpenAI.
-- No registra credenciales, audio, transcripciones ni contenido privado.
-- Distingue cuenta sin crédito, cuota agotada, rate limit, credenciales inválidas y fallos transitorios del proveedor.
+## Renovación y errores
 
-## Almacenamiento y protección
+- Access token del dispositivo: 15 minutos.
+- Refresh token: 90 días, con rotación al renovar.
+- Credencial temporal OpenAI: 10 minutos. Su vencimiento impide iniciar sesiones nuevas, pero no corta una sesión ya iniciada.
+- 401/403 de vinculación: renovar una vez; si falla, pedir nueva vinculación.
+- 429: límite de solicitudes.
+- 402 o cuota agotada: error de cuenta, no se soluciona renovando tokens.
+- 5xx o red: fallo transitorio del backend o proveedor.
 
-- Clave permanente OpenAI: Cloudflare Worker Secret.
-- Refresh token: hash criptográfico en D1; valor original solo en Android Keystore.
-- Código de emparejamiento: hash, vencimiento, estado de consumo y límite de intentos.
-- Identidad de dispositivo: ID aleatorio, fecha de alta, última actividad, estado y versión de app.
-- Los identificadores no se derivan de IMEI, número de teléfono, correo ni otros identificadores sensibles del hardware.
-- No se debe confiar en una URL oculta, un header estático dentro del APK ni una API key compilada como autenticación.
+## Almacenamiento
 
-## Recuperación y pérdida del dispositivo
+- Clave permanente OpenAI: Worker Secret `OPENAI_API_KEY`.
+- Secreto administrativo: Worker Secret `ADMIN_TOKEN`.
+- Firma de access tokens: Worker Secret `JWT_SECRET`.
+- Refresh token: Android Keystore en el dispositivo; hash en D1.
+- Código de emparejamiento: hash, vencimiento y marca de consumo en D1.
+- Identidad de dispositivo: UUID aleatorio, nombre opcional, fechas y estado.
 
-- El propietario puede revocar una instalación desde el backend.
-- Si se pierde el refresh token o se reinstala la aplicación, se realiza un nuevo emparejamiento.
-- Si el backend no está disponible, la aplicación conserva el modo local y no intenta eludir la autenticación.
-- La indisponibilidad de OpenAI, falta de crédito y límites de cuenta son estados diferentes y no se solucionan rotando credenciales.
+## Infraestructura
 
-## Infraestructura Cloudflare prevista
+- Worker: `backend/openai-realtime/`.
+- D1: `bellota-devices`.
+- SQL inicial: `backend/openai-realtime/schema.sql`.
+- Configuración: `backend/openai-realtime/wrangler.toml`.
 
-- Worker dedicado para emparejamiento, renovación y emisión de credenciales Realtime.
-- D1 para códigos de emparejamiento, dispositivos, hashes de refresh tokens y revocaciones.
-- Worker Secrets para la clave permanente de OpenAI y secretos de firma.
-- Rate limiting para limitar intentos de emparejamiento, renovación y emisión de sesiones.
+## Pendiente antes de producción
 
-## Antes de desplegar
+- Crear D1 y reemplazar el marcador `REPLACE_WITH_D1_DATABASE_ID`.
+- Cargar los tres secretos desde Cloudflare, nunca desde Git.
+- Configurar rate limiting de Cloudflare para los endpoints administrativos y de autenticación.
+- Implementar revocación administrativa de dispositivos y protección completa ante reutilización de refresh tokens.
+- Agregar pruebas de integración de D1 y pruebas de abuso.
+- Desplegar el Worker y registrar su URL en la app.
+- Implementar en Android la pantalla de código, almacenamiento mediante Android Keystore y renovación automática.
 
-- Confirmar el flujo de emparejamiento inicial en la interfaz de Bellota.
-- Definir la política de revocación y recuperación del propietario.
-- Crear Worker y D1 en la cuenta correcta.
-- Cargar secretos desde el panel de Cloudflare, nunca desde Git.
-- Probar alta, renovación, rotación, revocación, reutilización de token, cuotas y caída del backend.
+El Worker no se debe considerar listo para producción hasta completar esos controles y ejecutar las pruebas indicadas.
