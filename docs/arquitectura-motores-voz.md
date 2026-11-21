@@ -4,6 +4,8 @@
 
 - OpenAI Realtime será el proveedor conversacional principal.
 - Gemini Live será el segundo proveedor, incorporado después de validar OpenAI.
+- El alta del dispositivo se realizará mediante un código de un solo uso.
+- Gemini Live será el segundo proveedor, incorporado después de validar OpenAI.
 - No se incorporan otros motores en esta etapa.
 - La conversación local existente permanece como respaldo cuando no haya Internet o los proveedores online no estén disponibles.
 - La memoria, personalidad, estado emocional, autonomía, comandos y funciones propias de Bellota no pertenecen a ningún proveedor. Deben seguir siendo responsabilidad de la aplicación.
@@ -26,12 +28,14 @@
 - voice/openai: implementación Android de OpenAI Realtime mediante WebRTC.
 - voice/gemini: implementación futura de Gemini Live.
 - voice/orchestrator: selección del proveedor, ciclo de vida, reconexión, fallback y prevención de respuestas duplicadas.
-- Backend de Bellota: emite credenciales temporales, aplica controles de acceso y límites, registra métricas sin guardar audio ni secretos y mantiene las claves permanentes fuera del dispositivo.
+- Backend de Bellota: Worker y D1 para emparejamiento, autenticación y credenciales temporales, con claves permanentes fuera del dispositivo.
 - local: motor de conversación y voz local existentes, usados como fallback.
 
 La separación es lógica. El cliente XiaoZhi se elimina por completo; se conservan solo las funciones propias de Bellota que no dependen de ese protocolo.
 
 ## Autenticación OpenAI
+
+El Worker inicial se encuentra en `backend/openai-realtime/`. Implementa generación y consumo de código de un solo uso, registro de dispositivos, refresh token rotatorio y emisión de client secrets GA. Aún no está desplegado ni conectado a Android.
 
 La aplicación solicitará al backend una credencial temporal para crear una sesión Realtime. El backend usará la clave permanente de OpenAI y nunca la enviará al dispositivo. La app utilizará la credencial temporal para establecer WebRTC.
 
@@ -63,6 +67,14 @@ Los errores de cuota, facturación o cuenta no se solucionan renovando tokens. D
 El proveedor recibe un contexto acotado construido por Bellota. La memoria persistente continúa residiendo localmente. Al reiniciar una sesión se reconstruye el contexto a partir de la memoria y de los últimos turnos relevantes, sin enviar indiscriminadamente todo el historial privado.
 
 Cada turno tendrá un identificador interno para evitar duplicados al reconectar. Las herramientas y comandos sensibles se validan y ejecutan en Bellota, no por confianza ciega en el texto generado por el modelo.
+
+## Estado de implementación
+
+- Contrato `VoiceProvider` y `VoiceProviderManager`: implementados y con pruebas JVM.
+- Worker inicial de pairing y client secrets: creado en el repositorio.
+- D1, secretos y despliegue: pendientes.
+- Pantalla Android de vinculación, almacenamiento Keystore y renovación automática: pendientes.
+- Adaptador OpenAI WebRTC e integración con MainActivity: pendientes.
 
 ## Orden de implementación
 
