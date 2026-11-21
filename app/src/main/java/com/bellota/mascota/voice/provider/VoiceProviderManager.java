@@ -5,9 +5,9 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Coordina proveedores online sin acoplar la conversación a una API concreta.
- * Prueba cada proveedor online como máximo una vez por sesión y luego solicita
- * a la aplicación que active su motor local.
+ * Coordina proveedores online y solicita el respaldo local cuando todos fallan.
+ * Las operaciones de ciclo de vida se serializan para evitar conexiones y cierres
+ * concurrentes sobre una misma instancia de proveedor.
  */
 public final class VoiceProviderManager {
     public interface Listener {
@@ -21,6 +21,7 @@ public final class VoiceProviderManager {
     }
 
     private final Object lock = new Object();
+    private final Object lifecycleLock = new Object();
     private final List<VoiceProvider> providers;
     private final Listener listener;
     private VoiceProvider.SessionConfig sessionConfig;
@@ -35,126 +36,135 @@ public final class VoiceProviderManager {
         List<VoiceProvider> configured = new ArrayList<>();
         configured.add(primary);
         if (secondary != null) configured.add(secondary);
-        this.providers = Collections.unmodifiableList(configured);
+        providers = Collections.unmodifiableList(configured);
         this.listener = listener;
     }
 
-    /** Inicia una sesión nueva desde el proveedor principal. */
     public void connect(VoiceProvider.SessionConfig config) {
         if (config == null) throw new IllegalArgumentException("La configuración de sesión es obligatoria.");
-        synchronized (lock) {
-            disconnectActiveLocked();
-            sessionGeneration++;
-            sessionConfig = config;
-            nextProviderIndex = 0;
-            sessionStarted = true;
+        synchronized (lifecycleLock) {
+            VoiceProvider previous;
+            synchronized (lock) {
+                previous = activeProvider;
+                activeProvider = null;
+                sessionGeneration++;
+                sessionConfig = config;
+                nextProviderIndex = 0;
+                sessionStarted = true;
+            }
+            dispose(previous);
+            connectNextProvider(null, null);
         }
-        connectNextProvider(null, null);
     }
 
     /** Reintenta desde el proveedor principal, por ejemplo tras recuperar conectividad. */
     public void retry() {
         VoiceProvider.SessionConfig config;
-        synchronized (lock) {
-            config = sessionConfig;
-        }
+        synchronized (lock) { config = sessionConfig; }
         if (config != null) connect(config);
     }
 
     public void disconnect() {
-        VoiceProvider old;
-        synchronized (lock) {
-            sessionGeneration++;
-            sessionStarted = false;
-            old = activeProvider;
-            activeProvider = null;
+        synchronized (lifecycleLock) {
+            VoiceProvider old;
+            synchronized (lock) {
+                sessionGeneration++;
+                sessionStarted = false;
+                old = activeProvider;
+                activeProvider = null;
+            }
+            dispose(old);
+            safeNotifyState(VoiceProvider.State.CLOSED,
+                    old == null ? null : safeProviderId(old), "Sesión de voz cerrada.");
         }
-        if (old != null) {
-            old.setListener(null);
-            old.disconnect();
-        }
-        notifyState(VoiceProvider.State.CLOSED, old == null ? null : old.getProviderId(),
-                "Sesión de voz cerrada.");
     }
 
     public boolean isConnected() {
-        synchronized (lock) {
-            return activeProvider != null && activeProvider.isConnected();
-        }
+        VoiceProvider current;
+        synchronized (lock) { current = activeProvider; }
+        try { return current != null && current.isConnected(); }
+        catch (RuntimeException ignored) { return false; }
     }
 
     public String getActiveProviderId() {
-        synchronized (lock) {
-            return activeProvider == null ? null : activeProvider.getProviderId();
-        }
+        VoiceProvider current;
+        synchronized (lock) { current = activeProvider; }
+        return current == null ? null : safeProviderId(current);
     }
 
     public void sendAudio(byte[] pcm16, int offset, int length) {
-        VoiceProvider provider = activeSnapshot();
-        if (provider != null) provider.sendAudio(pcm16, offset, length);
+        if (pcm16 == null) throw new IllegalArgumentException("El audio no puede ser null.");
+        if (offset < 0 || length < 0 || offset > pcm16.length - length)
+            throw new IllegalArgumentException("El rango de audio está fuera del buffer.");
+        if ((length & 1) != 0) throw new IllegalArgumentException("PCM16 requiere una cantidad par de bytes.");
+        VoiceProvider current = activeSnapshot();
+        if (current != null) safely(() -> current.sendAudio(pcm16, offset, length));
     }
 
     public void finishAudioInput() {
-        VoiceProvider provider = activeSnapshot();
-        if (provider != null) provider.finishAudioInput();
+        VoiceProvider current = activeSnapshot();
+        if (current != null) safely(current::finishAudioInput);
     }
 
     public void sendText(String text) {
-        VoiceProvider provider = activeSnapshot();
-        if (provider != null) provider.sendText(text);
+        if (text == null || text.trim().isEmpty()) return;
+        VoiceProvider current = activeSnapshot();
+        if (current != null) safely(() -> current.sendText(text));
     }
 
     public void sendToolResult(String callId, String result, boolean isError) {
-        VoiceProvider provider = activeSnapshot();
-        if (provider != null) provider.sendToolResult(callId, result, isError);
+        if (callId == null || callId.trim().isEmpty()) return;
+        VoiceProvider current = activeSnapshot();
+        if (current != null) safely(() -> current.sendToolResult(callId, result, isError));
     }
 
     public void interrupt() {
-        VoiceProvider provider = activeSnapshot();
-        if (provider != null) provider.interrupt();
+        VoiceProvider current = activeSnapshot();
+        if (current != null) safely(current::interrupt);
     }
 
     private VoiceProvider activeSnapshot() {
-        synchronized (lock) {
-            return activeProvider;
-        }
+        synchronized (lock) { return activeProvider; }
     }
 
     private void connectNextProvider(VoiceProvider.Failure previousFailure, String previousDetail) {
         final VoiceProvider candidate;
+        final VoiceProvider.SessionConfig config;
         final long generation;
-        final boolean useLocalFallback;
         synchronized (lock) {
             if (!sessionStarted) return;
             if (nextProviderIndex >= providers.size()) {
                 sessionStarted = false;
                 candidate = null;
+                config = null;
                 generation = sessionGeneration;
-                useLocalFallback = true;
             } else {
                 candidate = providers.get(nextProviderIndex++);
+                config = sessionConfig;
                 generation = sessionGeneration;
                 activeProvider = candidate;
-                useLocalFallback = false;
             }
         }
 
-        if (useLocalFallback) {
-            notifyState(VoiceProvider.State.FALLBACK_LOCAL, null,
+        if (candidate == null) {
+            safeNotifyState(VoiceProvider.State.FALLBACK_LOCAL, null,
                     "Los proveedores online no están disponibles. Se solicita la voz local.");
-            if (listener != null) {
-                listener.onLocalFallbackRequested(
+            synchronized (lock) {
+                if (sessionGeneration != generation || sessionStarted) return;
+            }
+            safely(() -> {
+                if (listener != null) listener.onLocalFallbackRequested(
                         previousFailure == null ? VoiceProvider.Failure.UNKNOWN : previousFailure,
                         previousDetail == null ? "No hay proveedores online disponibles." : previousDetail);
-            }
+            });
             return;
         }
 
         candidate.setListener(createProviderListener(candidate, generation));
-        notifyState(VoiceProvider.State.CONNECTING, candidate.getProviderId(),
+        safeNotifyState(VoiceProvider.State.CONNECTING, safeProviderId(candidate),
                 "Conectando proveedor de voz.");
         try {
-            candidate.connect(sessionConfig);
+            candidate.connect(config);
         } catch (RuntimeException error) {
             handleProviderFailure(candidate, generation, VoiceProvider.Failure.PROVIDER,
                     error.getClass().getSimpleName() + ": " + safeMessage(error));
@@ -164,33 +174,33 @@ public final class VoiceProviderManager {
     private VoiceProvider.Listener createProviderListener(VoiceProvider provider, long generation) {
         return new VoiceProvider.Listener() {
             @Override public void onStateChanged(VoiceProvider.State state, String detail) {
-                if (!isCurrent(provider, generation)) return;
-                notifyState(state, provider.getProviderId(), detail);
+                if (isCurrent(provider, generation))
+                    safeNotifyState(state, safeProviderId(provider), detail);
             }
             @Override public void onUserTranscript(String text, boolean isFinal) {
-                if (isCurrent(provider, generation) && listener != null)
-                    listener.onUserTranscript(text, isFinal);
+                if (isCurrent(provider, generation))
+                    safely(() -> { if (listener != null) listener.onUserTranscript(text, isFinal); });
             }
             @Override public void onAssistantTranscript(String text, boolean isFinal) {
-                if (isCurrent(provider, generation) && listener != null)
-                    listener.onAssistantTranscript(text, isFinal);
+                if (isCurrent(provider, generation))
+                    safely(() -> { if (listener != null) listener.onAssistantTranscript(text, isFinal); });
             }
             @Override public void onAudioOutput(byte[] audio, int sampleRateHz, int channels) {
-                if (isCurrent(provider, generation) && listener != null)
-                    listener.onAudioOutput(audio, sampleRateHz, channels);
+                if (isCurrent(provider, generation) && audio != null
+                        && sampleRateHz > 0 && channels > 0)
+                    safely(() -> { if (listener != null) listener.onAudioOutput(audio, sampleRateHz, channels); });
             }
             @Override public void onAssistantSpeaking(boolean speaking) {
-                if (isCurrent(provider, generation) && listener != null)
-                    listener.onAssistantSpeaking(speaking);
+                if (isCurrent(provider, generation))
+                    safely(() -> { if (listener != null) listener.onAssistantSpeaking(speaking); });
             }
             @Override public void onToolCall(String callId, String name, String argumentsJson) {
-                if (isCurrent(provider, generation) && listener != null)
-                    listener.onToolCall(callId, name, argumentsJson);
+                if (isCurrent(provider, generation))
+                    safely(() -> { if (listener != null) listener.onToolCall(callId, name, argumentsJson); });
             }
             @Override public void onError(VoiceProvider.Failure failure, boolean recoverable, String detail) {
                 handleProviderFailure(provider, generation,
-                        failure == null ? VoiceProvider.Failure.UNKNOWN : failure,
-                        detail);
+                        failure == null ? VoiceProvider.Failure.UNKNOWN : failure, detail);
             }
         };
     }
@@ -203,29 +213,37 @@ public final class VoiceProviderManager {
 
     private void handleProviderFailure(VoiceProvider provider, long generation,
                                        VoiceProvider.Failure failure, String detail) {
-        synchronized (lock) {
-            if (!sessionStarted || sessionGeneration != generation || activeProvider != provider) return;
-            activeProvider = null;
-        }
-        provider.setListener(null);
-        provider.disconnect();
-        notifyState(VoiceProvider.State.RECONNECTING, provider.getProviderId(),
-                "El proveedor no pudo continuar; se evaluará el siguiente motor.");
-        // No se reintenta el mismo proveedor en bucle. El siguiente se prueba una sola vez.
-        connectNextProvider(failure, detail == null ? "Fallo del proveedor." : detail);
-    }
-
-    private void disconnectActiveLocked() {
-        VoiceProvider old = activeProvider;
-        activeProvider = null;
-        if (old != null) {
-            old.setListener(null);
-            old.disconnect();
+        synchronized (lifecycleLock) {
+            synchronized (lock) {
+                if (!sessionStarted || sessionGeneration != generation || activeProvider != provider) return;
+                activeProvider = null;
+            }
+            dispose(provider);
+            safeNotifyState(VoiceProvider.State.RECONNECTING, safeProviderId(provider),
+                    "El proveedor no pudo continuar; se evaluará el siguiente motor.");
+            connectNextProvider(failure, detail == null ? "Fallo del proveedor." : detail);
         }
     }
 
-    private void notifyState(VoiceProvider.State state, String providerId, String detail) {
-        if (listener != null) listener.onStateChanged(state, providerId, detail);
+    private void dispose(VoiceProvider provider) {
+        if (provider == null) return;
+        try { provider.setListener(null); } catch (RuntimeException ignored) { }
+        try { provider.disconnect(); } catch (RuntimeException ignored) { }
+    }
+
+    private String safeProviderId(VoiceProvider provider) {
+        try { return provider.getProviderId(); }
+        catch (RuntimeException ignored) { return null; }
+    }
+
+    private void safeNotifyState(VoiceProvider.State state, String providerId, String detail) {
+        safely(() -> { if (listener != null) listener.onStateChanged(state, providerId, detail); });
+    }
+
+    private void safely(Runnable action) {
+        try { action.run(); } catch (RuntimeException ignored) {
+            // Un consumidor defectuoso no debe bloquear el ciclo de vida del proveedor.
+        }
     }
 
     private static String safeMessage(Throwable error) {
