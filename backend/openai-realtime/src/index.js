@@ -65,18 +65,12 @@ async function authenticatedDevice(request, env) {
 async function createPairingCode(request, env) {
   if (!env.ADMIN_TOKEN || !env.JWT_SECRET) return fail("server_not_configured", 503, "El backend no está configurado.");
   const supplied = bearer(request);
-  const expectedHash = await sha256(env.ADMIN_TOKEN);
-  const suppliedHash = await sha256(supplied);
-  if (!supplied || expectedHash.length !== suppliedHash.length || !crypto.subtle.timingSafeEqual) {
-    // Web Crypto has no timingSafeEqual; use HMAC verification below for constant-time comparison.
-    const key = await hmacKey(env.ADMIN_TOKEN);
-    const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(supplied));
-    const expected = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(env.ADMIN_TOKEN));
-    const a = new Uint8Array(signature), b = new Uint8Array(expected);
-    let diff = a.length ^ b.length;
-    for (let i = 0; i < Math.min(a.length, b.length); i++) diff |= a[i] ^ b[i];
-    if (diff !== 0) return fail("unauthorized", 401, "No autorizado.");
-  }
+  const key = await hmacKey(env.ADMIN_TOKEN);
+  const suppliedMac = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(supplied)));
+  const expectedMac = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(env.ADMIN_TOKEN)));
+  let difference = suppliedMac.length ^ expectedMac.length;
+  for (let i = 0; i < Math.min(suppliedMac.length, expectedMac.length); i++) difference |= suppliedMac[i] ^ expectedMac[i];
+  if (!supplied || difference !== 0) return fail("unauthorized", 401, "No autorizado.");
   const code = randomToken(6).replace(/[-_]/g, "").toUpperCase();
   const codeHash = await sha256(code);
   const expiresAt = Math.floor(Date.now() / 1000) + PAIRING_TTL_SECONDS;
