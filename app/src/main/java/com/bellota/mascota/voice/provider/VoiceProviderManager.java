@@ -68,7 +68,6 @@ public final class VoiceProviderManager {
             sessionStarted = false;
             old = activeProvider;
             activeProvider = null;
-            localFallbackRequested = false;
         }
         if (old != null) {
             old.setListener(null);
@@ -158,7 +157,7 @@ public final class VoiceProviderManager {
             candidate.connect(sessionConfig);
         } catch (RuntimeException error) {
             handleProviderFailure(candidate, generation, VoiceProvider.Failure.PROVIDER,
-                    true, error.getClass().getSimpleName() + ": " + safeMessage(error));
+                    error.getClass().getSimpleName() + ": " + safeMessage(error));
         }
     }
 
