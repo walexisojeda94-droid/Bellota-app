@@ -11,7 +11,7 @@ function fail(code, status, message) { return json({ error: code, message }, sta
 function b64url(bytes) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/=/g, "").replace(/\\+/g, "-").replace(/\\//g, "_");
+  return btoa(binary).replace(/=/g, "").replaceAll("+", "-").replaceAll("/", "_");
 }
 function randomToken(bytes = 32) {
   const data = new Uint8Array(bytes);
