@@ -1,62 +1,56 @@
 # Bellota
 
-Aplicación Android de mascota virtual para un **Samsung Galaxy J7 (SM-J710SS)**. Bellota está diseñada con una arquitectura local-first: su interfaz, comportamiento, memoria básica y respuestas de respaldo viven en el teléfono. XiaoZhi aporta conversación online cuando el servicio está disponible.
+Aplicación Android nativa de mascota virtual. Bellota mantiene su interfaz, comportamiento, memoria, personalidad y respuestas locales en el teléfono. La arquitectura de voz permite conectar proveedores online sin delegarles el núcleo de la aplicación.
 
-## Estado del proyecto
-
-El repositorio contiene una aplicación Android nativa en Java. La integración OTA de XiaoZhi y los transportes de voz WebSocket y MQTT/UDP están implementados en código, pero todavía requieren validación completa en el dispositivo físico. La compilación automatizada se realiza mediante GitHub Actions.
-
-## Funciones implementadas en el código
+## Estado actual
 
 - Interfaz inmersiva horizontal con ojos vectoriales animados.
-- Reacciones al tacto y comportamientos autónomos: explorar, pensar, jugar, descansar e iniciar interacciones.
+- Reacciones al tacto y comportamientos autónomos.
 - Estado básico de energía, diversión y edad virtual persistente.
 - Conversación local con respuestas de respaldo y memoria sencilla.
 - Voz local mediante Android TextToSpeech y reconocimiento mediante SpeechRecognizer.
-- Solicitud de activación/configuración OTA de XiaoZhi.
-- Sesiones de voz XiaoZhi por WebSocket u MQTT/UDP con audio Opus.
 - Consulta del clima mediante Open-Meteo y ubicación del teléfono.
-- Conexión MCP opcional, con credencial almacenada mediante el almacén seguro de la aplicación.
-- Token de acceso de XiaoZhi cifrado mediante Android Keystore, con migración de credenciales heredadas.
+- Contrato común de proveedores de voz y administrador de failover.
+- Base inicial del backend seguro para OpenAI Realtime en `backend/openai-realtime/`.
 
-La presencia de una función en el código no significa que ya haya superado pruebas de campo en el J7. La CI ejecuta 17 pruebas JVM, Android Lint y genera un APK release firmado. El proyecto conserva targetSdk 28 para su distribución privada y no está preparado para publicarse en Google Play.
+**OpenAI Realtime todavía no está conectado a la aplicación Android ni desplegado.** El Worker incorporado es una base de backend, no una integración terminada. La app continúa usando la conversación y voz locales hasta completar el proveedor WebRTC y el flujo de vinculación.
 
-## Estructura
+## Arquitectura de voz
 
-- `app/`: aplicación Android y código fuente.
-- `docs/`: arquitectura, estado, plan de trabajo y referencias técnicas.
-- `.github/workflows/`: compilación automatizada del APK.
-- `build.gradle`, `settings.gradle`, `gradle.properties`: configuración Gradle.
+1. OpenAI Realtime será el proveedor principal.
+2. Gemini Live se evaluará como proveedor secundario en una etapa posterior.
+3. La voz y conversación locales permanecen como respaldo.
+4. La personalidad, memoria, emociones, autonomía y herramientas de Bellota siguen siendo independientes del proveedor.
+5. XiaoZhi fue eliminado y no se conserva compatibilidad con ese protocolo.
 
-## Compilar
+## Backend OpenAI
 
-La compilación de CI utiliza Java 17, Android SDK 35 y Gradle 8.7.
+El directorio `backend/openai-realtime/` contiene:
+- Worker para códigos de vinculación de un solo uso.
+- Registro de dispositivos en Cloudflare D1.
+- Refresh tokens almacenados como hash en D1 y rotación al renovar.
+- Access tokens firmados de corta duración.
+- Emisión de credenciales temporales de OpenAI Realtime.
+- Esquema SQL y configuración inicial de Wrangler.
 
-En un entorno con Android SDK y Gradle instalados:
+El backend aún requiere crear y vincular D1, configurar secretos y desplegarse. No contiene una clave OpenAI real.
+
+## Compilar Android
+
+La aplicación usa Android Gradle Plugin 8.6.1, compileSdk 35, minSdk 27 y Java 8 para el código de la app. La CI del repositorio ejecuta pruebas JVM, Android Lint y generación del APK release.
 
 ```bash
 gradle --no-daemon :app:assembleDebug
-```
-
-El APK de depuración queda en `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions publica el APK como artefacto de la ejecución.
-
-Para ejecutar las pruebas JVM y el análisis estático:
-
-```bash
 gradle --no-daemon :app:testDebugUnitTest
 gradle --no-daemon :app:lintDebug
 ```
 
-Las pruebas cubren respuestas locales, estados emocionales, memoria conversacional y normalización de mensajes. La CI ejecuta ambas tareas antes de generar el APK. La integración anterior de XiaoZhi fue retirada; el proyecto conserva el reconocimiento y la síntesis locales mientras se incorporan los nuevos proveedores. El repositorio todavía no incluye Gradle Wrapper; los comandos requieren Gradle 8.7 instalado, la misma versión fijada en CI.
+El repositorio no incluye Gradle Wrapper. La compilación requiere una instalación local compatible de Gradle y Android SDK.
 
 ## Documentación
 
-- [Resumen del proyecto](docs/resumen-del-proyecto.md)
-- [Arquitectura local-first](docs/arquitectura-j7-offline.md)
-- [Arquitectura de motores de voz OpenAI y Gemini](docs/arquitectura-motores-voz.md)
-- [Backend seguro y alta de dispositivos](docs/backend-seguro-dispositivos.md)
-- [Plan de trabajo](docs/plan-de-trabajo.md)
+- `docs/arquitectura-motores-voz.md`
+- `docs/backend-seguro-dispositivos.md`
+- `backend/openai-realtime/README.md`
 
-## Alcance y seguridad
-
-Bellota está orientada al uso personal en el teléfono. No se deben subir tokens, contraseñas, claves privadas ni archivos de firma al repositorio. Las pruebas de voz, consumo de batería, memoria y reconexión deben realizarse en el dispositivo objetivo antes de considerar estable una versión.
+No se deben subir claves API, tokens, contraseñas ni archivos de firma al repositorio. Compilar no equivale a validar el funcionamiento de audio en el dispositivo físico.
