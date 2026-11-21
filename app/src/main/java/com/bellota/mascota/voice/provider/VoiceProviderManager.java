@@ -126,14 +126,32 @@ public final class VoiceProviderManager {
     private void connectNextProvider(VoiceProvider.Failure previousFailure, String previousDetail) {
         final VoiceProvider candidate;
         final long generation;
+        final boolean useLocalFallback;
         synchronized (lock) {
-            if (!sessionStarted || nextProviderIndex >= providers.size()) {
-                requestLocalFallbackLocked(previousFailure, previousDetail);
-                return;
+            if (!sessionStarted) return;
+            if (nextProviderIndex >= providers.size()) {
+                sessionStarted = false;
+                localFallbackRequested = true;
+                candidate = null;
+                generation = sessionGeneration;
+                useLocalFallback = true;
+            } else {
+                candidate = providers.get(nextProviderIndex++);
+                generation = sessionGeneration;
+                activeProvider = candidate;
+                useLocalFallback = false;
             }
-            candidate = providers.get(nextProviderIndex++);
-            generation = sessionGeneration;
-            activeProvider = candidate;
+        }
+
+        if (useLocalFallback) {
+            notifyState(VoiceProvider.State.FALLBACK_LOCAL, null,
+                    "Los proveedores online no están disponibles. Se solicita la voz local.");
+            if (listener != null) {
+                listener.onLocalFallbackRequested(
+                        previousFailure == null ? VoiceProvider.Failure.UNKNOWN : previousFailure,
+                        previousDetail == null ? "No hay proveedores online disponibles." : previousDetail);
+            }
+            return;
         }
 
         candidate.setListener(createProviderListener(candidate, generation));
