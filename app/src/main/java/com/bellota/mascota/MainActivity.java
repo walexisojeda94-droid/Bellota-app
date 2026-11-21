@@ -1037,6 +1037,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (phrase.isEmpty() || phrase.length() > 240) throw new Exception("La frase debe tener entre 1 y 240 caracteres.");
             if (isForcedState() || isAsleep()) return "No puedo hablar ahora: estoy durmiendo.";
             if (!soundEnabled || localVoice == null || !localVoice.isReady()) return "La voz está desactivada o todavía no está lista.";
+            if (onlineVoiceManager != null && onlineVoiceManager.isConnected())
+                return "Decí en voz alta exactamente esta frase, sin agregar comentarios: " + phrase;
             speakIfEnabled(phrase);
             return "Estoy diciendo la frase.";
         }
@@ -1087,7 +1089,10 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void speakIfEnabled(String text) {
-        if (!soundEnabled || localVoice == null || text == null || text.isEmpty()) return;
+        if (!soundEnabled || text == null || text.isEmpty()) return;
+        // Mientras Realtime está activo, no mezclar la salida TTS local con el audio remoto.
+        if (onlineVoiceManager != null && onlineVoiceManager.isConnected()) return;
+        if (localVoice == null) return;
         if (voiceCommands != null) voiceCommands.stop();
         localVoice.speak(text);
     }
