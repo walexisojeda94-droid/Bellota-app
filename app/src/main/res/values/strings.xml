@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Bellota</string>
+    <!-- Se completa cuando el Worker de Cloudflare esté desplegado. -->
+    <string name="backend_base_url" translatable="false"></string>
 </resources>
