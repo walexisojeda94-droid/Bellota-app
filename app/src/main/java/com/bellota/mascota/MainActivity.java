@@ -173,7 +173,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 .setView(panel)
                 .setNegativeButton("Cerrar", null)
                 .setPositiveButton(paired ? "Desvincular" : "Vincular", null)
-                .setNeutralButton(onlineVoiceConnecting ? "Desconectar" : "Conectar", null)
+                .setNeutralButton((onlineVoiceConnecting || (onlineVoiceManager != null && onlineVoiceManager.isConnected())) ? "Desconectar" : "Conectar", null)
                 .create();
         dialog.setOnShowListener(ignored -> {
             android.widget.Button primary = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
@@ -1120,6 +1120,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     @Override protected void onPause() {
         paused = true;
+        disconnectOnlineVoice(false);
         handler.removeCallbacks(autonomousRoutine);
 
         if (localVoice != null) localVoice.stop();
@@ -1135,6 +1136,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     @Override protected void onDestroy() {
 
+        disconnectOnlineVoice(false);
         handler.removeCallbacksAndMessages(null);
 
         if (voiceCommands != null) { voiceCommands.stop(); voiceCommands = null; }
