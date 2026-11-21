@@ -1036,9 +1036,10 @@ public class MainActivity extends Activity implements SensorEventListener {
             String phrase = args.optString("text", "").trim();
             if (phrase.isEmpty() || phrase.length() > 240) throw new Exception("La frase debe tener entre 1 y 240 caracteres.");
             if (isForcedState() || isAsleep()) return "No puedo hablar ahora: estoy durmiendo.";
-            if (!soundEnabled || localVoice == null || !localVoice.isReady()) return "La voz está desactivada o todavía no está lista.";
+            if (!soundEnabled) return "La voz está desactivada.";
             if (onlineVoiceManager != null && onlineVoiceManager.isConnected())
                 return "Decí en voz alta exactamente esta frase, sin agregar comentarios: " + phrase;
+            if (localVoice == null || !localVoice.isReady()) return "La voz local todavía no está lista.";
             speakIfEnabled(phrase);
             return "Estoy diciendo la frase.";
         }
