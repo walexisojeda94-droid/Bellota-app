@@ -2,7 +2,6 @@ package com.bellota.mascota;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.hardware.Sensor;
@@ -19,14 +18,7 @@ import android.view.View;
 import android.view.MotionEvent;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
-import android.widget.EditText;
-import android.text.InputType;
 import android.widget.Toast;
-import android.widget.ScrollView;
-import android.widget.TextView;
-import android.content.ClipData;
-import android.content.ClipboardManager;
-import android.content.Context;
 import com.bellota.mascota.core.DebugLog;
 import com.bellota.mascota.core.PetLife;
 import com.bellota.mascota.core.PetMemory;
@@ -38,11 +30,6 @@ import com.bellota.mascota.ui.EyePetView;
 import com.bellota.mascota.voice.ContinuousVoiceCommands;
 import com.bellota.mascota.voice.LocalVoice;
 import com.bellota.mascota.weather.WeatherService;
-import com.bellota.mascota.xiaozhi.XiaoZhiConnection;
-import com.bellota.mascota.xiaozhi.XiaoZhiVoiceSession;
-import com.bellota.mascota.xiaozhi.XiaoZhiMqttUdpSession;
-import com.bellota.mascota.xiaozhi.McpConnection;
-import com.bellota.mascota.xiaozhi.McpCredentialStore;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import com.bellota.mascota.local.ConversationMemory;
@@ -68,21 +55,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     private PetMemory petMemory;
     private long touchStartedAt;
     private float touchStartX, touchStartY, touchPressure;
-    private XiaoZhiConnection xiaoZhiConnection;
-    private XiaoZhiVoiceSession xiaoZhiVoiceSession;
-    private XiaoZhiMqttUdpSession xiaoZhiMqttUdpSession;
-    private boolean xiaoZhiVoiceFailed;
-    private boolean xiaoZhiRefreshPending = true;
-    private boolean xiaoZhiActivationInFlight;
     private boolean paused;
-    private static final int LOCAL_FALLBACK_AFTER_RETRIES = 3;
-    private int xiaoZhiRetryAttempts;
-    private Runnable xiaoZhiRetryTask;
-    private String pendingXiaoZhiTranscript;
-    private Runnable pendingXiaoZhiFallback;
-    private McpConnection mcpConnection;
-    private McpCredentialStore mcpCredentialStore;
-    private String pendingXiaoZhiCode;
     private long lastVoiceDiagnosticToastAt;
     private boolean soundEnabled = true;
     private boolean waitingForWeatherPermission;
@@ -92,13 +65,9 @@ public class MainActivity extends Activity implements SensorEventListener {
     private long busyUntil;
     private Runnable pendingSleepTask;
     private String pendingSleepReason;
-    private boolean ttsMuted;
     private boolean hideSeekActive;
     private int hideSeekToken;
     private long lastMumbleAt;
-    private final Runnable unmuteTtsTask = new Runnable() {
-        @Override public void run() { ttsMuted = false; updateMute(); }
-    };
     private SensorManager sensorManager;
     private Sensor lightSensor;
     private boolean lightTheme;
@@ -126,29 +95,12 @@ public class MainActivity extends Activity implements SensorEventListener {
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         buildPetScreen();
         applySleepVisuals();
-        xiaoZhiConnection = new XiaoZhiConnection(this);
-        mcpCredentialStore = new McpCredentialStore(this);
-        connectMcpIfConfigured();
-        localVoice = new LocalVoice(this, (ready, detail) -> {
-            if (ready && pendingXiaoZhiCode != null) {
-                String code = pendingXiaoZhiCode;
-                pendingXiaoZhiCode = null;
-                speakIfEnabled(code);
-            }
-        });
+        localVoice = new LocalVoice(this, (ready, detail) -> { });
         localVoice.setOnSpeechFinished(() -> {
-            handler.removeCallbacks(unmuteTtsTask);
-            ttsMuted = false;
-            updateMute();
-            // No iniciar el reconocedor local mientras el transporte XiaoZhi usa el micrófono.
-            if (!paused && !isFinishing() && voiceCommands != null
-                    && xiaoZhiVoiceSession == null && xiaoZhiMqttUdpSession == null) {
-                voiceCommands.start();
-            }
+            if (!paused && !isFinishing() && voiceCommands != null) voiceCommands.start();
         });
         setupAmbientTheme();
         requestMicrophonePermission();
-        requestXiaoZhiActivation();
         handler.postDelayed(autonomousRoutine, 1800L);
     }
 
@@ -176,9 +128,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 long duration = System.currentTimeMillis() - touchStartedAt;
                 float distance = (float) Math.hypot(event.getX() - touchStartX, event.getY() - touchStartY);
                 if (duration >= android.view.ViewConfiguration.getLongPressTimeout()) {
-                    // El OnTouchListener consume los eventos; disparar explícitamente
-                    // el long-click para que siga disponible el menú de diagnóstico.
-                    view.performLongClick();
+                    // La pulsación prolongada no ejecuta acciones ocultas.
                 } else {
                     boolean stroke = distance > 24f || duration > 420L;
                     boolean firm = !stroke && touchPressure >= 0.72f && duration < 190L;
@@ -203,8 +153,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         });
         root.addView(playfield, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        // Acceso oculto: mantener pulsados los ojos para configurar MCP.
-        eyes.setOnLongClickListener(v -> { showHiddenMenu(); return true; });
         setContentView(root);
     }
 
@@ -225,29 +173,8 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     private ConversationMemory memory() { return conversationEngine == null ? null : conversationEngine.memory(); }
 
-    private boolean xiaoZhiOnline() { return xiaoZhiVoiceSession != null || xiaoZhiMqttUdpSession != null; }
-
-    /**
-     * Mientras Bellota duerme, XiaoZhi solo puede despertarla si la transcripción
-     * contiene su nombre como palabra completa. Se aplica igual a WebSocket y MQTT.
-     */
     private boolean containsWakeWord(String text) {
         return text != null && text.matches("(?s).*\\bbellota\\b.*");
-    }
-
-    private boolean acceptXiaoZhiTranscript(String transcript) {
-        String text = simplify(transcript);
-        // El sueño obligatorio no admite activación por voz: solo termina al recuperar energía.
-        if (isForcedState()) return false;
-
-        boolean sleeping = isAsleep();
-        if (sleeping && !containsWakeWord(text)) return false;
-
-        // Durante el sueño normal, el nombre provoca el despertar antes de procesar el resto.
-        if (sleeping) userInteracted(classifyEmotionalInteraction(text), false);
-        if (handleCompanionCommand(text, false)) return false;
-        if (!sleeping) userInteracted(classifyEmotionalInteraction(text), false);
-        return true;
     }
 
     private static String simplify(String spoken) {
@@ -260,9 +187,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         int hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
         boolean quiet = hour >= 0 && hour < 7;
         if (autonomy.isSleeping()) {
-            boolean wasForcedSleep = autonomy.isForcedSleep();
-            AutonomousBehavior.Action sleepAction = autonomy.next(petLife, quiet);
-            if (wasForcedSleep != autonomy.isForcedSleep()) updateMute();
+                AutonomousBehavior.Action sleepAction = autonomy.next(petLife, quiet);
+
             if (sleepAction == AutonomousBehavior.Action.WAKE_UP) wakeUp(false, true);
             return;
         }
@@ -270,7 +196,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         applyStageMood();
         boolean wasForcedSleep = autonomy.isForcedSleep();
         AutonomousBehavior.Action action = autonomy.next(petLife, quiet);
-        if (wasForcedSleep != autonomy.isForcedSleep()) updateMute();
+
         if (action != AutonomousBehavior.Action.NONE && petMemory != null) petMemory.remember("actividad", action.name());
         runAction(action);
     }
@@ -364,11 +290,11 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (petLife != null) petLife.setNeeds(Math.max(5, petLife.getEnergy() - 2), Math.min(100, petLife.getFun() + 8));
     }
 
-    /** Charla por iniciativa propia: usa nombre, apodos y gustos; solo pregunta si no hay sesión online. */
+    /** Charla por iniciativa propia: usa nombre, apodos y gustos. */
     private void doInitiative() {
         ConversationMemory m = memory();
         PetVoiceLines.Talk talk = lines.initiative(m, autonomy.getTrait("irritation"),
-                autonomy.getTrait("affection"), xiaoZhiOnline());
+                autonomy.getTrait("affection"), false);
         if (autonomy.getTrait("irritation") < 40) eyes.setMood(EyePetView.Mood.HAPPY);
         else if (autonomy.getTrait("irritation") >= 65) eyes.setMood(EyePetView.Mood.OFFENDED);
         else eyes.setMood(EyePetView.Mood.ANGRY);
@@ -517,7 +443,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         autonomy.startSleep(reason);
         eyes.setMood(EyePetView.Mood.SLEEPING);
         dimScreen(true);
-        updateMute();
+
         if (petMemory != null) petMemory.remember("sueno", "Bellota se fue a dormir (" + reason + ").");
     }
 
@@ -536,7 +462,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (autonomy == null || eyes == null) return;
         autonomy.wake(manual);
         dimScreen(false);
-        updateMute();
+
         eyes.setMood(manual ? EyePetView.Mood.SURPRISED : EyePetView.Mood.HAPPY);
         if (manual) {
             handler.postDelayed(() -> {
@@ -567,14 +493,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         boolean asleep = autonomy.isSleeping();
         dimScreen(asleep);
         if (asleep) eyes.setMood(EyePetView.Mood.SLEEPING);
-        updateMute();
-    }
 
-    /** XiaoZhi no recibe audio mientras habla la voz local o en el sueño obligatorio. */
-    private void updateMute() {
-        boolean mute = ttsMuted || (autonomy != null && autonomy.isForcedSleep());
-        if (xiaoZhiVoiceSession != null) xiaoZhiVoiceSession.setMuted(mute);
-        if (xiaoZhiMqttUdpSession != null) xiaoZhiMqttUdpSession.setMuted(mute);
     }
 
     // ---- Interacción con el usuario ---------------------------------------------------
@@ -689,27 +608,16 @@ public class MainActivity extends Activity implements SensorEventListener {
         else requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, MICROPHONE_PERMISSION);
     }
 
+    /** Reconocimiento local de Android. */
     private void startVoiceCommands() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
-        if (xiaoZhiVoiceSession != null || xiaoZhiMqttUdpSession != null) return;
-        // Mientras se programa una reconexión, no arrancar el reconocedor local
-        // como si fuera el motor principal: XiaoZhi sigue siendo el canal prioritario.
-        if (xiaoZhiRetryTask != null && xiaoZhiRetryAttempts < LOCAL_FALLBACK_AFTER_RETRIES) return;
-        if (!xiaoZhiRefreshPending && !xiaoZhiVoiceFailed && xiaoZhiConnection != null && xiaoZhiConnection.isConfigured()
-                && xiaoZhiConnection.hasVoiceConfiguration()) {
-            if ("mqtt".equals(xiaoZhiConnection.getTransport())) startXiaoZhiMqtt();
-            else startXiaoZhiVoice();
-            return;
-        }
         startLocalRecognizer();
     }
-    /** Reconocimiento local de Android; también sirve de respaldo cuando XiaoZhi sigue sin conectar. */
+
     private void startLocalRecognizer() {
         if (paused || isFinishing()) return;
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
-        if (xiaoZhiVoiceSession != null || xiaoZhiMqttUdpSession != null) return;
         // Reutilizar la instancia evita destruir y recrear el reconocedor en cada onResume.
-        // start() ya es idempotente y permite reanudar una instancia detenida por TTS/XiaoZhi.
         if (voiceCommands != null) {
             voiceCommands.start();
             return;
@@ -734,155 +642,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         voiceCommands.start();
     }
 
-    private void startXiaoZhiVoice() {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
-        if (xiaoZhiVoiceSession != null || xiaoZhiVoiceFailed || xiaoZhiConnection == null || isFinishing() || paused) return;
-        if (voiceCommands != null) voiceCommands.stop();
-        xiaoZhiVoiceSession = new XiaoZhiVoiceSession(xiaoZhiConnection, new XiaoZhiVoiceSession.Listener() {
-            @Override public void onStatus(String status) {
-                DebugLog.i("BellotaXiaoZhi", status);
-                if (status != null && status.contains("conectada a XiaoZhi")) markXiaoZhiConnected();
-                if (status != null && status.startsWith("XiaoZhi finalizó la sesión de voz")) {
-                    runOnUiThread(() -> {
-                        xiaoZhiVoiceSession = null;
-                        if (!paused && !isFinishing()) {
-                            handler.postDelayed(() -> {
-                                if (xiaoZhiVoiceSession == null && !xiaoZhiVoiceFailed)
-                                    startXiaoZhiVoice();
-                            }, 1200L);
-                        }
-                    });
-                }
-            }
-            @Override public void onTranscript(String transcript) {
-                runOnUiThread(() -> {
-                    if (!acceptXiaoZhiTranscript(transcript)) return;
-                    if (petMemory != null) petMemory.remember("conversacion_usuario", transcript);
-                    queueLocalFallback(transcript);
-                    if (eyes != null && !isAsleep()) eyes.reactToAttention();
-                    DebugLog.i("BellotaXiaoZhi", "Transcripción de usuario procesada.");
-                });
-            }
-            @Override public void onSpeaking(boolean speaking) {
-                runOnUiThread(() -> {
-                    if (speaking) {
-                        completeOnlineTurn();
-                        if (localVoice != null) localVoice.stop();
-                        if (eyes != null && !isAsleep()) eyes.setMood(EyePetView.Mood.HAPPY);
-                    } else if (eyes != null && !isAsleep()) {
-                        eyes.setMood(EyePetView.Mood.CALM);
-                    }
-                });
-            }
-            @Override public void onError(String message) {
-                runOnUiThread(() -> {
-                    DebugLog.e("BellotaXiaoZhi", message);
-                    fallbackPendingTranscript();
-
-                    // Si el servidor acepta el WebSocket pero no responde al hello,
-                    // usar el transporte MQTT/UDP que ya entregó el mismo OTA.
-                    JSONObject mqtt = xiaoZhiConnection == null ? null : xiaoZhiConnection.getMqttConfig();
-                    boolean mqttReady = mqtt != null
-                            && !mqtt.optString("endpoint", "").trim().isEmpty()
-                            && !mqtt.optString("username", "").trim().isEmpty()
-                            && !mqtt.optString("password", "").trim().isEmpty()
-                            && !mqtt.optString("publish_topic", "").trim().isEmpty()
-                            && !mqtt.optString("subscribe_topic", "").trim().isEmpty()
-                            && !"null".equalsIgnoreCase(mqtt.optString("subscribe_topic", "").trim());
-                    if (message != null && message.contains("no completó la negociación hello")
-                            && mqttReady && !paused && !isFinishing()) {
-                        // fail() ya cerró y liberó el socket WebSocket.
-                        xiaoZhiVoiceSession = null;
-                        xiaoZhiVoiceFailed = false;
-                        DebugLog.w("BellotaXiaoZhi",
-                                "WebSocket no completó hello; cambiando automáticamente a MQTT + UDP.");
-                        startXiaoZhiMqtt();
-                        return;
-                    }
-                    scheduleXiaoZhiRetry(message);
-                });
-            }
-        }, new XiaoZhiVoiceSession.McpHandler() {
-            @Override public JSONArray getTools() throws Exception {
-                return buildMcpTools();
-            }
-            @Override public String executeTool(String name, JSONObject arguments) throws Exception {
-                return executeMcpTool(name, arguments);
-            }
-        });
-        xiaoZhiVoiceSession.connect();
-        updateMute();
-    }
-
-    private void startXiaoZhiMqtt() {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
-        if (xiaoZhiMqttUdpSession != null || xiaoZhiVoiceFailed || xiaoZhiConnection == null || isFinishing() || paused) return;
-        if (voiceCommands != null) voiceCommands.stop();
-        xiaoZhiMqttUdpSession = new XiaoZhiMqttUdpSession(xiaoZhiConnection, new XiaoZhiMqttUdpSession.Listener() {
-            @Override public void onStatus(String status) {
-                DebugLog.i("BellotaXiaoZhi", status);
-                if (status != null && status.contains("Canal UDP negociado")) markXiaoZhiConnected();
-            }
-            @Override public void onTranscript(String transcript) {
-                runOnUiThread(() -> {
-                    if (!acceptXiaoZhiTranscript(transcript)) return;
-                    if (petMemory != null) petMemory.remember("conversacion_usuario", transcript);
-                    queueLocalFallback(transcript);
-                    if (eyes != null && !isAsleep()) eyes.reactToAttention();
-                });
-            }
-            @Override public void onSpeaking(boolean speaking) {
-                runOnUiThread(() -> {
-                    if (speaking) { completeOnlineTurn(); if (localVoice != null) localVoice.stop(); if (eyes != null && !isAsleep()) eyes.setMood(EyePetView.Mood.HAPPY); }
-                    else if (eyes != null && !isAsleep()) eyes.setMood(EyePetView.Mood.CALM);
-                });
-            }
-            @Override public void onError(String message) {
-                runOnUiThread(() -> {
-                    DebugLog.e("BellotaXiaoZhi", message);
-                    fallbackPendingTranscript();
-                    scheduleXiaoZhiRetry(message);
-                });
-            }
-        });
-        xiaoZhiMqttUdpSession.connect();
-        updateMute();
-    }
-
-    private void queueLocalFallback(String transcript) {
-        cancelLocalFallback(false);
-        if (transcript == null || transcript.trim().isEmpty()) return;
-        pendingXiaoZhiTranscript = transcript;
-        pendingXiaoZhiFallback = () -> {
-            String unanswered = pendingXiaoZhiTranscript;
-            pendingXiaoZhiTranscript = null;
-            pendingXiaoZhiFallback = null;
-            if (!isFinishing() && unanswered != null) {
-                DebugLog.w("BellotaVoice", "XiaoZhi no inició TTS; usando respuesta local.");
-                handleVoiceCommand(unanswered, true);
-            }
-        };
-        handler.postDelayed(pendingXiaoZhiFallback, 20000L);
-    }
-
-    private void completeOnlineTurn() { cancelLocalFallback(true); }
-
-    private void cancelLocalFallback(boolean answeredOnline) {
-        if (pendingXiaoZhiFallback != null) handler.removeCallbacks(pendingXiaoZhiFallback);
-        pendingXiaoZhiFallback = null;
-        String transcript = pendingXiaoZhiTranscript;
-        pendingXiaoZhiTranscript = null;
-        if (answeredOnline && transcript != null && conversationEngine != null) {
-            conversationEngine.rememberOnlineMessage(transcript);
-        }
-    }
-
-    private void fallbackPendingTranscript() {
-        String transcript = pendingXiaoZhiTranscript;
-        cancelLocalFallback(false);
-        if (transcript != null && !isFinishing()) handleVoiceCommand(transcript, true);
-    }
-
     private void handleVoiceCommand(String spoken) {
         handleVoiceCommand(spoken, false);
     }
@@ -895,7 +654,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         // El sueño obligatorio solo termina al recuperar la energía mínima.
         if (isForcedState()) return;
         // En sueño normal, la palabra de activación se exige también en reconocimiento local.
-        // Se usa el mismo detector de palabra completa que en WebSocket y MQTT.
+        // Se usa el mismo detector de palabra completa que en el reconocimiento local.
         if (isAsleep() && !containsWakeWord(text)) return;
         if (handleCompanionCommand(text, true)) return;
         if (text.contains("silencio")) {
@@ -934,175 +693,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
     }
 
-    private void requestXiaoZhiActivation() {
-        if (xiaoZhiConnection == null || xiaoZhiActivationInFlight) return;
-        xiaoZhiActivationInFlight = true;
-        // Siempre consultar OTA: si ya está vinculado, se renueva la configuración
-        // WebSocket/MQTT sin pedir otro código de activación.
-        xiaoZhiConnection.requestActivationCode(new XiaoZhiConnection.ActivationListener() {
-            @Override public void onCodeReceived(String code, String message) {
-                runOnUiThread(() -> {
-                    StringBuilder spokenCode = new StringBuilder();
-                    for (int i = 0; i < code.length(); i++) {
-                        if (Character.isDigit(code.charAt(i))) {
-                            if (spokenCode.length() > 0) spokenCode.append(" ");
-                            spokenCode.append(code.charAt(i));
-                        }
-                    }
-                    String announcement = "Código de vinculación de XiaoZhi: " + spokenCode
-                            + ". Ingresalo en xiaozhi punto eme, en tu cuenta, para vincular a Bellota.";
-                    if (localVoice != null && localVoice.isReady()) speakIfEnabled(announcement);
-                    else pendingXiaoZhiCode = announcement;
-                });
-            }
-            @Override public void onActivated() {
-                runOnUiThread(() -> {
-                    xiaoZhiActivationInFlight = false;
-                    xiaoZhiRefreshPending = false;
-                    String transport = xiaoZhiConnection.getTransport();
-                    DebugLog.i("BellotaXiaoZhi", "OTA actualizado. Transporte recibido: "
-                            + (transport == null ? "ninguno" : transport));
-                    if ("websocket".equals(transport) && xiaoZhiConnection.hasVoiceConfiguration()) {
-                        xiaoZhiVoiceFailed = false;
-                        startXiaoZhiVoice();
-                    } else if ("mqtt".equals(transport) && xiaoZhiConnection.hasVoiceConfiguration()) {
-                        xiaoZhiVoiceFailed = false;
-                        startXiaoZhiMqtt();
-                    } else {
-                        DebugLog.w("BellotaXiaoZhi", "El OTA no entregó un transporte de voz utilizable.");
-                        scheduleXiaoZhiRetry("El OTA no entregó una configuración de voz utilizable.");
-                    }
-                });
-            }
-            @Override public void onError(String message) {
-                runOnUiThread(() -> {
-                    xiaoZhiActivationInFlight = false;
-                    xiaoZhiRefreshPending = false;
-                    DebugLog.e("BellotaXiaoZhi", "No se pudo actualizar OTA: " + message);
-                    scheduleXiaoZhiRetry(message);
-                });
-            }
-        });
-    }
-
-    private void markXiaoZhiConnected() {
-        handler.post(() -> {
-            xiaoZhiRetryAttempts = 0;
-            xiaoZhiVoiceFailed = false;
-            if (xiaoZhiRetryTask != null) {
-                handler.removeCallbacks(xiaoZhiRetryTask);
-                xiaoZhiRetryTask = null;
-            }
-            DebugLog.i("BellotaXiaoZhi", "Canal de voz XiaoZhi operativo.");
-        });
-    }
-
-    private void scheduleXiaoZhiRetry(String reason) {
-        if (isFinishing()) return;
-        xiaoZhiVoiceFailed = true;
-        xiaoZhiRefreshPending = true;
-        // No dejar el reconocedor local compitiendo mientras se recupera XiaoZhi.
-        if (voiceCommands != null) voiceCommands.stop();
-        if (xiaoZhiVoiceSession != null) {
-            xiaoZhiVoiceSession.disconnect();
-            xiaoZhiVoiceSession = null;
-        }
-        if (xiaoZhiMqttUdpSession != null) {
-            xiaoZhiMqttUdpSession.disconnect();
-            xiaoZhiMqttUdpSession = null;
-        }
-        if (xiaoZhiRetryTask != null) handler.removeCallbacks(xiaoZhiRetryTask);
-        xiaoZhiRetryTask = null;
-        if (paused) return; // al volver a primer plano onResume reintenta la conexión
-
-        int exponent = Math.min(xiaoZhiRetryAttempts, 4);
-        long delay = Math.min(60000L, 5000L * (1L << exponent));
-        xiaoZhiRetryAttempts++;
-        DebugLog.w("BellotaXiaoZhi", "Reintento " + xiaoZhiRetryAttempts
-                + " en " + (delay / 1000L) + " s. Motivo: " + reason);
-        xiaoZhiRetryTask = () -> {
-            xiaoZhiRetryTask = null;
-            if (!isFinishing() && checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-                    == PackageManager.PERMISSION_GRANTED) {
-                requestXiaoZhiActivation();
-            }
-        };
-        handler.postDelayed(xiaoZhiRetryTask, delay);
-        // Si XiaoZhi sigue sin conectar, Bellota no se queda sorda: usa el reconocimiento local.
-        if (xiaoZhiRetryAttempts >= LOCAL_FALLBACK_AFTER_RETRIES) startLocalRecognizer();
-    }
-
-    private void showHiddenMenu() {
-        String[] items = {"Ver registro de conexión XiaoZhi", "Configurar MCP"};
-        new AlertDialog.Builder(this)
-                .setItems(items, (dialog, which) -> {
-                    if (which == 0) showDebugLogDialog();
-                    else showMcpSetupDialog();
-                })
-                .show();
-    }
-
-    /** Muestra el estado de la vinculación y los últimos eventos de conexión (sin tokens). */
-    private void showDebugLogDialog() {
-        StringBuilder text = new StringBuilder();
-        if (xiaoZhiConnection != null) text.append(xiaoZhiConnection.describeState()).append('\n');
-        text.append(DebugLog.dump());
-        final String body = text.toString();
-        TextView view = new TextView(this);
-        view.setText(body);
-        view.setTextSize(10f);
-        view.setTypeface(android.graphics.Typeface.MONOSPACE);
-        view.setTextIsSelectable(true);
-        view.setPadding(24, 16, 24, 16);
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(view);
-        new AlertDialog.Builder(this)
-                .setTitle("Registro XiaoZhi")
-                .setView(scroll)
-                .setPositiveButton("Copiar", (dialog, which) -> {
-                    ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                    if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText("Bellota", body));
-                    Toast.makeText(this, "Registro copiado.", Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton("Cerrar", null)
-                .show();
-    }
-
-    private void showMcpSetupDialog() {
-        EditText input = new EditText(this);
-        input.setSingleLine(true);
-        input.setTextSize(12f);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        input.setHint("wss://api.xiaozhi.me/mcp/?token=...");
-        try {
-            String saved = mcpCredentialStore.read();
-            if (saved != null) input.setText(saved);
-        } catch (Exception ignored) { }
-        new AlertDialog.Builder(this)
-                .setTitle("Conexión privada de Bellota")
-                .setMessage("Pegá la dirección MCP de XiaoZhi. Se guardará cifrada en este teléfono y no se enviará a GitHub.")
-                .setView(input)
-                .setNegativeButton("Cancelar", (dialog, which) -> dialog.dismiss())
-                .setNeutralButton("Borrar", (dialog, which) -> {
-                    getSharedPreferences("bellota_private_mcp", MODE_PRIVATE).edit().clear().apply();
-                    if (mcpConnection != null) mcpConnection.disconnect();
-                    Toast.makeText(this, "Configuración MCP borrada del teléfono.", Toast.LENGTH_SHORT).show();
-                })
-                .setPositiveButton("Guardar y conectar", (dialog, which) -> {
-                    String endpoint = input.getText().toString().trim();
-                    if (!McpConnection.isValidEndpoint(endpoint)) {
-                        Toast.makeText(this, "La dirección no parece ser el endpoint MCP de XiaoZhi.", Toast.LENGTH_LONG).show();
-                        return;
-                    }
-                    try {
-                        mcpCredentialStore.save(endpoint);
-                        connectMcpIfConfigured();
-                    } catch (Exception e) {
-                        Toast.makeText(this, "No pude guardar la configuración segura.", Toast.LENGTH_LONG).show();
-                    }
-                }).show();
-    }
-    private JSONArray buildMcpTools() throws org.json.JSONException {
+    private JSONArray buildBellotaTools() throws org.json.JSONException {
         JSONArray definitions = new JSONArray();
         definitions.put(new JSONObject()
                 .put("name", "get_bellota_status")
@@ -1143,13 +734,13 @@ public class MainActivity extends Activity implements SensorEventListener {
         return definitions;
     }
 
-    private String executeMcpTool(String name, JSONObject arguments) throws Exception {
-        if (Looper.myLooper() == Looper.getMainLooper()) return executeMcpToolOnMainThread(name, arguments);
+    private String executeBellotaTool(String name, JSONObject arguments) throws Exception {
+        if (Looper.myLooper() == Looper.getMainLooper()) return executeBellotaToolOnMainThread(name, arguments);
         AtomicReference<String> result = new AtomicReference<>();
         AtomicReference<Exception> failure = new AtomicReference<>();
         CountDownLatch completed = new CountDownLatch(1);
         handler.post(() -> {
-            try { result.set(executeMcpToolOnMainThread(name, arguments)); }
+            try { result.set(executeBellotaToolOnMainThread(name, arguments)); }
             catch (Exception e) { failure.set(e); }
             finally { completed.countDown(); }
         });
@@ -1158,7 +749,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         return result.get();
     }
 
-    private String executeMcpToolOnMainThread(String name, JSONObject args) throws Exception {
+    private String executeBellotaToolOnMainThread(String name, JSONObject args) throws Exception {
         if ("get_bellota_status".equals(name)) {
             String mood = eyes == null ? "unknown" : eyes.getMood().name().toLowerCase(Locale.ROOT);
             return "Estado: " + (isAsleep() ? "durmiendo" : "despierta")
@@ -1210,25 +801,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         throw new Exception("Herramienta desconocida: " + name);
     }
 
-    private void connectMcpIfConfigured() {
-        if (mcpCredentialStore == null) return;
-        try {
-            String endpoint = mcpCredentialStore.read();
-            if (endpoint == null || endpoint.isEmpty()) return;
-            if (mcpConnection == null) mcpConnection = new McpConnection();
-            JSONArray tools = buildMcpTools();
-            mcpConnection.connect(endpoint, tools, this::executeMcpTool, status -> {
-                DebugLog.i("BellotaMCP", status);
-                // Los reintentos se registran en Logcat; solo avisar con un Toast al conectar.
-                if (status != null && status.startsWith("MCP conectado.")) {
-                    runOnUiThread(() -> Toast.makeText(MainActivity.this, status, Toast.LENGTH_SHORT).show());
-                }
-            });
-        } catch (Exception e) {
-            DebugLog.e("BellotaMCP", "No se pudo configurar la conexión MCP.", e);
-        }
-    }
-
     private void setupAmbientTheme(){ sensorManager=(SensorManager)getSystemService(SENSOR_SERVICE); if(sensorManager!=null){ lightSensor=sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT); if(lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL); } }
     @Override public void onSensorChanged(SensorEvent event){ if(event.sensor.getType()!=Sensor.TYPE_LIGHT||petRoot==null)return; long now=System.currentTimeMillis(); if(now-lastThemeChange<15000L)return; float lux=event.values[0]; boolean next=lightTheme?lux<85f:lux<25f; if(next!=lightTheme){lightTheme=next;lastThemeChange=now;petRoot.setBackgroundColor(lightTheme?0xFFF2F5F3:0xFF080D10);if(eyes!=null)eyes.setLightTheme(lightTheme);} }
     @Override public void onAccuracyChanged(Sensor sensor,int accuracy){}
@@ -1250,11 +822,6 @@ public class MainActivity extends Activity implements SensorEventListener {
     private void speakIfEnabled(String text) {
         if (!soundEnabled || localVoice == null || text == null || text.isEmpty()) return;
         if (voiceCommands != null) voiceCommands.stop();
-        // Que XiaoZhi no escuche la voz local de Bellota como si fuera el usuario.
-        ttsMuted = true;
-        updateMute();
-        handler.removeCallbacks(unmuteTtsTask);
-        handler.postDelayed(unmuteTtsTask, 4000L + text.length() * 90L);
         localVoice.speak(text);
     }
 
@@ -1281,38 +848,32 @@ public class MainActivity extends Activity implements SensorEventListener {
         if(sensorManager!=null&&lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         startVoiceCommands();
-        if (xiaoZhiRefreshPending && !xiaoZhiActivationInFlight && xiaoZhiRetryTask == null) requestXiaoZhiActivation();
         if (eyes != null) eyes.resumeAnimation();
     }
 
     @Override protected void onPause() {
         paused = true;
         handler.removeCallbacks(autonomousRoutine);
-        handler.removeCallbacks(unmuteTtsTask);
-        ttsMuted = false;
+
         if (localVoice != null) localVoice.stop();
-        updateMute();
+
         cancelActivities();
-        if (xiaoZhiRetryTask != null) { handler.removeCallbacks(xiaoZhiRetryTask); xiaoZhiRetryTask = null; }
-        cancelLocalFallback(false);
+
         if (voiceCommands != null) voiceCommands.stop();
-        if (xiaoZhiVoiceSession != null) { xiaoZhiVoiceSession.disconnect(); xiaoZhiVoiceSession = null; }
-        if (xiaoZhiMqttUdpSession != null) { xiaoZhiMqttUdpSession.disconnect(); xiaoZhiMqttUdpSession = null; }
+
         if (eyes != null) eyes.pauseAnimation();
         if(sensorManager!=null)sensorManager.unregisterListener(this);
         super.onPause();
     }
 
     @Override protected void onDestroy() {
-        cancelLocalFallback(false);
+
         handler.removeCallbacksAndMessages(null);
-        xiaoZhiRetryTask = null;
+
         if (voiceCommands != null) { voiceCommands.stop(); voiceCommands = null; }
-        if (xiaoZhiVoiceSession != null) { xiaoZhiVoiceSession.disconnect(); xiaoZhiVoiceSession = null; }
-        if (xiaoZhiMqttUdpSession != null) { xiaoZhiMqttUdpSession.disconnect(); xiaoZhiMqttUdpSession = null; }
+
         if (localVoice != null) { localVoice.stop(); localVoice.release(); localVoice = null; }
-        if (mcpConnection != null) { mcpConnection.disconnect(); mcpConnection = null; }
-        if (xiaoZhiConnection != null) { xiaoZhiConnection.shutdown(); xiaoZhiConnection = null; }
+
         super.onDestroy();
     }
 }

@@ -47,17 +47,15 @@ gradle --no-daemon :app:testDebugUnitTest
 gradle --no-daemon :app:lintDebug
 ```
 
-Las pruebas cubren respuestas locales, estados emocionales, memoria conversacional y normalización de mensajes. La CI ejecuta ambas tareas antes de generar el APK. El repositorio todavía no incluye Gradle Wrapper; los comandos requieren Gradle 8.7 instalado, la misma versión fijada en CI.
+Las pruebas cubren respuestas locales, estados emocionales, memoria conversacional y normalización de mensajes. La CI ejecuta ambas tareas antes de generar el APK. La integración anterior de XiaoZhi fue retirada; el proyecto conserva el reconocimiento y la síntesis locales mientras se incorporan los nuevos proveedores. El repositorio todavía no incluye Gradle Wrapper; los comandos requieren Gradle 8.7 instalado, la misma versión fijada en CI.
 
 ## Documentación
 
 - [Resumen del proyecto](docs/resumen-del-proyecto.md)
 - [Arquitectura local-first](docs/arquitectura-j7-offline.md)
-- [Integración XiaoZhi](docs/integracion-xiaozhi-me.md)
 - [Arquitectura de motores de voz OpenAI y Gemini](docs/arquitectura-motores-voz.md)
 - [Backend seguro y alta de dispositivos](docs/backend-seguro-dispositivos.md)
 - [Plan de trabajo](docs/plan-de-trabajo.md)
-- [Referencias técnicas XiaoZhi](docs/references/xiaozhi/README.md)
 
 ## Alcance y seguridad
 

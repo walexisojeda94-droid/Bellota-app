@@ -3,7 +3,8 @@
 ## Reglas del proyecto
 
 - Mantener el núcleo de Bellota en Android.
-- XiaoZhi complementa el modo local, nunca debe ser un punto único de falla.
+- OpenAI Realtime será el proveedor principal; Gemini Live será el segundo proveedor y el motor local será el respaldo.
+- No mantener código, dependencias ni compatibilidad con XiaoZhi.
 - No inventar endpoints, credenciales ni identidades.
 - No publicar secretos ni archivos de firma.
 - No marcar una función como validada sin probarla en el Samsung Galaxy J7 SM-J710SS.
@@ -31,14 +32,12 @@
 - [x] Reconocimiento de comandos mediante SpeechRecognizer.
 - [ ] Confirmar voz y reconocimiento sin internet en el dispositivo objetivo.
 
-## Etapa 4. XiaoZhi online
+## Etapa 4. Retirada de XiaoZhi
 
-- [x] Cliente de activación y configuración OTA.
-- [x] Transporte de voz WebSocket con Opus.
-- [x] Transporte MQTT/UDP con Opus.
-- [x] Selección del transporte a partir de la respuesta OTA.
-- [ ] Validar vinculación y sesión real con la cuenta del usuario.
-- [ ] Probar audio bidireccional y estabilidad en Android 8.1.
+- [x] Eliminar activación OTA, WebSocket, MQTT/UDP, Opus y almacenamiento de credenciales.
+- [x] Desacoplar el reconocimiento y la síntesis locales del ciclo de vida de XiaoZhi.
+- [x] Retirar dependencias y documentación exclusivas del proveedor.
+- [ ] Compilar y validar el flujo local tras la limpieza.
 
 ## Etapa 5. Resiliencia
 
@@ -50,13 +49,12 @@
 ## Etapa 6. Funciones complementarias
 
 - [x] Consulta meteorológica bajo demanda mediante Open-Meteo.
-- [x] Conexión MCP opcional.
-- [ ] Revisar permisos, privacidad y experiencia de configuración.
+- [ ] Revisar permisos, privacidad y experiencia de configuración de los proveedores nuevos.
 - [ ] Evaluar recordatorios, temporizador y nuevas actividades sin sobrecargar el J7.
 
 ## Criterio de versión estable
 
-La versión se considera estable cuando compila, se instala y supera pruebas prolongadas en el J7: modo offline, voz local, vinculación XiaoZhi, audio bidireccional, fallback, recuperación, batería, memoria y temperatura.
+La versión se considera estable cuando compila, se instala y supera pruebas prolongadas en el J7: modo offline, voz local, audio bidireccional OpenAI/Gemini, fallback local, recuperación, batería, memoria y temperatura.
 
 
 ## Etapa 7. Calidad automatizada
@@ -78,4 +76,4 @@ La versión se considera estable cuando compila, se instala y supera pruebas pro
 - [ ] Integrar OpenAI Realtime mediante WebRTC en Android.
 - [ ] Validar audio bidireccional, interrupciones, reconexión, sesiones largas y límites de cuenta.
 - [ ] Integrar Gemini Live bajo el mismo contrato.
-- [ ] Validar cambio entre proveedores y fallback local antes de retirar XiaoZhi.
+- [ ] Validar cambio entre proveedores y fallback local.

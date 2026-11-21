@@ -18,7 +18,6 @@
 6. La aplicación conserva el contexto de Bellota y reconstruye el contexto conversacional cuando una sesión debe reiniciarse.
 7. Un cambio de proveedor nunca se considera exitoso hasta que el segundo proveedor confirma que la sesión está lista.
 8. El modo local sigue disponible aunque fallen ambos proveedores.
-9. XiaoZhi no se elimina durante la migración. Se retira del flujo principal únicamente después de validar los nuevos motores y el respaldo local.
 
 ## Arquitectura objetivo
 
@@ -30,7 +29,7 @@
 - Backend de Bellota: emite credenciales temporales, aplica controles de acceso y límites, registra métricas sin guardar audio ni secretos y mantiene las claves permanentes fuera del dispositivo.
 - local: motor de conversación y voz local existentes, usados como fallback.
 
-La separación es lógica y no exige mover todo el código actual en un único cambio. Se migrarán las responsabilidades gradualmente para evitar regresiones.
+La separación es lógica. El cliente XiaoZhi se elimina por completo; se conservan solo las funciones propias de Bellota que no dependen de ese protocolo.
 
 ## Autenticación OpenAI
 
@@ -67,14 +66,14 @@ Cada turno tendrá un identificador interno para evitar duplicados al reconectar
 
 ## Orden de implementación
 
-1. Auditar los puntos de entrada y salida de audio/conversación actuales en MainActivity, XiaoZhi y el motor local.
+1. Retirar por completo el cliente XiaoZhi y desacoplar el flujo de voz local de su ciclo de vida.
 2. Definir el contrato común de proveedores sin alterar el comportamiento actual.
 3. Implementar backend de credenciales temporales OpenAI y configuración de sesión.
 4. Integrar WebRTC Android y conectar el nuevo proveedor al orquestador.
 5. Ejecutar pruebas automatizadas y pruebas reales de audio, interrupciones, sesiones largas, reconexión y errores de cuenta.
 6. Incorporar Gemini Live detrás del mismo contrato.
 7. Probar el cambio controlado OpenAI ↔ Gemini y el fallback local.
-8. Retirar XiaoZhi del camino activo solo cuando los reemplazos estén validados.
+8. Mantener únicamente OpenAI, Gemini y el respaldo local; no conservar compatibilidad con XiaoZhi.
 
 ## Criterios de aceptación
 
