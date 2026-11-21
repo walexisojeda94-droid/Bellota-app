@@ -160,10 +160,10 @@ public final class VoiceProviderManager {
             return;
         }
 
-        candidate.setListener(createProviderListener(candidate, generation));
-        safeNotifyState(VoiceProvider.State.CONNECTING, safeProviderId(candidate),
-                "Conectando proveedor de voz.");
         try {
+            candidate.setListener(createProviderListener(candidate, generation));
+            safeNotifyState(VoiceProvider.State.CONNECTING, safeProviderId(candidate),
+                    "Conectando proveedor de voz.");
             candidate.connect(config);
         } catch (RuntimeException error) {
             handleProviderFailure(candidate, generation, VoiceProvider.Failure.PROVIDER,
