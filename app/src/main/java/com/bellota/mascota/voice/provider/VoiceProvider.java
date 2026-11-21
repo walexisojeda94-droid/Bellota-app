@@ -77,6 +77,7 @@ public interface VoiceProvider {
         CONNECTING,
         CONNECTED,
         RECONNECTING,
+        FALLBACK_LOCAL,
         CLOSING,
         CLOSED
     }
