@@ -2,6 +2,8 @@ package com.bellota.mascota.voice.provider;
 
 import android.content.Context;
 import android.media.AudioManager;
+import android.os.Handler;
+import android.os.Looper;
 
 import com.bellota.mascota.voice.auth.BellotaBackendClient;
 import com.bellota.mascota.voice.auth.SecureTokenStore;
@@ -49,6 +51,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private static final String OPENAI_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
     private static final int HTTP_TIMEOUT_MS = 20000;
     private static final int MAX_SDP_BYTES = 262144;
+    private static final long OFFER_GATHER_TIMEOUT_MS = 4000L;
     private static final Object FACTORY_LOCK = new Object();
     private static boolean factoryInitialized;
 
@@ -152,7 +155,9 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         iceServers.add(IceServer.builder("stun:stun.l.google.com:19302").createIceServer());
         PeerConnection.RTCConfiguration rtc = new PeerConnection.RTCConfiguration(iceServers);
         rtc.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
-        rtc.continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY;
+        // GATHER_ONCE permite que la recolección ICE llegue a COMPLETE; con GATHER_CONTINUALLY
+        // nunca termina y la oferta SDP quedaría sin enviarse.
+        rtc.continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_ONCE;
         peerConnection = factory.createPeerConnection(rtc, new PeerConnection.Observer() {
             @Override public void onSignalingChange(PeerConnection.SignalingState state) { }
             @Override public void onIceConnectionChange(PeerConnection.IceConnectionState state) {
@@ -214,7 +219,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             @Override public void onCreateSuccess(SessionDescription offer) {
                 if (closed.get()) return;
                 peerConnection.setLocalDescription(new SdpObserver() {
-                    @Override public void onSetSuccess() { }
+                    @Override public void onSetSuccess() { scheduleOfferFallback(); }
                     @Override public void onSetFailure(String error) {
                         fail(Failure.NETWORK, true, "No se pudo establecer la oferta SDP: " + error);
                     }
@@ -228,6 +233,15 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             }
             @Override public void onSetFailure(String error) { }
         }, new MediaConstraints());
+    }
+
+    /** Si la recolección ICE no informa COMPLETE a tiempo, se envía la oferta con lo reunido hasta ahora. */
+    private void scheduleOfferFallback() {
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            if (!closed.get() && offerSubmitted.compareAndSet(false, true)) {
+                worker.execute(this::exchangeOffer);
+            }
+        }, OFFER_GATHER_TIMEOUT_MS);
     }
 
     private void exchangeOffer() {
