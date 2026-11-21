@@ -59,7 +59,12 @@ public final class BellotaBackendClient {
         int ttl = response.optInt("access_expires_in", 0);
         if (refresh.length() < 32 || access.isEmpty() || ttl <= 0)
             throw new BackendException("invalid_response", 502, "El backend devolvió una vinculación incompleta.");
-        tokenStore.saveRefreshToken(refresh);
+        try {
+            tokenStore.saveRefreshToken(refresh);
+        } catch (Exception error) {
+            throw new BackendException("secure_storage_error", 500,
+                    "No se pudo guardar la vinculación segura del dispositivo.");
+        }
         synchronized (authLock) {
             accessToken = access;
             accessTokenExpiresAtMs = System.currentTimeMillis() + ttl * 1000L;
@@ -108,6 +113,49 @@ public final class BellotaBackendClient {
         }
         refresh();
         synchronized (authLock) { return accessToken; }
+    }
+
+    /** Requests a short-lived OpenAI Realtime client secret from the authenticated Worker. */
+    public RealtimeCredential createRealtimeClientSecret(String instructions, String voice)
+            throws IOException, BackendException {
+        requireWorkerThread();
+        JSONObject body = new JSONObject();
+        try {
+            if (instructions != null && !instructions.trim().isEmpty())
+                body.put("instructions", instructions.trim());
+            if (voice != null && !voice.trim().isEmpty()) body.put("voice", voice.trim());
+        } catch (JSONException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+
+        String token = getAccessToken();
+        JSONObject response;
+        try {
+            response = request("POST", "/v1/realtime/client-secret", body, token);
+        } catch (BackendException unauthorized) {
+            if (unauthorized.httpStatus != 401) throw unauthorized;
+            refresh();
+            synchronized (authLock) { token = accessToken; }
+            response = request("POST", "/v1/realtime/client-secret", body, token);
+        }
+        String value = response.optString("value", "");
+        long expiresAt = response.optLong("expires_at", 0L);
+        if (value.isEmpty() || expiresAt <= 0L)
+            throw new BackendException("invalid_response", 502,
+                    "El backend devolvió una credencial temporal incompleta.");
+        return new RealtimeCredential(value, expiresAt, response.optString("model", ""));
+    }
+
+    public static final class RealtimeCredential {
+        public final String value;
+        public final long expiresAtEpochSeconds;
+        public final String model;
+
+        RealtimeCredential(String value, long expiresAtEpochSeconds, String model) {
+            this.value = value;
+            this.expiresAtEpochSeconds = expiresAtEpochSeconds;
+            this.model = model;
+        }
     }
 
     public void unpair() {
