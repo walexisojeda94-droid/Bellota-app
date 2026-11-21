@@ -17,3 +17,19 @@ CREATE TABLE IF NOT EXISTS devices (
   revoked_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_devices_refresh_hash ON devices(refresh_token_hash);
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  token_hash TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL REFERENCES devices(id),
+  created_at INTEGER NOT NULL,
+  rotated_at INTEGER,
+  replaced_by_hash TEXT,
+  status TEXT NOT NULL CHECK(status IN ('active', 'rotated', 'revoked'))
+);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_device ON refresh_tokens(device_id, status);
+
+CREATE TABLE IF NOT EXISTS rate_limits (
+  bucket_key TEXT PRIMARY KEY,
+  window_start INTEGER NOT NULL,
+  hit_count INTEGER NOT NULL
+);

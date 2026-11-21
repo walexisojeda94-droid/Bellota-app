@@ -1,46 +1,48 @@
 # Bellota OpenAI Realtime backend
 
-Worker privado para vinculación de dispositivos y emisión de credenciales efímeras de OpenAI Realtime.
+## Resources
+- Worker: `bellota-openai-realtime`
+- D1: `bellota-devices`
+- Binding: `DB`
 
-## Endpoints
+## Secrets (Worker secrets, never commit these)
+- `OPENAI_API_KEY`: permanent OpenAI project key.
+- `ADMIN_TOKEN`: random high-entropy administrator bearer token used only to mint one-time pairing codes.
+- `JWT_SECRET`: random high-entropy HMAC signing secret (at least 32 random bytes).
 
-- `POST /admin/pairing-code`: genera un código de un solo uso (10 minutos). Requiere `Authorization: Bearer <ADMIN_TOKEN>`.
-- `POST /v1/pair`: consume el código y crea una instalación. Body: `{"code":"...","device_name":"Bellota Android"}`.
-- `POST /v1/auth/refresh`: rota el refresh token. Body: `{"refresh_token":"..."}`.
-- `POST /v1/realtime/client-secret`: requiere access token Bearer de 15 minutos. Body opcional: `{"instructions":"...","voice":"marin"}`.
-- `GET /health`: comprobación básica.
-
-## Preparación
-
-1. Crear D1: `npx wrangler d1 create bellota-devices`.
-2. Reemplazar `database_id` en `wrangler.toml` con el ID devuelto.
-3. Aplicar el esquema: `npx wrangler d1 execute bellota-devices --remote --file=./schema.sql`.
-4. Cargar secretos sin guardarlos en el repositorio:
-   - `npx wrangler secret put OPENAI_API_KEY`
-   - `npx wrangler secret put ADMIN_TOKEN`
-   - `npx wrangler secret put JWT_SECRET`
-5. Desplegar: `npx wrangler deploy`.
-
-Generá ADMIN_TOKEN y JWT_SECRET con al menos 32 bytes aleatorios. Nunca uses el código de emparejamiento como secreto administrativo.
-
-## Flujo de emparejamiento
-
-El administrador genera un código desde un entorno confiable:
-
+Set each with Wrangler:
 ```sh
-curl -X POST "https://<worker>.<subdomain>.workers.dev/admin/pairing-code" \
-  -H "Authorization: Bearer $BELLOTA_ADMIN_TOKEN"
+npx wrangler secret put OPENAI_API_KEY
+npx wrangler secret put ADMIN_TOKEN
+npx wrangler secret put JWT_SECRET
 ```
 
-La app intercambia ese código una sola vez por un refresh token aleatorio. Android debe guardarlo exclusivamente mediante Android Keystore, excluirlo de backups y no escribirlo en logs. El backend guarda únicamente su hash. El refresh token se rota al renovarse; el access token firmado dura 15 minutos.
+## Database
+Apply `schema.sql` to the D1 database before first deployment:
+```sh
+npx wrangler d1 execute bellota-devices --remote --file=backend/openai-realtime/schema.sql
+```
 
-## Seguridad pendiente antes de producción
+## Deploy
+From `backend/openai-realtime`:
+```sh
+npx wrangler deploy
+```
 
-- Configurar rate limiting de Cloudflare para /admin/pairing-code, /v1/pair, /v1/auth/refresh y /v1/realtime/client-secret.
-- Configurar alertas y límites de consumo en OpenAI.
-- Implementar revocación administrativa de dispositivos y protección contra reutilización de refresh tokens.
-- Agregar pruebas de integración con D1 y pruebas de abuso/rate-limit.
-- Restringir la emisión de códigos administrativos a un canal de administración seguro.
-- No desplegar hasta reemplazar el ID D1 y cargar los tres secretos.
+## Routes
+- `GET /health`
+- `POST /admin/pairing-code` (Bearer ADMIN_TOKEN; max 5 per IP per 5 minutes)
+- `POST /v1/pair` (one-time code; max 10 attempts per IP per 10 minutes)
+- `POST /v1/auth/refresh` (rotating refresh token; old-token reuse revokes device)
+- `POST /v1/devices/revoke` (revokes the calling device)
+- `POST /v1/realtime/client-secret` (authenticated; max 20 per device per 5 minutes)
 
-El Worker no registra tokens, audio ni transcripciones. El cliente secret de OpenAI dura 10 minutos y su vencimiento impide crear nuevas sesiones, no corta una sesión ya iniciada.
+Pairing codes expire after 10 minutes and are single-use. Access JWTs live 15 minutes. Refresh tokens live 90 days and are stored only as SHA-256 hashes. Realtime client secrets expire after 10 minutes.
+
+## Operational notes
+Rate limits are stored in D1 and are per Worker account/database, not a global WAF limit. Keep Cloudflare rate limiting/WAF rules as an additional perimeter control if the account plan supports them. Realtime session costs are billed to the OpenAI project. Monitor usage and set project budgets/alerts in OpenAI.
+
+The Worker never returns upstream OpenAI error bodies, keys, or secrets. The health route reports only whether required configuration exists, not secret values.
+
+## Android
+Set `backend_base_url` to the deployed Worker HTTPS origin. Never put any of the three Worker secrets or the permanent OpenAI key in Android resources or source.
