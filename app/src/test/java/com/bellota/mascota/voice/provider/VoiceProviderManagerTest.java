@@ -44,6 +44,44 @@ public class VoiceProviderManagerTest {
         assertFalse(manager.isConnected());
     }
 
+    @Test public void invalidPcmRangeIsRejectedBeforeSending() {
+        FakeProvider primary = new FakeProvider("openai");
+        VoiceProviderManager manager = new VoiceProviderManager(primary, null, new RecordingListener());
+        manager.connect(config());
+        try {
+            manager.sendAudio(new byte[4], 3, 2);
+            fail("El rango inválido debe rechazarse.");
+        } catch (IllegalArgumentException expected) {
+            assertEquals(0, primary.audioSendCount);
+        }
+    }
+
+    @Test public void disconnectExceptionDoesNotBlockSecondaryFallback() {
+        FakeProvider primary = new FakeProvider("openai");
+        FakeProvider secondary = new FakeProvider("gemini");
+        primary.throwOnDisconnect = true;
+        RecordingListener listener = new RecordingListener();
+        VoiceProviderManager manager = new VoiceProviderManager(primary, secondary, listener);
+        manager.connect(config());
+        primary.fail(VoiceProvider.Failure.NETWORK);
+        assertEquals("gemini", manager.getActiveProviderId());
+        assertEquals(0, listener.localFallbackCount);
+    }
+
+    @Test public void throwingApplicationCallbackDoesNotBreakProviderFailover() {
+        FakeProvider primary = new FakeProvider("openai");
+        FakeProvider secondary = new FakeProvider("gemini");
+        RecordingListener listener = new RecordingListener() {
+            @Override public void onStateChanged(VoiceProvider.State state, String providerId, String detail) {
+                throw new IllegalStateException("UI callback failure");
+            }
+        };
+        VoiceProviderManager manager = new VoiceProviderManager(primary, secondary, listener);
+        manager.connect(config());
+        primary.fail(VoiceProvider.Failure.NETWORK);
+        assertEquals("gemini", manager.getActiveProviderId());
+    }
+
     private static VoiceProvider.SessionConfig config() {
         return new VoiceProvider.SessionConfig("es-AR", "", "Bellota", "[]", 24000);
     }
@@ -68,7 +106,9 @@ public class VoiceProviderManagerTest {
         Listener listener;
         int connectCount;
         int disconnectCount;
+        int audioSendCount;
         boolean connected;
+        boolean throwOnDisconnect;
         FakeProvider(String id) { this.id = id; }
         @Override public String getProviderId() { return id; }
         @Override public void setListener(Listener value) { listener = value; }
@@ -81,12 +121,16 @@ public class VoiceProviderManagerTest {
             connected = false;
             if (listener != null) listener.onError(failure, true, "simulated");
         }
-        @Override public void sendAudio(byte[] pcm16, int offset, int length) { }
+        @Override public void sendAudio(byte[] pcm16, int offset, int length) { audioSendCount++; }
         @Override public void finishAudioInput() { }
         @Override public void sendText(String text) { }
         @Override public void sendToolResult(String callId, String result, boolean isError) { }
         @Override public void interrupt() { }
-        @Override public void disconnect() { disconnectCount++; connected = false; }
+        @Override public void disconnect() {
+            disconnectCount++;
+            connected = false;
+            if (throwOnDisconnect) throw new IllegalStateException("simulated disconnect failure");
+        }
         @Override public boolean isConnected() { return connected; }
     }
 }
