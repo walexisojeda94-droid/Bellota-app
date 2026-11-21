@@ -1,0 +1,196 @@
+package com.bellota.mascota.voice.auth;
+
+import android.os.Looper;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Synchronous HTTPS client for Bellota's device-auth Worker.
+ * Call every method from a worker thread. The backend URL is injected at runtime;
+ * no production hostname or permanent credential is embedded in the APK.
+ */
+public final class BellotaBackendClient {
+    private static final int CONNECT_TIMEOUT_MS = 10000;
+    private static final int READ_TIMEOUT_MS = 15000;
+    private static final int MAX_RESPONSE_BYTES = 65536;
+
+    private final String baseUrl;
+    private final SecureTokenStore tokenStore;
+    private final Object authLock = new Object();
+
+    private String accessToken;
+    private long accessTokenExpiresAtMs;
+
+    public BellotaBackendClient(String backendBaseUrl, SecureTokenStore tokenStore) {
+        if (backendBaseUrl == null || backendBaseUrl.trim().isEmpty())
+            throw new IllegalArgumentException("Falta configurar la URL del backend de Bellota.");
+        String normalized = backendBaseUrl.trim().replaceAll("/+$", "");
+        if (!normalized.startsWith("https://"))
+            throw new IllegalArgumentException("El backend debe utilizar HTTPS.");
+        if (tokenStore == null) throw new IllegalArgumentException("SecureTokenStore obligatorio.");
+        this.baseUrl = normalized;
+        this.tokenStore = tokenStore;
+    }
+
+    /** Exchanges the administrator's one-time code for a device refresh token. */
+    public void pair(String oneTimeCode, String deviceName) throws IOException, BackendException {
+        requireWorkerThread();
+        if (oneTimeCode == null || !oneTimeCode.trim().matches("[A-Za-z0-9_-]{6,32}"))
+            throw new IllegalArgumentException("Ingresá un código de vinculación válido.");
+        JSONObject body = new JSONObject();
+        try {
+            body.put("code", oneTimeCode.trim());
+            body.put("device_name", deviceName == null ? "Bellota Android" : deviceName.trim());
+        } catch (JSONException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+        JSONObject response = request("POST", "/v1/pair", body, null);
+        String refresh = response.optString("refresh_token", "");
+        String access = response.optString("access_token", "");
+        int ttl = response.optInt("access_expires_in", 0);
+        if (refresh.length() < 32 || access.isEmpty() || ttl <= 0)
+            throw new BackendException("invalid_response", 502, "El backend devolvió una vinculación incompleta.");
+        tokenStore.saveRefreshToken(refresh);
+        synchronized (authLock) {
+            accessToken = access;
+            accessTokenExpiresAtMs = System.currentTimeMillis() + ttl * 1000L;
+        }
+    }
+
+    /** Renews and rotates the stored refresh token. Access tokens remain memory-only. */
+    public void refresh() throws IOException, BackendException {
+        requireWorkerThread();
+        synchronized (authLock) {
+            String refresh;
+            try {
+                refresh = tokenStore.readRefreshToken();
+            } catch (Exception error) {
+                throw new BackendException("secure_storage_error", 500,
+                        "No se pudo leer la vinculación segura del dispositivo.");
+            }
+            if (refresh == null || refresh.isEmpty())
+                throw new BackendException("not_paired", 401, "Bellota todavía no está vinculada.");
+            JSONObject body = new JSONObject();
+            try { body.put("refresh_token", refresh); }
+            catch (JSONException impossible) { throw new IllegalStateException(impossible); }
+            JSONObject response = request("POST", "/v1/auth/refresh", body, null);
+            String nextRefresh = response.optString("refresh_token", "");
+            String nextAccess = response.optString("access_token", "");
+            int ttl = response.optInt("access_expires_in", 0);
+            if (nextRefresh.length() < 32 || nextAccess.isEmpty() || ttl <= 0)
+                throw new BackendException("invalid_response", 502, "El backend devolvió una renovación incompleta.");
+            try {
+                tokenStore.saveRefreshToken(nextRefresh);
+            } catch (Exception error) {
+                throw new BackendException("secure_storage_error", 500,
+                        "No se pudo guardar la nueva vinculación segura.");
+            }
+            accessToken = nextAccess;
+            accessTokenExpiresAtMs = System.currentTimeMillis() + ttl * 1000L;
+        }
+    }
+
+    /** Returns a valid in-memory access token, refreshing the device credential if needed. */
+    public String getAccessToken() throws IOException, BackendException {
+        requireWorkerThread();
+        synchronized (authLock) {
+            if (accessToken != null && System.currentTimeMillis() < accessTokenExpiresAtMs - 30000L)
+                return accessToken;
+        }
+        refresh();
+        synchronized (authLock) { return accessToken; }
+    }
+
+    public void unpair() {
+        synchronized (authLock) {
+            accessToken = null;
+            accessTokenExpiresAtMs = 0L;
+            tokenStore.clear();
+        }
+    }
+
+    public boolean isPaired() {
+        return tokenStore.hasRefreshToken();
+    }
+
+    private JSONObject request(String method, String path, JSONObject body, String bearer)
+            throws IOException, BackendException {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(baseUrl + path).openConnection();
+            connection.setRequestMethod(method);
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(READ_TIMEOUT_MS);
+            connection.setUseCaches(false);
+            connection.setDoInput(true);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Cache-Control", "no-store");
+            if (body != null) {
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            }
+            if (bearer != null && !bearer.isEmpty())
+                connection.setRequestProperty("Authorization", "Bearer " + bearer);
+            if (body != null) {
+                byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+                connection.setFixedLengthStreamingMode(bytes.length);
+                try (OutputStream output = connection.getOutputStream()) { output.write(bytes); }
+            }
+            int status = connection.getResponseCode();
+            InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+            String responseText = stream == null ? "" : readLimited(stream);
+            JSONObject response;
+            try { response = responseText.isEmpty() ? new JSONObject() : new JSONObject(responseText); }
+            catch (JSONException invalid) {
+                throw new BackendException("invalid_response", status,
+                        "El backend devolvió una respuesta que no es JSON válido.");
+            }
+            if (status < 200 || status >= 300) {
+                throw new BackendException(response.optString("error", "backend_error"), status,
+                        response.optString("message", "El backend rechazó la solicitud."));
+            }
+            return response;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private static String readLimited(InputStream input) throws IOException {
+        try (InputStream stream = input; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int total = 0;
+            int read;
+            while ((read = stream.read(buffer)) != -1) {
+                total += read;
+                if (total > MAX_RESPONSE_BYTES) throw new IOException("La respuesta del backend es demasiado grande.");
+                output.write(buffer, 0, read);
+            }
+            return new String(output.toByteArray(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private static void requireWorkerThread() {
+        if (Looper.myLooper() == Looper.getMainLooper())
+            throw new IllegalStateException("La comunicación con el backend debe ejecutarse fuera del hilo principal.");
+    }
+
+    public static final class BackendException extends Exception {
+        public final String code;
+        public final int httpStatus;
+
+        BackendException(String code, int httpStatus, String message) {
+            super(message);
+            this.code = code;
+            this.httpStatus = httpStatus;
+        }
+    }
+}
