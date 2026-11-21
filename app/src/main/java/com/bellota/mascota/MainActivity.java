@@ -104,6 +104,110 @@ public class MainActivity extends Activity implements SensorEventListener {
         handler.postDelayed(autonomousRoutine, 1800L);
     }
 
+    private int dp(float value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private android.graphics.drawable.Drawable makeAuthButtonBackground() {
+        android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable();
+        drawable.setColor(0xCC173B3B);
+        drawable.setCornerRadius(dp(18));
+        drawable.setStroke(dp(1), 0xFF00BFA6);
+        return drawable;
+    }
+
+    /** Muestra el diálogo de vinculación. La voz local continúa funcionando sin cambios. */
+    private void showOnlinePairingDialog() {
+        android.widget.LinearLayout panel = new android.widget.LinearLayout(this);
+        panel.setOrientation(android.widget.LinearLayout.VERTICAL);
+        panel.setPadding(dp(22), dp(12), dp(22), dp(4));
+
+        android.widget.TextView explanation = new android.widget.TextView(this);
+        explanation.setText("Vinculá Bellota con el servicio online mediante un código de un solo uso. El código vence a los 10 minutos.");
+        explanation.setTextColor(0xFFE7EEEE);
+        explanation.setTextSize(14f);
+        panel.addView(explanation);
+
+        android.widget.EditText codeInput = new android.widget.EditText(this);
+        codeInput.setSingleLine(true);
+        codeInput.setHint("Código de vinculación");
+        codeInput.setTextColor(0xFFFFFFFF);
+        codeInput.setHintTextColor(0xFF9BAEAE);
+        codeInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+                | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        codeInput.setLetterSpacing(0.12f);
+        android.widget.LinearLayout.LayoutParams codeParams = new android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        codeParams.topMargin = dp(14);
+        panel.addView(codeInput, codeParams);
+
+        android.widget.TextView status = new android.widget.TextView(this);
+        String backendUrl = getString(R.string.backend_base_url).trim();
+        boolean configured = !backendUrl.isEmpty() && backendUrl.startsWith("https://");
+        status.setText(configured
+                ? "Servicio configurado. La vinculación no altera el modo de voz local."
+                : "El backend todavía no está desplegado/configurado. La voz local sigue disponible.");
+        status.setTextColor(configured ? 0xFF9ED8C8 : 0xFFFFD18A);
+        status.setTextSize(12f);
+        android.widget.LinearLayout.LayoutParams statusParams = new android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        statusParams.topMargin = dp(10);
+        panel.addView(status, statusParams);
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("Vincular Bellota")
+                .setView(panel)
+                .setNegativeButton("Cerrar", null)
+                .setPositiveButton("Vincular", null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            android.widget.Button connect = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
+            connect.setEnabled(configured);
+            connect.setOnClickListener(v -> {
+                String code = codeInput.getText().toString().trim();
+                if (!code.matches("[A-Za-z0-9_-]{6,32}")) {
+                    codeInput.setError("Ingresá el código recibido.");
+                    return;
+                }
+                connect.setEnabled(false);
+                status.setText("Vinculando dispositivo...");
+                status.setTextColor(0xFF9ED8C8);
+                new Thread(() -> {
+                    String result;
+                    boolean success = false;
+                    try {
+                        com.bellota.mascota.voice.auth.SecureTokenStore store =
+                                new com.bellota.mascota.voice.auth.SecureTokenStore(getApplicationContext());
+                        com.bellota.mascota.voice.auth.BellotaBackendClient client =
+                                new com.bellota.mascota.voice.auth.BellotaBackendClient(backendUrl, store);
+                        client.pair(code, android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
+                        result = "Dispositivo vinculado. La credencial se guardó de forma segura.";
+                        success = true;
+                    } catch (com.bellota.mascota.voice.auth.BellotaBackendClient.BackendException error) {
+                        result = error.getMessage();
+                    } catch (Exception error) {
+                        result = "No se pudo completar la vinculación. Revisá la conexión e intentá nuevamente.";
+                    }
+                    final String message = result;
+                    final boolean paired = success;
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) return;
+                        status.setText(message);
+                        status.setTextColor(paired ? 0xFF9ED8C8 : 0xFFFFA6A6);
+                        if (paired) {
+                            codeInput.setEnabled(false);
+                            connect.setText("Vinculado");
+                        } else {
+                            connect.setEnabled(true);
+                        }
+                    });
+                }, "Bellota-Pairing").start();
+            });
+        });
+        dialog.show();
+    }
+
     private void buildPetScreen() {
         FrameLayout root = new FrameLayout(this);
         petRoot = root;
