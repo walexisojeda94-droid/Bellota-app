@@ -28,7 +28,6 @@ public final class VoiceProviderManager {
     private int nextProviderIndex;
     private long sessionGeneration;
     private boolean sessionStarted;
-    private boolean localFallbackRequested;
 
     public VoiceProviderManager(VoiceProvider primary, VoiceProvider secondary, Listener listener) {
         if (primary == null) throw new IllegalArgumentException("Se requiere un proveedor principal.");
@@ -49,7 +48,6 @@ public final class VoiceProviderManager {
             sessionConfig = config;
             nextProviderIndex = 0;
             sessionStarted = true;
-            localFallbackRequested = false;
         }
         connectNextProvider(null, null);
     }
@@ -131,7 +129,6 @@ public final class VoiceProviderManager {
             if (!sessionStarted) return;
             if (nextProviderIndex >= providers.size()) {
                 sessionStarted = false;
-                localFallbackRequested = true;
                 candidate = null;
                 generation = sessionGeneration;
                 useLocalFallback = true;
@@ -194,7 +191,7 @@ public final class VoiceProviderManager {
             @Override public void onError(VoiceProvider.Failure failure, boolean recoverable, String detail) {
                 handleProviderFailure(provider, generation,
                         failure == null ? VoiceProvider.Failure.UNKNOWN : failure,
-                        recoverable, detail);
+                        detail);
             }
         };
     }
@@ -206,7 +203,7 @@ public final class VoiceProviderManager {
     }
 
     private void handleProviderFailure(VoiceProvider provider, long generation,
-                                       VoiceProvider.Failure failure, boolean recoverable, String detail) {
+                                       VoiceProvider.Failure failure, String detail) {
         synchronized (lock) {
             if (!sessionStarted || sessionGeneration != generation || activeProvider != provider) return;
             activeProvider = null;
@@ -217,19 +214,6 @@ public final class VoiceProviderManager {
                 "El proveedor no pudo continuar; se evaluará el siguiente motor.");
         // No se reintenta el mismo proveedor en bucle. El siguiente se prueba una sola vez.
         connectNextProvider(failure, detail == null ? "Fallo del proveedor." : detail);
-    }
-
-    private void requestLocalFallbackLocked(VoiceProvider.Failure failure, String detail) {
-        if (!sessionStarted || localFallbackRequested) return;
-        sessionStarted = false;
-        localFallbackRequested = true;
-        notifyState(VoiceProvider.State.FALLBACK_LOCAL, null,
-                "Los proveedores online no están disponibles. Se solicita la voz local.");
-        if (listener != null) {
-            listener.onLocalFallbackRequested(
-                    failure == null ? VoiceProvider.Failure.UNKNOWN : failure,
-                    detail == null ? "No hay proveedores online disponibles." : detail);
-        }
     }
 
     private void disconnectActiveLocked() {
