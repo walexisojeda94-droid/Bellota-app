@@ -18,6 +18,16 @@ function randomToken(bytes = 32) {
   crypto.getRandomValues(data);
   return b64url(data);
 }
+const PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 32 símbolos, sin 0/O/1/I
+function randomPairingCode(length = 8) {
+  let code = "";
+  const data = new Uint8Array(1);
+  while (code.length < length) {
+    crypto.getRandomValues(data);
+    if (data[0] < 256 - (256 % PAIRING_ALPHABET.length)) code += PAIRING_ALPHABET[data[0] % PAIRING_ALPHABET.length];
+  }
+  return code;
+}
 async function sha256(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map(x => x.toString(16).padStart(2, "0")).join("");
@@ -33,15 +43,19 @@ async function issueAccessToken(deviceId, secret) {
   const signature = await crypto.subtle.sign("HMAC", await hmacKey(secret), new TextEncoder().encode(input));
   return input + "." + b64url(new Uint8Array(signature));
 }
+function b64urlDecode(value) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((value.length + 3) % 4);
+  return atob(padded);
+}
 async function verifyAccessToken(token, secret) {
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  const input = parts[0] + "." + parts[1];
-  const signature = Uint8Array.from(atob(parts[2].replace(/-/g, "+").replace(/_/g, "/") + "===".slice((parts[2].length + 3) % 4)), c => c.charCodeAt(0));
-  const valid = await crypto.subtle.verify("HMAC", await hmacKey(secret), signature, new TextEncoder().encode(input));
-  if (!valid) return null;
   try {
-    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/") + "===".slice((parts[1].length + 3) % 4)));
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const input = parts[0] + "." + parts[1];
+    const signature = Uint8Array.from(b64urlDecode(parts[2]), c => c.charCodeAt(0));
+    const valid = await crypto.subtle.verify("HMAC", await hmacKey(secret), signature, new TextEncoder().encode(input));
+    if (!valid) return null;
+    const payload = JSON.parse(b64urlDecode(parts[1]));
     if (payload.iss !== "bellota-backend" || payload.aud !== "bellota-app" || payload.exp <= Math.floor(Date.now() / 1000)) return null;
     return payload.sub;
   } catch { return null; }
@@ -71,7 +85,7 @@ async function createPairingCode(request, env) {
   let difference = suppliedMac.length ^ expectedMac.length;
   for (let i = 0; i < Math.min(suppliedMac.length, expectedMac.length); i++) difference |= suppliedMac[i] ^ expectedMac[i];
   if (!supplied || difference !== 0) return fail("unauthorized", 401, "No autorizado.");
-  const code = randomToken(6).replace(/[-_]/g, "").toUpperCase();
+  const code = randomPairingCode();
   const codeHash = await sha256(code);
   const expiresAt = Math.floor(Date.now() / 1000) + PAIRING_TTL_SECONDS;
   await env.DB.prepare("INSERT INTO pairing_codes (code_hash, created_at, expires_at) VALUES (?, ?, ?)")
@@ -80,6 +94,7 @@ async function createPairingCode(request, env) {
 }
 
 async function pairDevice(request, env) {
+  if (!env.JWT_SECRET) return fail("server_not_configured", 503, "El backend no está configurado.");
   const body = await readJson(request);
   if (!body || typeof body.code !== "string") return fail("invalid_request", 400, "Falta el código de vinculación.");
   const code = body.code.trim().toUpperCase();
@@ -100,6 +115,7 @@ async function pairDevice(request, env) {
 }
 
 async function refreshDevice(request, env) {
+  if (!env.JWT_SECRET) return fail("server_not_configured", 503, "El backend no está configurado.");
   const body = await readJson(request);
   if (!body || typeof body.refresh_token !== "string" || body.refresh_token.length < 32)
     return fail("invalid_request", 400, "Token de renovación inválido.");
