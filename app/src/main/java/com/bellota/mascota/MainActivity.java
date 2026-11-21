@@ -153,6 +153,23 @@ public class MainActivity extends Activity implements SensorEventListener {
         });
         root.addView(playfield, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        // Acceso discreto a la vinculación online. No modifica ni interrumpe la voz local.
+        android.widget.TextView aiButton = new android.widget.TextView(this);
+        aiButton.setText("IA");
+        aiButton.setTextColor(0xFFE8F3F2);
+        aiButton.setTextSize(12f);
+        aiButton.setGravity(android.view.Gravity.CENTER);
+        aiButton.setBackground(makeAuthButtonBackground());
+        aiButton.setPadding(dp(14), dp(8), dp(14), dp(8));
+        FrameLayout.LayoutParams aiParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                android.view.Gravity.TOP | android.view.Gravity.END);
+        aiParams.topMargin = dp(12);
+        aiParams.rightMargin = dp(12);
+        root.addView(aiButton, aiParams);
+        aiButton.setOnClickListener(v -> showOnlinePairingDialog());
+
         setContentView(root);
     }
 
