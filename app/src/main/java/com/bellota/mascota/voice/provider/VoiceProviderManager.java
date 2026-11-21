@@ -53,7 +53,7 @@ public final class VoiceProviderManager {
                 sessionStarted = true;
             }
             dispose(previous);
-            connectNextProvider(null, null);
+            connectNextProvider(null, null, currentGeneration());
         }
     }
 
@@ -123,16 +123,18 @@ public final class VoiceProviderManager {
         if (current != null) safely(current::interrupt);
     }
 
+    private long currentGeneration() { synchronized (lock) { return sessionGeneration; } }
+
     private VoiceProvider activeSnapshot() {
         synchronized (lock) { return activeProvider; }
     }
 
-    private void connectNextProvider(VoiceProvider.Failure previousFailure, String previousDetail) {
+    private void connectNextProvider(VoiceProvider.Failure previousFailure, String previousDetail, long expectedGeneration) {
         final VoiceProvider candidate;
         final VoiceProvider.SessionConfig config;
         final long generation;
         synchronized (lock) {
-            if (!sessionStarted) return;
+            if (!sessionStarted || sessionGeneration != expectedGeneration) return;
             if (nextProviderIndex >= providers.size()) {
                 sessionStarted = false;
                 candidate = null;
@@ -164,6 +166,7 @@ public final class VoiceProviderManager {
             candidate.setListener(createProviderListener(candidate, generation));
             safeNotifyState(VoiceProvider.State.CONNECTING, safeProviderId(candidate),
                     "Conectando proveedor de voz.");
+            if (!isCurrent(candidate, generation)) return;
             candidate.connect(config);
         } catch (RuntimeException error) {
             handleProviderFailure(candidate, generation, VoiceProvider.Failure.PROVIDER,
@@ -221,7 +224,7 @@ public final class VoiceProviderManager {
             dispose(provider);
             safeNotifyState(VoiceProvider.State.RECONNECTING, safeProviderId(provider),
                     "El proveedor no pudo continuar; se evaluará el siguiente motor.");
-            connectNextProvider(failure, detail == null ? "Fallo del proveedor." : detail);
+            connectNextProvider(failure, detail == null ? "Fallo del proveedor." : detail, generation);
         }
     }
 
