@@ -109,9 +109,9 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             initializeWebRtc();
             createPeerConnection();
             createAudioAndDataTracks();
-            createOffer();
-            // The ephemeral secret is deliberately scoped to this connection attempt.
+            // Set the ephemeral secret before SDP gathering can complete asynchronously.
             exchangeSecret = credential.value;
+            createOffer();
         } catch (BellotaBackendClient.BackendException error) {
             fail(mapBackendFailure(error), error.httpStatus == 401, error.getMessage());
         } catch (Exception error) {
