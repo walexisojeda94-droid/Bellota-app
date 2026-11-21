@@ -86,7 +86,7 @@ public class VoiceProviderManagerTest {
         return new VoiceProvider.SessionConfig("es-AR", "", "Bellota", "[]", 24000);
     }
 
-    private static final class RecordingListener implements VoiceProviderManager.Listener {
+    private static class RecordingListener implements VoiceProviderManager.Listener {
         int localFallbackCount;
         VoiceProvider.Failure lastFailure;
         @Override public void onStateChanged(VoiceProvider.State state, String providerId, String detail) { }
