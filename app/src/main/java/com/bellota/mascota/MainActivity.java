@@ -29,6 +29,10 @@ import com.bellota.mascota.local.Reply;
 import com.bellota.mascota.ui.EyePetView;
 import com.bellota.mascota.voice.ContinuousVoiceCommands;
 import com.bellota.mascota.voice.LocalVoice;
+import com.bellota.mascota.voice.provider.VoiceProvider;
+import com.bellota.mascota.voice.provider.VoiceProviderManager;
+import com.bellota.mascota.voice.provider.OpenAIRealtimeWebRtcProvider;
+import com.bellota.mascota.voice.auth.SecureTokenStore;
 import com.bellota.mascota.weather.WeatherService;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -50,6 +54,8 @@ public class MainActivity extends Activity implements SensorEventListener {
     private FrameLayout petRoot;
     private LocalVoice localVoice;
     private ContinuousVoiceCommands voiceCommands;
+    private VoiceProviderManager onlineVoiceManager;
+    private boolean onlineVoiceConnecting;
     private PetLife petLife;
     private AutonomousBehavior autonomy;
     private PetMemory petMemory;
@@ -118,12 +124,19 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     /** Muestra el diálogo de vinculación. La voz local continúa funcionando sin cambios. */
     private void showOnlinePairingDialog() {
+        final String backendUrl = getString(R.string.backend_base_url).trim();
+        final boolean configured = backendUrl.startsWith("https://");
+        final SecureTokenStore tokenStore = new SecureTokenStore(getApplicationContext());
+        final boolean paired = tokenStore.hasRefreshToken();
+
         android.widget.LinearLayout panel = new android.widget.LinearLayout(this);
         panel.setOrientation(android.widget.LinearLayout.VERTICAL);
         panel.setPadding(dp(22), dp(12), dp(22), dp(4));
 
         android.widget.TextView explanation = new android.widget.TextView(this);
-        explanation.setText("Vinculá Bellota con el servicio online mediante un código de un solo uso. El código vence a los 10 minutos.");
+        explanation.setText(paired
+                ? "Este dispositivo ya tiene una vinculación segura. Podés iniciar o detener la conversación online."
+                : "Vinculá Bellota con un código de un solo uso. El código vence a los 10 minutos.");
         explanation.setTextColor(0xFFE7EEEE);
         explanation.setTextSize(14f);
         panel.addView(explanation);
@@ -137,17 +150,17 @@ public class MainActivity extends Activity implements SensorEventListener {
                 | android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
                 | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         codeInput.setLetterSpacing(0.12f);
+        codeInput.setVisibility(paired ? View.GONE : View.VISIBLE);
         android.widget.LinearLayout.LayoutParams codeParams = new android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
         codeParams.topMargin = dp(14);
         panel.addView(codeInput, codeParams);
 
         android.widget.TextView status = new android.widget.TextView(this);
-        String backendUrl = getString(R.string.backend_base_url).trim();
-        boolean configured = !backendUrl.isEmpty() && backendUrl.startsWith("https://");
-        status.setText(configured
-                ? "Servicio configurado. La vinculación no altera el modo de voz local."
-                : "El backend todavía no está desplegado/configurado. La voz local sigue disponible.");
+        status.setText(!configured
+                ? "El backend todavía no está desplegado/configurado. La voz local sigue disponible."
+                : paired ? "Dispositivo vinculado. La conexión online todavía no está iniciada."
+                : "Servicio configurado. La vinculación no modifica la voz local.");
         status.setTextColor(configured ? 0xFF9ED8C8 : 0xFFFFD18A);
         status.setTextSize(12f);
         android.widget.LinearLayout.LayoutParams statusParams = new android.widget.LinearLayout.LayoutParams(
@@ -156,33 +169,44 @@ public class MainActivity extends Activity implements SensorEventListener {
         panel.addView(status, statusParams);
 
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-                .setTitle("Vincular Bellota")
+                .setTitle("Voz online de Bellota")
                 .setView(panel)
                 .setNegativeButton("Cerrar", null)
-                .setPositiveButton("Vincular", null)
+                .setPositiveButton(paired ? "Desvincular" : "Vincular", null)
+                .setNeutralButton(onlineVoiceConnecting ? "Desconectar" : "Conectar", null)
                 .create();
         dialog.setOnShowListener(ignored -> {
-            android.widget.Button connect = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
-            connect.setEnabled(configured);
-            connect.setOnClickListener(v -> {
+            android.widget.Button primary = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
+            android.widget.Button online = dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL);
+            primary.setEnabled(configured);
+            online.setEnabled(configured && paired);
+
+            primary.setOnClickListener(v -> {
+                if (paired) {
+                    if (onlineVoiceManager != null) disconnectOnlineVoice(true);
+                    new Thread(tokenStore::clear, "Bellota-Unpair").start();
+                    status.setText("Vinculación local eliminada. Para revocar el dispositivo en el servidor se requiere la función de revocación del backend.");
+                    status.setTextColor(0xFFFFD18A);
+                    primary.setEnabled(false);
+                    online.setEnabled(false);
+                    return;
+                }
                 String code = codeInput.getText().toString().trim();
                 if (!code.matches("[A-Za-z0-9_-]{6,32}")) {
                     codeInput.setError("Ingresá el código recibido.");
                     return;
                 }
-                connect.setEnabled(false);
+                primary.setEnabled(false);
                 status.setText("Vinculando dispositivo...");
                 status.setTextColor(0xFF9ED8C8);
                 new Thread(() -> {
                     String result;
                     boolean success = false;
                     try {
-                        com.bellota.mascota.voice.auth.SecureTokenStore store =
-                                new com.bellota.mascota.voice.auth.SecureTokenStore(getApplicationContext());
                         com.bellota.mascota.voice.auth.BellotaBackendClient client =
-                                new com.bellota.mascota.voice.auth.BellotaBackendClient(backendUrl, store);
+                                new com.bellota.mascota.voice.auth.BellotaBackendClient(backendUrl, tokenStore);
                         client.pair(code, android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
-                        result = "Dispositivo vinculado. La credencial se guardó de forma segura.";
+                        result = "Dispositivo vinculado. Ya podés iniciar la voz online.";
                         success = true;
                     } catch (com.bellota.mascota.voice.auth.BellotaBackendClient.BackendException error) {
                         result = error.getMessage();
@@ -190,22 +214,144 @@ public class MainActivity extends Activity implements SensorEventListener {
                         result = "No se pudo completar la vinculación. Revisá la conexión e intentá nuevamente.";
                     }
                     final String message = result;
-                    final boolean paired = success;
+                    final boolean successResult = success;
                     runOnUiThread(() -> {
                         if (isFinishing() || isDestroyed()) return;
                         status.setText(message);
-                        status.setTextColor(paired ? 0xFF9ED8C8 : 0xFFFFA6A6);
-                        if (paired) {
-                            codeInput.setEnabled(false);
-                            connect.setText("Vinculado");
+                        status.setTextColor(successResult ? 0xFF9ED8C8 : 0xFFFFA6A6);
+                        if (successResult) {
+                            codeInput.setVisibility(View.GONE);
+                            explanation.setText("Este dispositivo ya tiene una vinculación segura.");
+                            primary.setText("Vinculado");
+                            primary.setEnabled(false);
+                            online.setEnabled(true);
                         } else {
-                            connect.setEnabled(true);
+                            primary.setEnabled(true);
                         }
                     });
                 }, "Bellota-Pairing").start();
             });
+
+            online.setOnClickListener(v -> {
+                if (onlineVoiceConnecting || (onlineVoiceManager != null && onlineVoiceManager.isConnected())) {
+                    disconnectOnlineVoice(true);
+                    status.setText("Voz online desconectada. Se reanudó la escucha local.");
+                    online.setText("Conectar");
+                    return;
+                }
+                online.setEnabled(false);
+                status.setText("Iniciando OpenAI Realtime por WebRTC...");
+                status.setTextColor(0xFF9ED8C8);
+                connectOnlineVoice(backendUrl, status, online);
+            });
         });
         dialog.show();
+    }
+
+    private void connectOnlineVoice(String backendUrl, android.widget.TextView status,
+                                    android.widget.Button onlineButton) {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            status.setText("Falta el permiso de micrófono.");
+            onlineButton.setEnabled(true);
+            return;
+        }
+        if (isAsleep() || !soundEnabled) {
+            status.setText("Bellota debe estar despierta y con el sonido habilitado.");
+            onlineButton.setEnabled(true);
+            return;
+        }
+        if (voiceCommands != null) voiceCommands.stop();
+        if (localVoice != null) localVoice.stop();
+        try {
+            SecureTokenStore store = new SecureTokenStore(getApplicationContext());
+            OpenAIRealtimeWebRtcProvider provider =
+                    new OpenAIRealtimeWebRtcProvider(getApplicationContext(), backendUrl, store);
+            onlineVoiceManager = new VoiceProviderManager(provider, null, new VoiceProviderManager.Listener() {
+                @Override public void onStateChanged(VoiceProvider.State state, String providerId, String detail) {
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) return;
+                        status.setText(detail == null ? state.name() : detail);
+                        if (state == VoiceProvider.State.CONNECTED) {
+                            onlineVoiceConnecting = false;
+                            onlineButton.setText("Desconectar");
+                            onlineButton.setEnabled(true);
+                        } else if (state == VoiceProvider.State.FALLBACK_LOCAL
+                                || state == VoiceProvider.State.CLOSED) {
+                            onlineVoiceConnecting = false;
+                            onlineButton.setText("Conectar");
+                            onlineButton.setEnabled(true);
+                        }
+                    });
+                }
+                @Override public void onUserTranscript(String text, boolean isFinal) {
+                    if (!isFinal || text == null || text.trim().isEmpty()) return;
+                    runOnUiThread(() -> {
+                        if (petMemory != null) petMemory.remember("voz_usuario", text);
+                        if (!isAsleep()) {
+                            userInteracted("attention", true);
+                            if (eyes != null) eyes.reactToAttention();
+                        }
+                    });
+                }
+                @Override public void onAssistantTranscript(String text, boolean isFinal) {
+                    if (isFinal && petMemory != null && text != null && !text.trim().isEmpty())
+                        petMemory.remember("voz_bellota", text);
+                }
+                @Override public void onAudioOutput(byte[] pcm16, int sampleRateHz, int channels) {
+                    // WebRTC reproduce el audio remoto directamente mediante su dispositivo de audio nativo.
+                }
+                @Override public void onAssistantSpeaking(boolean speaking) {
+                    runOnUiThread(() -> {
+                        if (eyes != null && !isAsleep())
+                            eyes.setMood(speaking ? EyePetView.Mood.THINKING : EyePetView.Mood.CALM);
+                    });
+                }
+                @Override public void onToolCall(String callId, String name, String argumentsJson) {
+                    new Thread(() -> {
+                        try {
+                            String result = executeBellotaTool(name, new JSONObject(argumentsJson));
+                            VoiceProviderManager manager = onlineVoiceManager;
+                            if (manager != null) manager.sendToolResult(callId, result, false);
+                        } catch (Exception error) {
+                            VoiceProviderManager manager = onlineVoiceManager;
+                            if (manager != null) manager.sendToolResult(callId,
+                                    error.getMessage() == null ? "No se pudo ejecutar la herramienta." : error.getMessage(), true);
+                        }
+                    }, "Bellota-ToolCall").start();
+                }
+                @Override public void onLocalFallbackRequested(VoiceProvider.Failure reason, String detail) {
+                    runOnUiThread(() -> {
+                        onlineVoiceConnecting = false;
+                        onlineVoiceManager = null;
+                        if (!paused && !isFinishing()) startLocalRecognizer();
+                        status.setText("OpenAI no está disponible. Bellota volvió a la voz local: " + detail);
+                        onlineButton.setText("Conectar");
+                        onlineButton.setEnabled(true);
+                    });
+                }
+            });
+            onlineVoiceConnecting = true;
+            JSONArray tools = buildBellotaTools();
+            VoiceProvider.SessionConfig config = new VoiceProvider.SessionConfig(
+                    "es-AR", "marin",
+                    "Sos Bellota, una compañera virtual con personalidad propia. Hablá en español rioplatense natural, con respuestas conversacionales y concisas. Conservá continuidad y contexto. No describas acciones que no realizaste.",
+                    tools.toString(), 48000);
+            onlineVoiceManager.connect(config);
+        } catch (Exception error) {
+            onlineVoiceConnecting = false;
+            onlineVoiceManager = null;
+            startLocalRecognizer();
+            status.setText("No se pudo iniciar OpenAI Realtime: " + error.getMessage());
+            onlineButton.setEnabled(true);
+        }
+    }
+
+    private void disconnectOnlineVoice(boolean resumeLocal) {
+        VoiceProviderManager manager = onlineVoiceManager;
+        onlineVoiceManager = null;
+        onlineVoiceConnecting = false;
+        if (manager != null) manager.disconnect();
+        if (resumeLocal && !paused && !isFinishing()) startLocalRecognizer();
     }
 
     private void buildPetScreen() {
