@@ -57,10 +57,10 @@ public class ConversationMemoryTest {
 
         assertEquals("Alexis", memory.name());
         assertEquals(1, memory.likes().size());
-        assertEquals("mate", memory.likes().get(0));
+        assertEquals("el mate", memory.likes().get(0));
         assertEquals("Ale", memory.nicknames().get(0));
         assertTrue(engine.memoryContextForOnline().contains("nombre: Alexis"));
-        assertTrue(engine.memoryContextForOnline().contains("gustos: mate"));
+        assertTrue(engine.memoryContextForOnline().contains("gustos: el mate"));
     }
 
     @Test public void onlineNegativePreferenceDoesNotGetStoredAsALike() {
