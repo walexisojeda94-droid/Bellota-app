@@ -922,7 +922,8 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void resumeLocalRecognition() {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+        if (onlineVoiceConnecting || (onlineVoiceManager != null && onlineVoiceManager.isConnected())
+                || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         if (!localRecognitionPaused) return;
         localRecognitionPaused = false;
         VoiceRecognitionService.resume(this);
