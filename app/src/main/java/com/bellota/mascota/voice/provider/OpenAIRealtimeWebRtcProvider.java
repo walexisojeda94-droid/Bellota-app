@@ -75,7 +75,8 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private volatile int maxOutputTokens = RealtimeSessionBudget.MAX_OUTPUT_TOKENS_PER_RESPONSE;
     private volatile List<BellotaBackendClient.IceServerConfig> configuredIceServers = Collections.emptyList();
     private volatile HttpURLConnection activeHttpConnection;
-    private volatile long sessionMaxDurationMs = 2700000L;
+    private volatile long sessionMaxDurationMs = RealtimeSessionBudget.MAX_DURATION_SECONDS * 1000L;
+    private volatile long sessionExpiresAtEpochSeconds;
     private final Runnable negotiationTimeout = () -> fail(Failure.NETWORK, true, "La negociación WebRTC superó el tiempo máximo.");
     private volatile Runnable iceDisconnectTimeout;
     private volatile Runnable sessionTimeout;
@@ -135,6 +136,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             configuredIceServers = credential.iceServers == null ? Collections.emptyList() : credential.iceServers;
             maxOutputTokens = Math.max(1, Math.min(4096, credential.maxOutputTokens));
             sessionMaxDurationMs = Math.max(60000L, Math.min(RealtimeSessionBudget.MAX_DURATION_SECONDS * 1000L, credential.sessionMaxDurationSeconds * 1000L));
+            sessionExpiresAtEpochSeconds = credential.sessionExpiresAtEpochSeconds;
             notifyState(State.CONNECTING, "Preparando conexión WebRTC.");
             synchronized (resourceLock) {
                 if (closed.get() || attempt != activeAttemptId) return;
@@ -634,12 +636,22 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
 
     private void scheduleSessionTimeout() {
         if (sessionTimeout != null) return;
+        long remainingMs = sessionMaxDurationMs;
+        if (sessionExpiresAtEpochSeconds > 0L) {
+            remainingMs = (sessionExpiresAtEpochSeconds - System.currentTimeMillis() / 1000L) * 1000L;
+        }
+        if (remainingMs <= 0L) {
+            fail(Failure.SESSION_EXPIRED, false, "La sesión ya alcanzó su vencimiento en el servidor.");
+            return;
+        }
+        // Close a few seconds before the server-enforced expiry to avoid an abrupt provider disconnect.
+        long delayMs = Math.max(1000L, remainingMs - 5000L);
         Runnable timeout = () -> {
             if (!closed.get()) fail(Failure.SESSION_EXPIRED, false,
                     "La sesión alcanzó su duración máxima y se cerrará para controlar el consumo.");
         };
         sessionTimeout = timeout;
-        mainHandler.postDelayed(timeout, sessionMaxDurationMs);
+        mainHandler.postDelayed(timeout, delayMs);
     }
 
     private void cancelPendingCallbacks() {
