@@ -93,6 +93,26 @@ public class ConversationMemoryTest {
         assertEquals("", engine.memoryContextForOnline());
     }
 
+    @Test public void onlineContextIncludesPendingQuestionAndLongAbsence() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        long now = System.currentTimeMillis();
+        memory.onUserMessage(now - ConversationMemory.LONG_SILENCE_MS - 1L);
+        memory.expect("like:el mate", now);
+        LocalConversationEngine engine = new LocalConversationEngine(memory);
+        String context = engine.memoryContextForOnline();
+        assertTrue(context.contains("pregunta_pendiente"));
+        assertTrue(context.contains("todavía le gusta el mate"));
+        assertTrue(context.contains("pausa prolongada"));
+    }
+
+    @Test public void longAbsenceCheckDoesNotMutateLastSeen() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        memory.onUserMessage(10_000L);
+        assertFalse(memory.isReturningAfterLongSilence(10_000L + ConversationMemory.LONG_SILENCE_MS - 1L));
+        assertTrue(memory.isReturningAfterLongSilence(10_000L + ConversationMemory.LONG_SILENCE_MS));
+        assertEquals(0L, memory.silenceMs());
+    }
+
     @Test public void expectedAnswerExpiresAfterThreeMinutes() {
         ConversationMemory memory = ConversationMemory.inMemory();
         memory.expect("like:Pokémon", 10_000L);
