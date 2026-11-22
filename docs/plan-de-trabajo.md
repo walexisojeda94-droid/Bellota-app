@@ -63,7 +63,7 @@ La versión se considera estable cuando compila, se instala y supera pruebas pro
 - [x] Ejecutar pruebas unitarias y Android Lint en GitHub Actions antes de empaquetar el APK.
 - [x] Corregir las verificaciones de permiso de micrófono detectadas por Lint en los transportes WebSocket y MQTT/UDP.
 - [x] Revisar advertencias de Lint: quedan tres justificadas por persistencia síncrona de credencial, orientación horizontal fija e identidad estable de XiaoZhi.
-- [ ] Incorporar Gradle Wrapper para compilar localmente sin instalar Gradle por separado.
+- [x] Incorporar Gradle Wrapper para compilar localmente sin instalar Gradle por separado.
 - [ ] Ampliar cobertura con pruebas de ciclo de vida, reconexión y persistencia.
 
 
@@ -71,9 +71,9 @@ La versión se considera estable cuando compila, se instala y supera pruebas pro
 
 - [x] Definir OpenAI Realtime como proveedor principal y Gemini Live como segundo proveedor.
 - [x] Definir arquitectura independiente del proveedor, autenticación temporal y criterios de resiliencia.
-- [ ] Auditar y separar los puntos de entrada/salida de voz y conversación actuales.
-- [ ] Implementar backend seguro para credenciales temporales de OpenAI.
-- [ ] Integrar OpenAI Realtime mediante WebRTC en Android.
-- [ ] Validar audio bidireccional, interrupciones, reconexión, sesiones largas y límites de cuenta.
+- [x] Auditar y separar los puntos de entrada/salida de voz y conversación actuales.
+- [x] Implementar backend seguro para credenciales temporales de OpenAI (pendiente despliegue y configuración real).
+- [x] Integrar OpenAI Realtime mediante WebRTC en Android (pendiente prueba con credenciales reales).
+- [ ] Validar audio bidireccional, interrupciones, reconexión, sesiones largas y límites de cuenta en dispositivos y redes reales.
 - [ ] Integrar Gemini Live bajo el mismo contrato.
-- [ ] Validar cambio entre proveedores y fallback local.
+- [ ] Validar cambio entre proveedores y fallback local en uso real.
