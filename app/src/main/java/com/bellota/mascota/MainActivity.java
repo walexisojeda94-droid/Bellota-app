@@ -1048,7 +1048,6 @@ public class MainActivity extends Activity implements SensorEventListener {
             userInteracted(interactionKind, true);
         }
         if (eyes != null && !isAsleep()) eyes.reactToAttention();
-        if (petMemory != null) petMemory.remember("voz_usuario", spoken);
         if (VoiceCommandIntent.isBatteryQuery(utterance)) {
             BatteryManager battery = (BatteryManager) getSystemService(BATTERY_SERVICE);
             int level = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
