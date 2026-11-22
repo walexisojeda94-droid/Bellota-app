@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * Coordina proveedores online y solicita el respaldo local cuando todos fallan.
@@ -33,6 +35,8 @@ public final class VoiceProviderManager {
     private boolean sessionStarted;
     private final Map<String, ToolCallRoute> pendingToolCalls = new LinkedHashMap<>();
     private static final int MAX_PENDING_TOOL_CALLS = 64;
+    private static final int MAX_RETIRED_TOOL_CALL_IDS = 256;
+    private final Set<String> retiredToolCallIds = new LinkedHashSet<>();
 
     private static final class ToolCallRoute {
         final VoiceProvider provider;
@@ -64,7 +68,7 @@ public final class VoiceProviderManager {
                 sessionConfig = config;
                 nextProviderIndex = 0;
                 sessionStarted = true;
-                pendingToolCalls.clear();
+                retirePendingToolCallsLocked();
             }
             dispose(previous);
             connectNextProvider(null, null, currentGeneration());
@@ -142,6 +146,7 @@ public final class VoiceProviderManager {
         final ToolCallRoute route;
         synchronized (lock) {
             route = pendingToolCalls.remove(callId);
+            if (route != null) retireToolCallIdLocked(callId);
             if (route == null || !sessionStarted || route.generation != sessionGeneration
                     || route.provider != activeProvider) return;
         }
@@ -230,10 +235,12 @@ public final class VoiceProviderManager {
             @Override public void onToolCall(String callId, String name, String argumentsJson) {
                 if (callId == null || callId.trim().isEmpty() || name == null || name.trim().isEmpty()) return;
                 synchronized (lock) {
-                    if (!sessionStarted || sessionGeneration != generation || activeProvider != provider) return;
+                    if (!sessionStarted || sessionGeneration != generation || activeProvider != provider
+                            || retiredToolCallIds.contains(callId)) return;
                     if (pendingToolCalls.size() >= MAX_PENDING_TOOL_CALLS) {
                         String oldest = pendingToolCalls.keySet().iterator().next();
                         pendingToolCalls.remove(oldest);
+                        retireToolCallIdLocked(oldest);
                     }
                     pendingToolCalls.put(callId, new ToolCallRoute(provider, generation));
                 }
@@ -267,6 +274,20 @@ public final class VoiceProviderManager {
             safeNotifyState(VoiceProvider.State.RECONNECTING, safeProviderId(provider),
                     "El proveedor no pudo continuar; se evaluará el siguiente motor.");
             connectNextProvider(failure, detail == null ? "Fallo del proveedor." : detail, generation);
+        }
+    }
+
+    private void retirePendingToolCallsLocked() {
+        for (String callId : pendingToolCalls.keySet()) retireToolCallIdLocked(callId);
+        pendingToolCalls.clear();
+    }
+
+    private void retireToolCallIdLocked(String callId) {
+        if (callId == null || callId.isEmpty()) return;
+        retiredToolCallIds.add(callId);
+        while (retiredToolCallIds.size() > MAX_RETIRED_TOOL_CALL_IDS) {
+            String oldest = retiredToolCallIds.iterator().next();
+            retiredToolCallIds.remove(oldest);
         }
     }
 
