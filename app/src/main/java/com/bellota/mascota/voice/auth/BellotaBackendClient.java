@@ -159,7 +159,7 @@ public final class BellotaBackendClient {
                 response.optLong("session_max_duration_seconds", 2700L));
     }
 
-    private static List<IceServerConfig> parseIceServers(JSONArray servers) {
+    static List<IceServerConfig> parseIceServers(JSONArray servers) {
         if (servers == null || servers.length() == 0) return Collections.emptyList();
         List<IceServerConfig> parsed = new ArrayList<>();
         for (int i = 0; i < servers.length(); i++) {
