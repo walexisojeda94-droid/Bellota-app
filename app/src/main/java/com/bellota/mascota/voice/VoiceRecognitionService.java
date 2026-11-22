@@ -10,7 +10,6 @@ import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
 
-import com.bellota.mascota.R;
 
 /**
  * Mantiene el reconocimiento local mientras la interfaz está en segundo plano.
@@ -129,7 +128,7 @@ public class VoiceRecognitionService extends Service {
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
-        builder.setSmallIcon(R.drawable.ic_bellota)
+        builder.setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle(externalMicActive ? "Bellota en conversación online" : paused ? "Micrófono de Bellota en pausa" : "Bellota está escuchando")
                 .setContentText(externalMicActive ? "Micrófono activo para OpenAI Realtime." : paused ? "El reconocimiento local está temporalmente pausado."
                         : Build.VERSION.SDK_INT >= 31
