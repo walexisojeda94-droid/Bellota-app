@@ -79,6 +79,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private volatile Runnable iceDisconnectTimeout;
     private volatile Runnable sessionTimeout;
     private volatile Runnable offerFallbackTimeout;
+    private volatile Runnable retryTimeout;
     private volatile Listener listener;
     private volatile boolean connected;
     private volatile SessionConfig sessionConfig;
@@ -337,9 +338,11 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                 if (activeHttpConnection == connection) activeHttpConnection = null;
             }
         } catch (ProviderHttpException error) {
-            fail(error.failure, error.status == 429 || error.status >= 500, error.getMessage());
+            if (attempt == activeAttemptId)
+                fail(error.failure, error.status == 429 || error.status >= 500, error.getMessage());
         } catch (Exception error) {
-            fail(error instanceof IOException ? Failure.NETWORK : Failure.PROVIDER, true, safeMessage(error));
+            if (attempt == activeAttemptId)
+                fail(error instanceof IOException ? Failure.NETWORK : Failure.PROVIDER, true, safeMessage(error));
         }
     }
 
@@ -534,10 +537,13 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             long delay = failure == Failure.RATE_LIMIT ? 5000L : 1200L;
             mainHandler.removeCallbacks(negotiationTimeout);
             mainHandler.postDelayed(negotiationTimeout, 60000L);
-            mainHandler.postDelayed(() -> {
+            Runnable retry = () -> {
+                retryTimeout = null;
                 retryScheduled.set(false);
                 if (!closed.get()) executeWorker(() -> establishSession(sessionConfig));
-            }, delay);
+            };
+            retryTimeout = retry;
+            mainHandler.postDelayed(retry, delay);
             return;
         }
         if (!closed.compareAndSet(false, true)) return;
@@ -593,8 +599,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     }
 
     private void scheduleSessionTimeout() {
-        Runnable old = sessionTimeout;
-        if (old != null) mainHandler.removeCallbacks(old);
+        if (sessionTimeout != null) return;
         Runnable timeout = () -> {
             if (!closed.get()) fail(Failure.SESSION_EXPIRED, false,
                     "La sesión alcanzó su duración máxima y se cerrará para controlar el consumo.");
@@ -611,6 +616,10 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         Runnable offerTimeout = offerFallbackTimeout;
         if (offerTimeout != null) mainHandler.removeCallbacks(offerTimeout);
         offerFallbackTimeout = null;
+        Runnable retry = retryTimeout;
+        if (retry != null) mainHandler.removeCallbacks(retry);
+        retryTimeout = null;
+        retryScheduled.set(false);
         sessionTimeout = null;
     }
 
