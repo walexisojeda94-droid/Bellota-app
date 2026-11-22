@@ -62,8 +62,10 @@ public final class BellotaBackendClient {
         try {
             tokenStore.saveRefreshToken(refresh);
         } catch (Exception error) {
+            // Do not leave an unmanageable device registered if secure storage failed.
+            try { request("POST", "/v1/device/revoke", null, access); } catch (Exception ignored) { }
             throw new BackendException("secure_storage_error", 500,
-                    "No se pudo guardar la vinculación segura del dispositivo.");
+                    "No se pudo guardar la vinculación segura. El servidor intentó revocar el dispositivo.");
         }
         synchronized (authLock) {
             accessToken = access;
@@ -158,7 +160,18 @@ public final class BellotaBackendClient {
         }
     }
 
-    public void unpair() {
+    /** Revokes the device remotely first. Local credentials are retained if the server cannot confirm revocation. */
+    public void unpair() throws IOException, BackendException {
+        requireWorkerThread();
+        String token = getAccessToken();
+        try {
+            request("POST", "/v1/device/revoke", null, token);
+        } catch (BackendException unauthorized) {
+            if (unauthorized.httpStatus != 401) throw unauthorized;
+            refresh();
+            synchronized (authLock) { token = accessToken; }
+            request("POST", "/v1/device/revoke", null, token);
+        }
         synchronized (authLock) {
             accessToken = null;
             accessTokenExpiresAtMs = 0L;
