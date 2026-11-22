@@ -912,7 +912,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void pauseLocalRecognition() {
-        if (localRecognitionPaused) return;
+        if (localRecognitionPaused || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         localRecognitionPaused = true;
         VoiceRecognitionService.pause(this);
     }
