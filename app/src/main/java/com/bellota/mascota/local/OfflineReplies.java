@@ -38,14 +38,16 @@ public class OfflineReplies {
             return choose("Hola. Espero que esta vez compartamos un ratito.", "Buenas... estaba empezando a impacientarme.", "Acá estoy. Un poco fastidiada, pero te escucho.");
         }
 
-        if (text.contains("hola") || text.startsWith("buen dia") || text.startsWith("buenas tardes") || text.startsWith("buenas noches"))
+        if (text.equals("hola") || text.startsWith("hola ") || text.startsWith("buen dia")
+                || text.startsWith("buenas tardes") || text.startsWith("buenas noches"))
             return choose("¡Hola! Qué bueno escucharte.", "¡Buenas! Acá estoy.", "Hola, te estaba escuchando.");
-        if (text.contains("gracias")) return choose("¡De nada!", "No hay de qué.", "Me gusta poder ayudarte.");
-        if (text.contains("chau") || text.contains("adios") || text.contains("hasta luego"))
+        if (text.equals("gracias") || text.startsWith("gracias ")) return choose("¡De nada!", "No hay de qué.", "Me gusta poder ayudarte.");
+        if (text.equals("chau") || text.startsWith("chau ") || text.equals("adios")
+                || text.startsWith("adios ") || text.startsWith("hasta luego"))
             return choose("Hasta luego. Me quedo por acá.", "Nos vemos pronto.", "Que estés bien.");
-        if (text.contains("que haces") || text.contains("que estas haciendo"))
+        if (text.startsWith("que haces") || text.startsWith("que estas haciendo"))
             return choose("Estaba mirando alrededor y pensando en cosas.", "Acá ando, explorando un poquito.", "Me entretengo observando y moviendo los ojos.");
-        if (text.contains("quien sos") || text.contains("quien eres"))
+        if (text.startsWith("quien sos") || text.startsWith("quien eres"))
             return "Soy Bellota, tu compañera virtual. Estoy acá para conversar y descubrir cosas.";
         if (text.startsWith("me gusta") || text.startsWith("me encanta")) {
             return choose("¡Qué bueno! ¿Qué es lo que más te gusta de eso?", "Se nota que te interesa. Contame un poco más.");
@@ -70,30 +72,38 @@ public class OfflineReplies {
         return normalized.replaceAll("\\p{M}", "").replaceAll("[¿?¡!,.;]", " ").replaceAll("\\s+", " ").trim();
     }
     private boolean asksHowLongExists(String t) {
-        return (t.contains("exist") || t.contains("naciste") || t.contains("desde cuando estas") || t.contains("cuanto tiempo llevas"))
-                && (t.contains("cuanto") || t.contains("desde cuando") || t.contains("hace cuanto") || t.contains("tiempo"));
+        boolean asksDuration = t.startsWith("cuanto tiempo") || t.startsWith("desde cuando")
+                || t.startsWith("hace cuanto") || t.startsWith("cuanto hace");
+        boolean aboutExistence = t.contains("exist") || t.contains("naciste")
+                || t.startsWith("desde cuando estas") || t.startsWith("cuanto tiempo llevas");
+        return asksDuration && aboutExistence;
     }
     private boolean asksAge(String t) {
-        return t.contains("que edad") || t.contains("cuantos anos") || t.contains("cuantos anitos") ||
-                t.contains("edad tenes") || t.contains("anos tenes") || t.contains("anos cumpliste");
+        return t.startsWith("que edad") || t.startsWith("cuantos anos") || t.startsWith("cuantos anitos")
+                || t.startsWith("edad tenes") || t.startsWith("anos tenes") || t.startsWith("anos cumpliste");
     }
     private boolean asksTime(String t) {
-        return t.contains("que hora") || t.equals("hora") || t.contains("decime la hora") || t.contains("decir la hora");
+        return t.startsWith("que hora") || t.equals("hora")
+                || t.startsWith("decime la hora") || t.startsWith("decir la hora");
     }
     private boolean asksDate(String t) {
-        return t.contains("que dia") || t.contains("que fecha") || t.contains("fecha de hoy")
-                || t.contains("decime la fecha") || t.contains("decir la fecha")
-                || t.equals("fecha") || t.equals("la fecha") || t.equals("que fecha es hoy");
+        return t.startsWith("que dia") || t.startsWith("que fecha") || t.startsWith("fecha de hoy")
+                || t.startsWith("decime la fecha") || t.startsWith("decir la fecha")
+                || t.equals("fecha") || t.equals("la fecha");
     }
     private boolean asksName(String t) {
-        return t.contains("como te llamas") || t.contains("cual es tu nombre") || t.contains("tu nombre");
+        return t.startsWith("como te llamas") || t.startsWith("cual es tu nombre")
+                || t.equals("tu nombre") || t.startsWith("decime tu nombre");
     }
     private boolean asksWeather(String t) {
-        return t.contains("clima") || t.contains("temperatura") || t.contains("cuantos grados") ||
-                t.contains("que tiempo hace") || t.contains("como esta el tiempo");
+        return t.equals("clima") || t.startsWith("que clima") || t.startsWith("como esta el clima")
+                || t.startsWith("que temperatura") || t.startsWith("cuantos grados")
+                || t.startsWith("que tiempo hace") || t.startsWith("como esta el tiempo")
+                || t.startsWith("va a llover") || t.equals("llueve") || t.startsWith("esta lloviendo");
     }
     private boolean asksHowAreYou(String t) {
-        return t.contains("como estas") || t.contains("como andas") || t.contains("como te sentis") || t.contains("como te encuentras");
+        return t.startsWith("como estas") || t.startsWith("como andas")
+                || t.startsWith("como te sentis") || t.startsWith("como te encuentras");
     }
     private String moodReply(String mood) {
         String state = mood == null ? "NEUTRAL" : mood.toUpperCase(Locale.ROOT);
