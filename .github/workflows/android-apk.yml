@@ -1,7 +1,9 @@
 name: Build Bellota APK
 on:
   push:
-    branches: [main, 'fix/xiaozhi-voice-pipeline']
+    branches: [main, 'fix/xiaozhi-voice-pipeline', 'hardening/**']
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 env:
   ANDROID_HOME: /usr/local/lib/android/sdk
