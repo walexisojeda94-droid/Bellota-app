@@ -10,12 +10,12 @@
 
 ## Límites de sesión
 
-- Duración máxima local: 45 minutos. OpenAI documenta una duración máxima de 60 minutos para sesiones Realtime.
+- Duración máxima: 45 minutos, fijada también en `session.expires_at` para que OpenAI aplique el vencimiento del lado servidor. Android programa el cierre unos segundos antes. OpenAI documenta un máximo general de 60 minutos para sesiones Realtime.
 - Máximo de salida configurado: 1.024 tokens por respuesta.
 - Tope acumulado local: 24.000 tokens reportados por los eventos `response.done`.
 - Truncamiento automático del contexto.
 
-El tope acumulado y la duración son protecciones del cliente. No sustituyen los límites de gasto, alertas de facturación ni cuotas de la cuenta OpenAI. Si la aplicación se modifica o no recibe datos de uso, el tope local no constituye una garantía contable.
+El tope acumulado es una protección del cliente. La duración tiene además vencimiento del lado servidor. Ninguno sustituye los límites de gasto, alertas de facturación ni cuotas de la cuenta OpenAI. Si la aplicación se modifica o no recibe datos de uso, el tope local no constituye una garantía contable.
 
 ## Recuperación y liberación
 
