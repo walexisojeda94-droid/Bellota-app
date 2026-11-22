@@ -3,6 +3,8 @@ const ACCESS_TTL_SECONDS = 900;
 const REFRESH_TTL_DAYS = 90;
 const PAIRING_TTL_SECONDS = 600;
 const OPENAI_MODEL = "gpt-realtime-2.1";
+const REALTIME_MAX_OUTPUT_TOKENS = 1024;
+const TURN_CREDENTIAL_TTL_SECONDS = 3600;
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
@@ -184,6 +186,25 @@ async function revokeDevice(request, env) {
   return json({ ok: true, revoked: true });
 }
 
+async function createTurnIceServers(env) {
+  // TURN keys remain server-side. Only short-lived credentials reach the Android client.
+  if (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN) return [];
+  const endpoint = "https://rtc.live.cloudflare.com/v1/turn/keys/" +
+    encodeURIComponent(env.TURN_KEY_ID) + "/credentials/generate-ice-servers";
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer " + env.TURN_KEY_API_TOKEN,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ ttl: TURN_CREDENTIAL_TTL_SECONDS })
+  });
+  if (!response.ok) throw new Error("Cloudflare TURN HTTP " + response.status);
+  const data = await response.json();
+  if (!Array.isArray(data.iceServers) || data.iceServers.length === 0)
+    throw new Error("Cloudflare TURN devolvió una lista ICE vacía.");
+  return data.iceServers;
+}
 async function createRealtimeSecret(request, env) {
   if (!env.OPENAI_API_KEY) return fail("provider_not_configured", 503, "OpenAI todavía no está configurado en el backend.");
   const deviceId = await authenticatedDevice(request, env);
@@ -199,7 +220,9 @@ async function createRealtimeSecret(request, env) {
     audio: {
       input: { turn_detection: { type: "server_vad" } },
       output: { voice }
-    }
+    },
+    max_output_tokens: REALTIME_MAX_OUTPUT_TOKENS,
+    truncation: "auto"
   };
   const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",
@@ -214,8 +237,21 @@ async function createRealtimeSecret(request, env) {
     if (status === 402) return fail("provider_quota", 402, "La cuenta de OpenAI no tiene crédito o cuota disponible.");
     return fail("provider_error", 502, "OpenAI no pudo crear la credencial temporal.");
   }
+  let iceServers = [];
+  try {
+    iceServers = await createTurnIceServers(env);
+  } catch (error) {
+    return fail("turn_unavailable", 503, "No se pudieron preparar los servidores TURN. Reintentá en unos segundos.");
+  }
   await env.DB.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").bind(Math.floor(Date.now() / 1000), deviceId).run();
-  return json({ value: data.value, expires_at: data.expires_at, model: OPENAI_MODEL });
+  return json({
+    value: data.value,
+    expires_at: data.expires_at,
+    model: OPENAI_MODEL,
+    max_output_tokens: REALTIME_MAX_OUTPUT_TOKENS,
+    session_max_duration_seconds: 2700,
+    ice_servers: iceServers
+  });
 }
 
 export default {
