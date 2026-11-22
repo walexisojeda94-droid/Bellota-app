@@ -3,6 +3,10 @@ on:
   push:
     branches: [main, 'fix/xiaozhi-voice-pipeline']
   workflow_dispatch:
+concurrency:
+  group: bellota-android-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   ANDROID_HOME: /usr/local/lib/android/sdk
 jobs:
