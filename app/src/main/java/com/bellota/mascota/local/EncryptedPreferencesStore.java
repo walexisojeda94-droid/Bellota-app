@@ -101,14 +101,15 @@ public final class EncryptedPreferencesStore implements ConversationMemory.Store
                 preferences.edit()
                         .putString(key, PREFIX + Base64.encodeToString(payload, Base64.NO_WRAP))
                         .apply();
-                return;
+                return true;
             } catch (GeneralSecurityException invalidatedKey) {
                 resetAllMemory();
-                if (attempt == 1) return;
+                if (attempt == 1) return false;
             } catch (Exception storageFailure) {
-                return;
+                return false;
             }
         }
+        return false;
     }
 
     private SecretKey getOrCreateKey() throws Exception {
