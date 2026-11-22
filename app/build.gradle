@@ -9,6 +9,10 @@ def signingKeyPassword = System.getenv('BELLOTA_KEY_PASSWORD')
 def hasReleaseSigning = signingStoreFile && signingStorePassword && signingKeyAlias && signingKeyPassword
 
 android {
+    buildFeatures {
+        buildConfig true
+    }
+
     namespace 'com.bellota.mascota'
     compileSdk 35
 
