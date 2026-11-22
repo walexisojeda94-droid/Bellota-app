@@ -75,6 +75,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (VoiceRecognitionService.ACTION_RECOGNIZED.equals(intent.getAction())) {
                 if (value != null && !value.trim().isEmpty()) handleVoiceCommand(value);
             } else if (VoiceRecognitionService.ACTION_STATUS.equals(intent.getAction())) handleVoiceStatus(value);
+            else if (VoiceRecognitionService.ACTION_STOPPED.equals(intent.getAction())) disconnectOnlineVoice(false);
         }
     };
     private boolean soundEnabled = true;
@@ -895,6 +896,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         IntentFilter filter = new IntentFilter();
         filter.addAction(VoiceRecognitionService.ACTION_RECOGNIZED);
         filter.addAction(VoiceRecognitionService.ACTION_STATUS);
+        filter.addAction(VoiceRecognitionService.ACTION_STOPPED);
         if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(voiceEventsReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         else registerReceiver(voiceEventsReceiver, filter);
         voiceReceiverRegistered = true;
