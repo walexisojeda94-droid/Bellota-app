@@ -215,6 +215,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                     mainHandler.removeCallbacks(negotiationTimeout);
                     cancelIceDisconnectTimeout();
                     scheduleSessionTimeout();
+                    if (closed.get()) return;
                     notifyState(State.CONNECTED, "OpenAI Realtime conectado por WebRTC.");
                 } else if (state == PeerConnection.IceConnectionState.DISCONNECTED) {
                     connected = false;
