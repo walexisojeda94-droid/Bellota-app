@@ -208,7 +208,7 @@ async function createTurnIceServers(env) {
   const filtered = data.iceServers.map((server) => {
     if (!server || !server.urls) return null;
     const sourceUrls = Array.isArray(server.urls) ? server.urls : [server.urls];
-    const urls = sourceUrls.filter((url) => typeof url === "string" && !/:53(?:\\?|\\/|$)/.test(url));
+    const urls = sourceUrls.filter((url) => typeof url === "string" && !/:53(?:\?|\/|$)/.test(url));
     if (urls.length === 0) return null;
     const result = { urls };
     if (typeof server.username === "string" && server.username) result.username = server.username;
