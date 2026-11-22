@@ -77,3 +77,15 @@ La versión se considera estable cuando compila, se instala y supera pruebas pro
 - [ ] Validar audio bidireccional, interrupciones, reconexión, sesiones largas y límites de cuenta en dispositivos y redes reales.
 - [ ] Integrar Gemini Live bajo el mismo contrato.
 - [ ] Validar cambio entre proveedores y fallback local en uso real.
+
+
+## Etapa 9. Memoria, conversación y herramientas
+
+- [x] Compartir la memoria semántica persistente entre conversación local y OpenAI Realtime.
+- [x] Incorporar el resumen de memoria, preguntas pendientes y continuidad tras pausas al iniciar una sesión online.
+- [x] Activar transcripción auxiliar de idioma automático para registrar turnos online.
+- [x] Deduplicar transcripciones finales y persistir los dos lados de la conversación en el diario cifrado.
+- [x] Asociar llamadas de herramientas a la sesión y proveedor de origen; invalidar resultados tardíos.
+- [x] Serializar acciones y agrupar resultados de varias herramientas antes de reanudar el modelo.
+- [x] Endurecer la interpretación de órdenes y preguntas para evitar falsos positivos.
+- [ ] Validar memoria y herramientas durante conversaciones largas con OpenAI Realtime y en el Samsung Galaxy J7.
