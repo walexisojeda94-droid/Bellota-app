@@ -64,6 +64,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private final SecureTokenStore tokenStore;
     private volatile ExecutorService worker = newWorker();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Object resourceLock = new Object();
     private final AtomicBoolean closed = new AtomicBoolean(true);
     private final AtomicBoolean offerSubmitted = new AtomicBoolean(false);
     private final AtomicInteger retryCount = new AtomicInteger(0);
@@ -135,9 +136,15 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             maxOutputTokens = Math.max(1, Math.min(4096, credential.maxOutputTokens));
             sessionMaxDurationMs = Math.max(60000L, Math.min(RealtimeSessionBudget.MAX_DURATION_SECONDS * 1000L, credential.sessionMaxDurationSeconds * 1000L));
             notifyState(State.CONNECTING, "Preparando conexión WebRTC.");
-            initializeWebRtc();
-            createPeerConnection(attempt);
-            createAudioAndDataTracks(attempt);
+            synchronized (resourceLock) {
+                if (closed.get() || attempt != activeAttemptId) return;
+                initializeWebRtc();
+                if (closed.get() || attempt != activeAttemptId) return;
+                createPeerConnection(attempt);
+                if (closed.get() || attempt != activeAttemptId) return;
+                createAudioAndDataTracks(attempt);
+            }
+            if (closed.get() || attempt != activeAttemptId) return;
             // Set the ephemeral secret before SDP gathering can complete asynchronously.
             exchangeSecret = credential.value;
             createOffer(attempt);
@@ -256,6 +263,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     }
 
     private void createOffer(final long attempt) {
+        if (closed.get() || attempt != activeAttemptId) return;
         final PeerConnection currentPeer = peerConnection;
         if (currentPeer == null) { fail(Failure.NETWORK, true, "No hay PeerConnection para crear la oferta SDP."); return; }
         currentPeer.createOffer(new SdpObserver() {
@@ -493,12 +501,17 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         cancelPendingCallbacks();
         HttpURLConnection connection = activeHttpConnection;
         if (connection != null) connection.disconnect();
-        releaseResources();
-        notifyState(State.CLOSED, "Sesión WebRTC cerrada.");
+        Thread cleanup = new Thread(() -> {
+            releaseResources();
+            notifyState(State.CLOSED, "Sesión WebRTC cerrada.");
+        }, "Bellota-WebRTC-Cleanup");
+        cleanup.setDaemon(true);
+        cleanup.start();
         shutdownWorker();
     }
 
-    private synchronized void releaseResources() {
+    private void releaseResources() {
+        synchronized (resourceLock) {
         exchangeSecret = null;
         try { if (dataChannel != null) { dataChannel.unregisterObserver(); dataChannel.close(); dataChannel.dispose(); } }
         catch (RuntimeException ignored) { }
@@ -521,6 +534,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             } catch (RuntimeException ignored) { }
         }
         audioModeChanged = false;
+        }
     }
 
     private synchronized void fail(Failure failure, boolean recoverable, String detail) {
