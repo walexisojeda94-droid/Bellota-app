@@ -54,6 +54,19 @@ jobs:
             app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: ignore
           retention-days: 14
+      - name: Build API 24 smoke-test APK
+        run: ./gradlew --no-daemon :app:assembleDebug
+      - name: Smoke test on Android 7 (API 24)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 24
+          arch: x86
+          profile: Nexus 5
+          script: |
+            adb install app/build/outputs/apk/debug/app-debug.apk
+            adb shell am start -n com.bellota.mascota/.MainActivity
+            sleep 10
+            adb shell pidof com.bellota.mascota
       - name: Build signed release APK
         if: steps.signing.outputs.enabled == 'true'
         env:
