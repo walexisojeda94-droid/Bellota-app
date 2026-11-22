@@ -36,6 +36,9 @@ public class SecureStorageInstrumentedTest {
         String token = "bellota-test-" + UUID.randomUUID().toString().replace("-", "") + "-refresh-token";
         store.saveRefreshToken(token);
         assertEquals(token, store.readRefreshToken());
+        String encrypted = context().getSharedPreferences("bellota_secure_auth", Context.MODE_PRIVATE)
+                .getString("refresh_token", null);
+        assertTrue(encrypted != null && !encrypted.contains(token));
         assertTrue(store.clear());
         assertFalse(store.hasRefreshToken());
     }
