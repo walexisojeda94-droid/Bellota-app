@@ -34,6 +34,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -118,6 +119,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         offerSubmitted.set(false);
         retryCount.set(0);
         retryScheduled.set(false);
+        synchronized (completedUserTranscriptItems) { completedUserTranscriptItems.clear(); }
         sessionBudget.reset();
         mainHandler.removeCallbacks(negotiationTimeout);
         mainHandler.postDelayed(negotiationTimeout, 60000L);
@@ -432,7 +434,9 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                     break;
                 case "input_audio_transcription.completed":
                 case "conversation.item.input_audio_transcription.completed":
-                    notifyUserTranscript(event.optString("transcript", ""), true);
+                    String itemId = event.optString("item_id", "");
+                    if (markUserTranscriptCompleted(itemId))
+                        notifyUserTranscript(event.optString("transcript", ""), true);
                     break;
                 case "response.output_audio_transcript.delta":
                 case "response.output_text.delta":
@@ -470,6 +474,18 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             }
         } catch (JSONException ignored) {
             // Ignore malformed or unknown provider events without breaking the media session.
+        }
+    }
+
+    private boolean markUserTranscriptCompleted(String itemId) {
+        if (itemId == null || itemId.trim().isEmpty()) return true;
+        synchronized (completedUserTranscriptItems) {
+            if (!completedUserTranscriptItems.add(itemId)) return false;
+            while (completedUserTranscriptItems.size() > 128) {
+                String oldest = completedUserTranscriptItems.iterator().next();
+                completedUserTranscriptItems.remove(oldest);
+            }
+            return true;
         }
     }
 
