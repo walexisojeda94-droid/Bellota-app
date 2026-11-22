@@ -1143,7 +1143,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         cancelActivities();
 
-        if (wasOnlineVoiceActive && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
             VoiceRecognitionService.resume(this);
 
         if (eyes != null) eyes.pauseAnimation();
