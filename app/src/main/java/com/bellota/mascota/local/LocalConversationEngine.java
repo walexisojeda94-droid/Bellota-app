@@ -253,11 +253,20 @@ public final class LocalConversationEngine {
     }
 
     private static boolean isNo(Utterance u) {
-        return u.hasWord("no") || u.hasWord("nunca") || u.hasPhrase("para nada") || u.hasPhrase("ya no");
+        String text = u == null ? "" : u.text;
+        return text.equals("no") || text.equals("no gracias") || text.equals("nunca")
+                || text.equals("para nada") || text.equals("ya no")
+                || text.startsWith("no me gusta") || text.startsWith("no me encanta")
+                || text.startsWith("no me siguen gustando") || text.startsWith("no me sigue gustando")
+                || text.startsWith("no ya no") || text.startsWith("no no me gusta")
+                || text.startsWith("no no me encanta");
     }
 
     private static boolean isYes(Utterance u) {
-        return u.hasWord("si") || u.hasWord("dale") || u.hasWord("obvio") || u.hasWord("claro")
-                || u.hasWord("siempre") || u.hasWord("mucho") || u.hasPhrase("por supuesto");
+        String text = u == null ? "" : u.text;
+        return text.equals("si") || text.equals("si claro") || text.equals("dale")
+                || text.equals("obvio") || text.equals("obvio que si") || text.equals("claro")
+                || text.equals("siempre") || text.equals("mucho") || text.equals("por supuesto")
+                || text.startsWith("si me sigue gustando") || text.startsWith("si todavia me gusta");
     }
 }
