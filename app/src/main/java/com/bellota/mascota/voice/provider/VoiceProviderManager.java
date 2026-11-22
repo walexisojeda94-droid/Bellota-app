@@ -2,7 +2,9 @@ package com.bellota.mascota.voice.provider;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Coordina proveedores online y solicita el respaldo local cuando todos fallan.
@@ -29,6 +31,17 @@ public final class VoiceProviderManager {
     private int nextProviderIndex;
     private long sessionGeneration;
     private boolean sessionStarted;
+    private final Map<String, ToolCallRoute> pendingToolCalls = new LinkedHashMap<>();
+    private static final int MAX_PENDING_TOOL_CALLS = 64;
+
+    private static final class ToolCallRoute {
+        final VoiceProvider provider;
+        final long generation;
+        ToolCallRoute(VoiceProvider provider, long generation) {
+            this.provider = provider;
+            this.generation = generation;
+        }
+    }
 
     public VoiceProviderManager(VoiceProvider primary, VoiceProvider secondary, Listener listener) {
         if (primary == null) throw new IllegalArgumentException("Se requiere un proveedor principal.");
@@ -51,6 +64,7 @@ public final class VoiceProviderManager {
                 sessionConfig = config;
                 nextProviderIndex = 0;
                 sessionStarted = true;
+                pendingToolCalls.clear();
             }
             dispose(previous);
             connectNextProvider(null, null, currentGeneration());
@@ -72,6 +86,7 @@ public final class VoiceProviderManager {
                 sessionStarted = false;
                 old = activeProvider;
                 activeProvider = null;
+                pendingToolCalls.clear();
             }
             dispose(old);
             safeNotifyState(VoiceProvider.State.CLOSED,
@@ -112,10 +127,25 @@ public final class VoiceProviderManager {
         if (current != null) safely(() -> current.sendText(text));
     }
 
+    /** True only while the originating provider session still owns this tool call. */
+    public boolean isToolCallCurrent(String callId) {
+        if (callId == null || callId.trim().isEmpty()) return false;
+        synchronized (lock) {
+            ToolCallRoute route = pendingToolCalls.get(callId);
+            return route != null && sessionStarted && route.generation == sessionGeneration
+                    && route.provider == activeProvider;
+        }
+    }
+
     public void sendToolResult(String callId, String result, boolean isError) {
         if (callId == null || callId.trim().isEmpty()) return;
-        VoiceProvider current = activeSnapshot();
-        if (current != null) safely(() -> current.sendToolResult(callId, result, isError));
+        final ToolCallRoute route;
+        synchronized (lock) {
+            route = pendingToolCalls.remove(callId);
+            if (route == null || !sessionStarted || route.generation != sessionGeneration
+                    || route.provider != activeProvider) return;
+        }
+        safely(() -> route.provider.sendToolResult(callId, result, isError));
     }
 
     public void interrupt() {
@@ -198,8 +228,19 @@ public final class VoiceProviderManager {
                     safely(() -> { if (listener != null) listener.onAssistantSpeaking(speaking); });
             }
             @Override public void onToolCall(String callId, String name, String argumentsJson) {
-                if (isCurrent(provider, generation))
-                    safely(() -> { if (listener != null) listener.onToolCall(callId, name, argumentsJson); });
+                if (callId == null || callId.trim().isEmpty() || name == null || name.trim().isEmpty()) return;
+                synchronized (lock) {
+                    if (!sessionStarted || sessionGeneration != generation || activeProvider != provider) return;
+                    if (pendingToolCalls.size() >= MAX_PENDING_TOOL_CALLS) {
+                        String oldest = pendingToolCalls.keySet().iterator().next();
+                        pendingToolCalls.remove(oldest);
+                    }
+                    pendingToolCalls.put(callId, new ToolCallRoute(provider, generation));
+                }
+                safely(() -> {
+                    if (listener != null && isCurrent(provider, generation))
+                        listener.onToolCall(callId, name, argumentsJson);
+                });
             }
             @Override public void onError(VoiceProvider.Failure failure, boolean recoverable, String detail) {
                 handleProviderFailure(provider, generation,
@@ -220,6 +261,7 @@ public final class VoiceProviderManager {
             synchronized (lock) {
                 if (!sessionStarted || sessionGeneration != generation || activeProvider != provider) return;
                 activeProvider = null;
+                pendingToolCalls.clear();
             }
             dispose(provider);
             safeNotifyState(VoiceProvider.State.RECONNECTING, safeProviderId(provider),
