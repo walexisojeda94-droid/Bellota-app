@@ -501,13 +501,19 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         cancelPendingCallbacks();
         HttpURLConnection connection = activeHttpConnection;
         if (connection != null) connection.disconnect();
+        releaseResourcesAsync(() -> notifyState(State.CLOSED, "Sesión WebRTC cerrada."));
+        shutdownWorker();
+    }
+
+    private void releaseResourcesAsync(Runnable completion) {
         Thread cleanup = new Thread(() -> {
             releaseResources();
-            notifyState(State.CLOSED, "Sesión WebRTC cerrada.");
+            if (completion != null) {
+                try { completion.run(); } catch (RuntimeException ignored) { }
+            }
         }, "Bellota-WebRTC-Cleanup");
         cleanup.setDaemon(true);
         cleanup.start();
-        shutdownWorker();
     }
 
     private void releaseResources() {
@@ -545,19 +551,21 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             cancelIceDisconnectTimeout();
             HttpURLConnection connection = activeHttpConnection;
             if (connection != null) connection.disconnect();
-            releaseResources();
             offerSubmitted.set(false);
             notifyState(State.RECONNECTING, "Fallo transitorio. Se realizará un único intento de recuperación.");
             long delay = failure == Failure.RATE_LIMIT ? 5000L : 1200L;
             mainHandler.removeCallbacks(negotiationTimeout);
             mainHandler.postDelayed(negotiationTimeout, 60000L);
-            Runnable retry = () -> {
-                retryTimeout = null;
-                retryScheduled.set(false);
-                if (!closed.get()) executeWorker(() -> establishSession(sessionConfig));
-            };
-            retryTimeout = retry;
-            mainHandler.postDelayed(retry, delay);
+            releaseResourcesAsync(() -> {
+                if (closed.get()) return;
+                Runnable retry = () -> {
+                    retryTimeout = null;
+                    retryScheduled.set(false);
+                    if (!closed.get()) executeWorker(() -> establishSession(sessionConfig));
+                };
+                retryTimeout = retry;
+                mainHandler.postDelayed(retry, delay);
+            });
             return;
         }
         if (!closed.compareAndSet(false, true)) return;
@@ -565,12 +573,14 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         cancelPendingCallbacks();
         HttpURLConnection connection = activeHttpConnection;
         if (connection != null) connection.disconnect();
-        releaseResources();
+        releaseResourcesAsync(() -> {
+            notifyState(State.CLOSED, "Sesión WebRTC cerrada.");
+            Listener current = listener;
+            if (current != null) {
+                try { current.onError(failure, recoverable, detail); } catch (RuntimeException ignored) { }
+            }
+        });
         shutdownWorker();
-        Listener current = listener;
-        if (current != null) {
-            try { current.onError(failure, recoverable, detail); } catch (RuntimeException ignored) { }
-        }
     }
 
     private static ExecutorService newWorker() {
