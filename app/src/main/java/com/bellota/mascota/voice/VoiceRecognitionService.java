@@ -25,6 +25,7 @@ public class VoiceRecognitionService extends Service {
     public static final String EXTRA_ACTIVE = "active";
     public static final String ACTION_RECOGNIZED = "com.bellota.mascota.voice.RECOGNIZED";
     public static final String ACTION_STATUS = "com.bellota.mascota.voice.STATUS";
+    public static final String ACTION_STOPPED = "com.bellota.mascota.voice.STOPPED";
     public static final String EXTRA_TEXT = "text";
     private static final String CHANNEL_ID = "bellota_microphone";
     private static final int NOTIFICATION_ID = 2401;
@@ -76,6 +77,9 @@ public class VoiceRecognitionService extends Service {
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? ACTION_START : intent.getAction();
         if (ACTION_STOP.equals(action)) {
+            Intent stopped = new Intent(ACTION_STOPPED);
+            stopped.setPackage(getPackageName());
+            sendBroadcast(stopped);
             stopRecognition();
             stopForeground(true);
             foregroundStarted = false;
