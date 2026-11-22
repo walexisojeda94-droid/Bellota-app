@@ -52,15 +52,17 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
-            echo "Faltan secretos de firma permanente de Bellota en GitHub Actions."
-            exit 1
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/bellota-release.jks"
+            echo "BELLOTA_KEYSTORE_FILE=$RUNNER_TEMP/bellota-release.jks" >> "$GITHUB_ENV"
+            echo "BELLOTA_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "BELLOTA_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "BELLOTA_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "No hay secretos de firma disponibles en este evento. Se compilará APK debug para validar el código."
           fi
-          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/bellota-release.jks"
-          echo "BELLOTA_KEYSTORE_FILE=$RUNNER_TEMP/bellota-release.jks" >> "$GITHUB_ENV"
-          echo "BELLOTA_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
-          echo "BELLOTA_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
-          echo "BELLOTA_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
       - name: Run JVM unit tests
         run: gradle --no-daemon :app:testDebugUnitTest
@@ -69,11 +71,24 @@ jobs:
         run: gradle --no-daemon :app:lintDebug
 
       - name: Build signed release APK
+        if: steps.signing.outputs.enabled == 'true'
         run: gradle --no-daemon :app:assembleRelease
 
-      - name: Verify APK signature
+      - name: Build debug APK when signing secrets are unavailable
+        if: steps.signing.outputs.enabled != 'true'
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Verify release APK signature
+        if: steps.signing.outputs.enabled == 'true'
         run: |
           APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+
+      - name: Verify debug APK signature
+        if: steps.signing.outputs.enabled != 'true'
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
 
@@ -89,9 +104,19 @@ jobs:
           retention-days: 14
 
       - name: Upload signed release APK
+        if: steps.signing.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: bellota-release-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload debug APK
+        if: steps.signing.outputs.enabled != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bellota-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
