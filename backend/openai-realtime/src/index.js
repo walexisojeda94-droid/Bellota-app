@@ -188,7 +188,8 @@ async function revokeDevice(request, env) {
 
 async function createTurnIceServers(env) {
   // TURN keys remain server-side. Only short-lived credentials reach the Android client.
-  if (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN) return [];
+  if (!env.TURN_KEY_ID && !env.TURN_KEY_API_TOKEN) return [];
+  if (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN) throw new Error("TURN está configurado de forma incompleta.");
   const endpoint = "https://rtc.live.cloudflare.com/v1/turn/keys/" +
     encodeURIComponent(env.TURN_KEY_ID) + "/credentials/generate-ice-servers";
   const response = await fetch(endpoint, {
