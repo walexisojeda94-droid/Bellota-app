@@ -131,7 +131,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             BellotaBackendClient backend = new BellotaBackendClient(backendUrl, tokenStore);
             BellotaBackendClient.RealtimeCredential credential =
                     backend.createRealtimeClientSecret(config.instructions, config.voice);
-            if (closed.get()) return;
+            if (closed.get() || attempt != activeAttemptId) return;
             configuredIceServers = credential.iceServers == null ? Collections.emptyList() : credential.iceServers;
             maxOutputTokens = Math.max(1, Math.min(4096, credential.maxOutputTokens));
             sessionMaxDurationMs = Math.max(60000L, Math.min(RealtimeSessionBudget.MAX_DURATION_SECONDS * 1000L, credential.sessionMaxDurationSeconds * 1000L));
@@ -551,6 +551,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         if (closed.get() || retryScheduled.get()) return;
         if (recoverable && retryCount.getAndIncrement() < MAX_RECOVERY_ATTEMPTS) {
             retryScheduled.set(true);
+            activeAttemptId = attemptSequence.incrementAndGet();
             connected = false;
             cancelIceDisconnectTimeout();
             HttpURLConnection connection = activeHttpConnection;
