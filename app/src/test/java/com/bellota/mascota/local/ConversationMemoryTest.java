@@ -47,6 +47,52 @@ public class ConversationMemoryTest {
         assertFalse(LocalConversationEngine.hasNegatedLikePrefix("Sí, claro"));
     }
 
+    @Test public void onlineMessagesUpdateTheSamePersistentMemoryAsLocalMessages() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        LocalConversationEngine engine = new LocalConversationEngine(memory);
+
+        engine.rememberOnlineMessage("Me llamo Alexis");
+        engine.rememberOnlineMessage("Me gusta el mate");
+        engine.rememberOnlineMessage("Llamame Ale");
+
+        assertEquals("Alexis", memory.name());
+        assertEquals(1, memory.likes().size());
+        assertEquals("mate", memory.likes().get(0));
+        assertEquals("Ale", memory.nicknames().get(0));
+        assertTrue(engine.memoryContextForOnline().contains("nombre: Alexis"));
+        assertTrue(engine.memoryContextForOnline().contains("gustos: mate"));
+    }
+
+    @Test public void onlineNegativePreferenceDoesNotGetStoredAsALike() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        LocalConversationEngine engine = new LocalConversationEngine(memory);
+        engine.rememberOnlineMessage("No me gusta el ananá");
+        assertTrue(memory.likes().isEmpty());
+    }
+
+    @Test public void onlineNegativePreferenceRemovesAnExistingLike() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        memory.addLike("el ananá");
+        LocalConversationEngine engine = new LocalConversationEngine(memory);
+        engine.rememberOnlineMessage("No me gusta el ananá");
+        assertTrue(memory.likes().isEmpty());
+    }
+
+    @Test public void onlineYesNoAnswerResolvesTheSamePendingQuestion() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        memory.addLike("el mate");
+        memory.expect("like:el mate", System.currentTimeMillis());
+        LocalConversationEngine engine = new LocalConversationEngine(memory);
+        engine.rememberOnlineMessage("No");
+        assertTrue(memory.likes().isEmpty());
+        assertNull(memory.expecting(System.currentTimeMillis()));
+    }
+
+    @Test public void onlineMemoryContextIsEmptyWhenThereAreNoKnownFacts() {
+        LocalConversationEngine engine = new LocalConversationEngine(ConversationMemory.inMemory());
+        assertEquals("", engine.memoryContextForOnline());
+    }
+
     @Test public void expectedAnswerExpiresAfterThreeMinutes() {
         ConversationMemory memory = ConversationMemory.inMemory();
         memory.expect("like:Pokémon", 10_000L);
