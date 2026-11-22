@@ -44,6 +44,40 @@ public class VoiceProviderManagerTest {
         assertFalse(manager.isConnected());
     }
 
+    @Test public void toolResultReturnsOnlyToItsOriginatingSession() {
+        FakeProvider primary = new FakeProvider("openai");
+        VoiceProviderManager manager = new VoiceProviderManager(primary, null, new RecordingListener());
+        manager.connect(config());
+        primary.requestToolCall("tool-1");
+        assertTrue(manager.isToolCallCurrent("tool-1"));
+        manager.sendToolResult("tool-1", "resultado", false);
+        assertEquals(1, primary.toolResultCount);
+        assertEquals("tool-1", primary.lastToolCallId);
+    }
+
+    @Test public void oldToolCallIsInvalidatedWhenSessionChanges() {
+        FakeProvider primary = new FakeProvider("openai");
+        VoiceProviderManager manager = new VoiceProviderManager(primary, null, new RecordingListener());
+        manager.connect(config());
+        primary.requestToolCall("old-tool");
+        assertTrue(manager.isToolCallCurrent("old-tool"));
+        manager.connect(config());
+        assertFalse(manager.isToolCallCurrent("old-tool"));
+        manager.sendToolResult("old-tool", "late result", false);
+        assertEquals(0, primary.toolResultCount);
+    }
+
+    @Test public void pendingToolCallIsInvalidatedOnDisconnect() {
+        FakeProvider primary = new FakeProvider("openai");
+        VoiceProviderManager manager = new VoiceProviderManager(primary, null, new RecordingListener());
+        manager.connect(config());
+        primary.requestToolCall("tool-disconnect");
+        manager.disconnect();
+        assertFalse(manager.isToolCallCurrent("tool-disconnect"));
+        manager.sendToolResult("tool-disconnect", "late result", false);
+        assertEquals(0, primary.toolResultCount);
+    }
+
     @Test public void invalidPcmRangeIsRejectedBeforeSending() {
         FakeProvider primary = new FakeProvider("openai");
         VoiceProviderManager manager = new VoiceProviderManager(primary, null, new RecordingListener());
@@ -107,6 +141,8 @@ public class VoiceProviderManagerTest {
         int connectCount;
         int disconnectCount;
         int audioSendCount;
+        int toolResultCount;
+        String lastToolCallId;
         boolean connected;
         boolean throwOnDisconnect;
         FakeProvider(String id) { this.id = id; }
@@ -124,7 +160,13 @@ public class VoiceProviderManagerTest {
         @Override public void sendAudio(byte[] pcm16, int offset, int length) { audioSendCount++; }
         @Override public void finishAudioInput() { }
         @Override public void sendText(String text) { }
-        @Override public void sendToolResult(String callId, String result, boolean isError) { }
+        void requestToolCall(String callId) {
+            if (listener != null) listener.onToolCall(callId, "test_tool", "{}");
+        }
+        @Override public void sendToolResult(String callId, String result, boolean isError) {
+            toolResultCount++;
+            lastToolCallId = callId;
+        }
         @Override public void interrupt() { }
         @Override public void disconnect() {
             disconnectCount++;
