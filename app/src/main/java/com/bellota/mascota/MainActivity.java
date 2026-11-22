@@ -198,12 +198,43 @@ public class MainActivity extends Activity implements SensorEventListener {
 
             primary.setOnClickListener(v -> {
                 if (paired) {
-                    if (onlineVoiceManager != null) disconnectOnlineVoice(true);
-                    new Thread(tokenStore::clear, "Bellota-Unpair").start();
-                    status.setText("Vinculación local eliminada. Para revocar el dispositivo en el servidor se requiere la función de revocación del backend.");
-                    status.setTextColor(0xFFFFD18A);
+                    if (onlineVoiceManager != null || onlineVoiceConnecting) disconnectOnlineVoice(true);
                     primary.setEnabled(false);
                     online.setEnabled(false);
+                    status.setText("Revocando este dispositivo en el servidor...");
+                    status.setTextColor(0xFF9ED8C8);
+                    new Thread(() -> {
+                        String message;
+                        boolean success = false;
+                        try {
+                            com.bellota.mascota.voice.auth.BellotaBackendClient client =
+                                    new com.bellota.mascota.voice.auth.BellotaBackendClient(backendUrl, tokenStore);
+                            client.unpair();
+                            message = "Dispositivo revocado en el servidor y desvinculado de este teléfono.";
+                            success = true;
+                        } catch (com.bellota.mascota.voice.auth.BellotaBackendClient.BackendException error) {
+                            message = error.getMessage();
+                        } catch (Exception error) {
+                            message = "No se pudo confirmar la revocación. La credencial local se conservó para reintentar.";
+                        }
+                        final String result = message;
+                        final boolean revoked = success;
+                        runOnUiThread(() -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            status.setText(result);
+                            status.setTextColor(revoked ? 0xFF9ED8C8 : 0xFFFFA6A6);
+                            online.setEnabled(false);
+                            if (revoked) {
+                                codeInput.setVisibility(View.VISIBLE);
+                                explanation.setText("El dispositivo fue revocado. Podés vincularlo nuevamente con un código de un solo uso.");
+                                primary.setText("Vincular");
+                                primary.setEnabled(true);
+                            } else {
+                                primary.setText("Reintentar revocación");
+                                primary.setEnabled(true);
+                            }
+                        });
+                    }, "Bellota-Unpair").start();
                     return;
                 }
                 String code = codeInput.getText().toString().trim();
