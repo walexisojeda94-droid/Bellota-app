@@ -47,10 +47,10 @@ jobs:
       - name: Prepare permanent signing key
         id: signing
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.BELLOTA_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.BELLOTA_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.BELLOTA_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.BELLOTA_KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
@@ -78,12 +78,12 @@ jobs:
         if: steps.signing.outputs.enabled != 'true'
         run: gradle --no-daemon :app:assembleDebug
 
-      - name: Verify release APK signature
+      - name: Verify permanent signing certificate
         if: steps.signing.outputs.enabled == 'true'
         run: |
           APK="app/build/outputs/apk/release/app-release.apk"
-          test -s "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/signature.txt"
+          grep -qi "762b29d736275f544cb617ae48a268f71a3f23584f38bc6217d3c33f81d3948f" "$RUNNER_TEMP/signature.txt"
 
       - name: Verify debug APK signature
         if: steps.signing.outputs.enabled != 'true'
