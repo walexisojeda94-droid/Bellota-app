@@ -172,7 +172,7 @@ public final class BellotaBackendClient {
             refresh = tokenStore.readRefreshToken();
         } catch (Exception error) {
             throw new BackendException("secure_storage_error", 500,
-                    "No se pudo leer la credencial segura para revocar el dispositivo.");
+                    "La clave segura se invalidó; este dispositivo necesita vincularse otra vez.");
         }
         if (refresh == null || refresh.isEmpty())
             throw new BackendException("not_paired", 401, "Este dispositivo no tiene una vinculación local.");
