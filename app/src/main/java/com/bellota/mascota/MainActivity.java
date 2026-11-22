@@ -1043,9 +1043,26 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
         if (eyes != null && !isAsleep()) eyes.reactToAttention();
         if (petMemory != null) petMemory.remember("voz_usuario", spoken);
-        if(text.contains("bateria") || text.contains("carga del telefono")){ BatteryManager b=(BatteryManager)getSystemService(BATTERY_SERVICE); int level=b.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY); speakIfEnabled(level>=0?"El teléfono tiene "+level+" por ciento de batería.":"No pude consultar la batería."); return; }
-        if(text.contains("que hora") || text.equals("hora") || text.contains("que dia es") || text.contains("fecha de hoy")){ Date now=new Date(); speakIfEnabled("Son las "+new SimpleDateFormat("HH:mm",new Locale("es","AR")).format(now)+". Hoy es "+new SimpleDateFormat("EEEE d 'de' MMMM",new Locale("es","AR")).format(now)+"."); return; }
-        if(text.contains("volumen actual")){ AudioManager a=(AudioManager)getSystemService(AUDIO_SERVICE); speakIfEnabled("El volumen multimedia está al "+Math.round(a.getStreamVolume(AudioManager.STREAM_MUSIC)*100f/a.getStreamMaxVolume(AudioManager.STREAM_MUSIC))+" por ciento."); return; }
+        if (VoiceCommandIntent.isBatteryQuery(utterance)) {
+            BatteryManager battery = (BatteryManager) getSystemService(BATTERY_SERVICE);
+            int level = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+            speakIfEnabled(level >= 0 ? "El teléfono tiene " + level + " por ciento de batería."
+                    : "No pude consultar la batería.");
+            return;
+        }
+        if (VoiceCommandIntent.isTimeOrDateQuery(utterance)) {
+            Date now = new Date();
+            speakIfEnabled("Son las " + new SimpleDateFormat("HH:mm", new Locale("es", "AR")).format(now)
+                    + ". Hoy es " + new SimpleDateFormat("EEEE d 'de' MMMM", new Locale("es", "AR")).format(now) + ".");
+            return;
+        }
+        if (VoiceCommandIntent.isVolumeQuery(utterance)) {
+            AudioManager audio = (AudioManager) getSystemService(AUDIO_SERVICE);
+            speakIfEnabled("El volumen multimedia está al "
+                    + Math.round(audio.getStreamVolume(AudioManager.STREAM_MUSIC) * 100f
+                    / audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)) + " por ciento.");
+            return;
+        }
 
         String mood = eyes == null ? "NEUTRAL" : eyes.getMood().name();
         Reply result = conversationEngine == null
