@@ -16,6 +16,8 @@ public class VoiceCommandIntentTest {
         assertFalse(VoiceCommandIntent.isMuteRequest(Utterance.of("No me dejes en silencio")));
         assertFalse(VoiceCommandIntent.isMuteRequest(Utterance.of("Qué silencio hay acá")));
         assertFalse(VoiceCommandIntent.isMuteRequest(Utterance.of("El sonido del juego")));
+        assertFalse(VoiceCommandIntent.isMuteRequest(Utterance.of("No hables de ese tema")));
+        assertTrue(VoiceCommandIntent.isMuteRequest(Utterance.of("Desactivá el sonido por favor")));
     }
 
     @Test public void recognizesExplicitUnmuteRequests() {
@@ -27,5 +29,7 @@ public class VoiceCommandIntentTest {
     @Test public void incidentalSoundMentionDoesNotUnmute() {
         assertFalse(VoiceCommandIntent.isUnmuteRequest(Utterance.of("No hay sonido")));
         assertFalse(VoiceCommandIntent.isUnmuteRequest(Utterance.of("Me gusta ese sonido")));
+        assertFalse(VoiceCommandIntent.isUnmuteRequest(Utterance.of("Activá el sonido de la tele")));
+        assertTrue(VoiceCommandIntent.isUnmuteRequest(Utterance.of("Activá el sonido por favor")));
     }
 }
