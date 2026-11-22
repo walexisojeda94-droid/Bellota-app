@@ -38,7 +38,10 @@ public final class EncryptedPreferencesStore implements ConversationMemory.Store
             String stored = preferences.getString(key, null);
             if (stored == null) return null;
             if (!stored.startsWith(PREFIX)) {
-                writeEncryptedLocked(key, stored);
+                if (!writeEncryptedLocked(key, stored)) {
+                    resetAllMemory();
+                    return null;
+                }
                 return stored;
             }
             try {
@@ -74,13 +77,16 @@ public final class EncryptedPreferencesStore implements ConversationMemory.Store
             for (Map.Entry<String, ?> entry : values.entrySet()) {
                 if (entry.getValue() instanceof String) {
                     String value = (String) entry.getValue();
-                    if (!value.startsWith(PREFIX)) writeEncryptedLocked(entry.getKey(), value);
+                    if (!value.startsWith(PREFIX) && !writeEncryptedLocked(entry.getKey(), value)) {
+                        resetAllMemory();
+                        return;
+                    }
                 }
             }
         }
     }
 
-    private void writeEncryptedLocked(String key, String value) {
+    private boolean writeEncryptedLocked(String key, String value) {
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
                 Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
