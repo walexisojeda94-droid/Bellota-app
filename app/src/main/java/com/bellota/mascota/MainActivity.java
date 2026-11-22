@@ -1029,6 +1029,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         // En sueño normal, la palabra de activación se exige también en reconocimiento local.
         // Se usa el mismo detector de palabra completa que en el reconocimiento local.
         if (isAsleep() && !containsWakeWord(text)) return;
+        if (petMemory != null) petMemory.remember("voz_usuario", spoken);
         if (handleCompanionCommand(text, true)) return;
         if (VoiceCommandIntent.isMuteRequest(utterance)) {
             soundEnabled = false;
@@ -1228,6 +1229,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         // Mientras Realtime está activo, no mezclar la salida TTS local con el audio remoto.
         if (onlineVoiceManager != null && onlineVoiceManager.isConnected()) return;
         if (localVoice == null) return;
+        if (petMemory != null) petMemory.remember("voz_bellota", text);
         pauseLocalRecognition();
         localVoice.speak(text);
     }
