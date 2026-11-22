@@ -47,7 +47,7 @@ La app intercambia ese código una sola vez por un refresh token aleatorio. Andr
 - Restringir la emisión de códigos administrativos a un canal de administración seguro.
 - No desplegar hasta reemplazar el ID D1 y cargar los tres secretos.
 
-El Worker no registra tokens, audio ni transcripciones. El cliente secret de OpenAI dura 10 minutos y su vencimiento impide crear nuevas sesiones, no corta una sesión ya iniciada. Cada sesión se configura con un máximo de 1.024 tokens de salida por respuesta y truncamiento automático. La app cierra la sesión a los 45 minutos y aplica un tope acumulado local de 24.000 tokens de uso informado por Realtime. El límite acumulado es una protección del cliente, no un límite de facturación impuesto por OpenAI; configurar también límites y alertas de gasto en la plataforma.
+El Worker no registra tokens, audio ni transcripciones. El cliente secret de OpenAI dura 10 minutos y su vencimiento impide crear nuevas sesiones, no corta una sesión ya iniciada. Cada sesión se configura con un máximo de 1.024 tokens de salida por respuesta, truncamiento automático y `expires_at` fijado a 45 minutos desde la emisión de la credencial. OpenAI aplica el vencimiento del lado servidor y Android programa el cierre unos segundos antes. También se aplica un tope acumulado local de 24.000 tokens de uso informado por Realtime. El límite acumulado es una protección del cliente, no un límite de facturación impuesto por OpenAI; configurar también límites y alertas de gasto en la plataforma.
 
 ## TURN para redes restrictivas
 
