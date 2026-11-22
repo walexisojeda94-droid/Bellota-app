@@ -46,3 +46,9 @@ The Worker never returns upstream OpenAI error bodies, keys, or secrets. The hea
 
 ## Android
 Set `backend_base_url` to the deployed Worker HTTPS origin. Never put any of the three Worker secrets or the permanent OpenAI key in Android resources or source.
+
+## Cloudflare Builds
+
+La conexión de Cloudflare Builds está configurada para desplegar únicamente la rama `main`, usando:
+`npx wrangler deploy --config backend/openai-realtime/wrangler.toml`.
+Las ramas de trabajo no deben publicar cambios en producción automáticamente. El Worker puede validarse y desplegarse de forma controlada antes de integrar cambios.
