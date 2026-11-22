@@ -204,7 +204,19 @@ async function createTurnIceServers(env) {
   const data = await response.json();
   if (!Array.isArray(data.iceServers) || data.iceServers.length === 0)
     throw new Error("Cloudflare TURN devolvió una lista ICE vacía.");
-  return data.iceServers;
+  // With non-trickle SDP, discard port 53 candidates because they can stall ICE gathering.
+  const filtered = data.iceServers.map((server) => {
+    if (!server || !server.urls) return null;
+    const sourceUrls = Array.isArray(server.urls) ? server.urls : [server.urls];
+    const urls = sourceUrls.filter((url) => typeof url === "string" && !/:53(?:\\?|\\/|$)/.test(url));
+    if (urls.length === 0) return null;
+    const result = { urls };
+    if (typeof server.username === "string" && server.username) result.username = server.username;
+    if (typeof server.credential === "string" && server.credential) result.credential = server.credential;
+    return result;
+  }).filter(Boolean);
+  if (filtered.length === 0) throw new Error("Cloudflare TURN no devolvió servidores ICE utilizables.");
+  return filtered;
 }
 async function createRealtimeSecret(request, env) {
   if (!env.OPENAI_API_KEY) return fail("provider_not_configured", 503, "OpenAI todavía no está configurado en el backend.");
