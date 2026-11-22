@@ -54,6 +54,12 @@ public final class ConversationMemory {
 
     public long silenceMs() { return silenceMs; }
 
+    /** Consulta si vuelve tras una pausa larga sin modificar el contador ni el estado del turno. */
+    public boolean isReturningAfterLongSilence(long now) {
+        long last = readLong("last_seen");
+        return last > 0L && now >= last && now - last >= LONG_SILENCE_MS;
+    }
+
     /** True una sola vez por cada regreso tras un silencio largo. */
     public boolean takeWelcomeBack() {
         boolean pending = welcomePending;
