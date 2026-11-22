@@ -41,7 +41,14 @@ public final class SecureTokenStore {
         synchronized (lock) {
             byte[] plain = token.getBytes(StandardCharsets.UTF_8);
             for (int attempt = 0; attempt < 2; attempt++) {
-                SecretKey key = getOrCreateKey();
+                final SecretKey key;
+                try {
+                    key = getOrCreateKey();
+                } catch (Exception invalidatedKey) {
+                    resetKeyAndToken();
+                    if (attempt == 1) throw invalidatedKey;
+                    continue;
+                }
                 byte[] payload;
                 try {
                     Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
