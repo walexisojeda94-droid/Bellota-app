@@ -1134,7 +1134,6 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     @Override protected void onPause() {
-        boolean wasOnlineVoiceActive = onlineVoiceConnecting || onlineVoiceManager != null;
         paused = true;
         disconnectOnlineVoice(false);
         handler.removeCallbacks(autonomousRoutine);
