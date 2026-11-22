@@ -46,6 +46,10 @@ public class VoiceRecognitionService extends Service {
         startServiceAction(context, ACTION_RESUME);
     }
 
+    public static void stop(Context context) {
+        startServiceAction(context, ACTION_STOP);
+    }
+
     public static void setExternalMicActive(Context context, boolean active) {
         Intent intent = new Intent(context, VoiceRecognitionService.class);
         intent.setAction(ACTION_EXTERNAL_MIC);
