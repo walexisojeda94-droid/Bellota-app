@@ -1,7 +1,6 @@
 package com.bellota.mascota.local;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import com.bellota.mascota.core.PetLife;
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -14,11 +13,7 @@ public final class LocalConversationEngine {
     private final OfflineReplies legacy = new OfflineReplies();
 
     public LocalConversationEngine(Context context) {
-        SharedPreferences prefs = context.getApplicationContext().getSharedPreferences("bellota_conversation", Context.MODE_PRIVATE);
-        memory = new ConversationMemory(new ConversationMemory.Store() {
-            @Override public String get(String key) { return prefs.getString(key, null); }
-            @Override public void put(String key, String value) { prefs.edit().putString(key, value).apply(); }
-        });
+        memory = new ConversationMemory(new EncryptedPreferencesStore(context));
     }
 
     public synchronized Reply respond(String input, PetLife pet, String mood) {
