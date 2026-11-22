@@ -14,6 +14,15 @@ public class ConversationMemoryTest {
         assertTrue(memory.likes().isEmpty());
     }
 
+    @Test public void preferenceMatchingIgnoresAccentDifferences() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        memory.addLike("Pokémon");
+        memory.addLike("Pokemon");
+        assertEquals(1, memory.likes().size());
+        memory.removeLike("Pokemon");
+        assertTrue(memory.likes().isEmpty());
+    }
+
     @Test public void limitsStoredLikesToTwenty() {
         ConversationMemory memory = ConversationMemory.inMemory();
         for (int i = 0; i < 25; i++) memory.addLike("gusto" + i);
