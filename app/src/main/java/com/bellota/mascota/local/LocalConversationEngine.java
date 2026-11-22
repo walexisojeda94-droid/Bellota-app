@@ -31,13 +31,14 @@ public final class LocalConversationEngine {
         String waiting = memory.expecting(now);
         if (waiting != null && waiting.startsWith("like:")) {
             String likeValue = waiting.substring(5);
-            memory.clearExpecting();
             if (isNo(u)) {
                 memory.removeLike(likeValue);
+                memory.clearExpecting();
                 memory.afterTurn("like_no");
                 return Reply.text("Ah, ya no te gusta. Lo saco de mis notas.");
             }
             if (isYes(u)) {
+                memory.clearExpecting();
                 memory.afterTurn("like_yes");
                 return Reply.text("¡Qué bueno! Me alegra que te siga gustando.");
             }
