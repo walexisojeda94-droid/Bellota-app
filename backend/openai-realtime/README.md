@@ -21,6 +21,8 @@ Worker privado para vinculación de dispositivos y emisión de credenciales efí
    - `npx wrangler secret put OPENAI_API_KEY`
    - `npx wrangler secret put ADMIN_TOKEN`
    - `npx wrangler secret put JWT_SECRET`
+   - `npx wrangler secret put TURN_KEY_ID` (ID de la clave TURN de Cloudflare)
+   - `npx wrangler secret put TURN_KEY_API_TOKEN` (token API asociado a esa clave TURN)
 5. Desplegar: `npx wrangler deploy`.
 
 Generá ADMIN_TOKEN y JWT_SECRET con al menos 32 bytes aleatorios. Nunca uses el código de emparejamiento como secreto administrativo.
@@ -45,4 +47,14 @@ La app intercambia ese código una sola vez por un refresh token aleatorio. Andr
 - Restringir la emisión de códigos administrativos a un canal de administración seguro.
 - No desplegar hasta reemplazar el ID D1 y cargar los tres secretos.
 
-El Worker no registra tokens, audio ni transcripciones. El cliente secret de OpenAI dura 10 minutos y su vencimiento impide crear nuevas sesiones, no corta una sesión ya iniciada.
+El Worker no registra tokens, audio ni transcripciones. El cliente secret de OpenAI dura 10 minutos y su vencimiento impide crear nuevas sesiones, no corta una sesión ya iniciada. Cada sesión se configura con un máximo de 1.024 tokens de salida por respuesta y truncamiento automático. La app cierra la sesión a los 45 minutos y aplica un tope acumulado local de 24.000 tokens de uso informado por Realtime. El límite acumulado es una protección del cliente, no un límite de facturación impuesto por OpenAI; configurar también límites y alertas de gasto en la plataforma.
+
+## TURN para redes restrictivas
+
+La app obtiene los servidores ICE desde este Worker. Si `TURN_KEY_ID` y `TURN_KEY_API_TOKEN` están configurados, el Worker solicita credenciales Cloudflare TURN efímeras con TTL de 3.600 segundos y las devuelve al cliente. La clave TURN y el token API nunca salen del Worker. Si no están configurados, la app conserva STUN como compatibilidad, pero no tendrá relay TURN y algunas redes pueden impedir la conexión.
+
+Crear primero una TURN key en Cloudflare Realtime y guardar su ID y API token como secretos del Worker. La credencial efímera dura una hora, por encima del límite de sesión de 45 minutos. Cloudflare factura el tráfico TURN saliente cuando se usa fuera de su Realtime SFU; revisar la tarifa vigente antes de habilitarlo. Una falla al generar credenciales cuando TURN está configurado devuelve `503 turn_unavailable` y no degrada silenciosamente a STUN.
+
+## Recuperación y cierre WebRTC
+
+La app aplica un timeout global de negociación, espera 10 segundos ante `ICE DISCONNECTED`, realiza un único reintento automático ante fallos transitorios (con espera mayor para HTTP 429), y luego entrega el control al fallback del gestor de proveedores. Las sesiones terminadas cancelan timers, abortan la negociación HTTP activa, liberan DataChannel, PeerConnection, pistas, fuentes, fábrica y módulo de audio, y apagan el ejecutor. La desconexión es idempotente.
