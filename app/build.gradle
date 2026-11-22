@@ -14,7 +14,7 @@ android {
 
     defaultConfig {
         applicationId 'com.bellota.mascota'
-        minSdk 27
+        minSdk 24
         targetSdk 28
         versionCode 8
         versionName '0.4.4'
