@@ -11,7 +11,6 @@ import android.os.Build;
 import android.os.IBinder;
 
 import com.bellota.mascota.R;
-import com.bellota.mascota.MainActivity;
 
 /**
  * Mantiene el reconocimiento local mientras la interfaz está en segundo plano.
@@ -73,11 +72,14 @@ public class VoiceRecognitionService extends Service {
         if (ACTION_PAUSE.equals(action)) {
             paused = true;
             stopRecognition();
+            updateNotification();
         } else if (ACTION_RESUME.equals(action)) {
             paused = false;
+            updateNotification();
             startRecognition();
         } else {
             paused = false;
+            updateNotification();
             startRecognition();
         }
         return START_STICKY;
@@ -100,13 +102,19 @@ public class VoiceRecognitionService extends Service {
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
         builder.setSmallIcon(R.drawable.ic_bellota)
-                .setContentTitle("Bellota está escuchando")
-                .setContentText("Micrófono activo para comandos de voz en español.")
+                .setContentTitle(paused ? "Micrófono de Bellota en pausa" : "Bellota está escuchando")
+                .setContentText(paused ? "El reconocimiento local está temporalmente pausado." : "Micrófono activo para comandos de voz en español.")
                 .setCategory(Notification.CATEGORY_SERVICE)
                 .setPriority(Notification.PRIORITY_LOW)
                 .setOngoing(true)
                 .addAction(android.R.drawable.ic_media_pause, "Detener", stopPendingIntent);
         return builder.build();
+    }
+
+    private void updateNotification() {
+        if (!foregroundStarted) return;
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager != null) manager.notify(NOTIFICATION_ID, buildNotification());
     }
 
     private void createNotificationChannel() {
@@ -137,8 +145,8 @@ public class VoiceRecognitionService extends Service {
                             event.setPackage(getPackageName());
                             event.putExtra(EXTRA_TEXT, status);
                             sendBroadcast(event);
-                            if (status != null && status.startsWith(
-                                    "Reconocimiento detenido: Android no concedió permiso")) {
+                            if (status != null && (status.startsWith("No hay un servicio de reconocimiento")
+                                    || status.startsWith("Reconocimiento detenido: Android no concedió permiso"))) {
                                 stopRecognition();
                                 stopForeground(true);
                                 foregroundStarted = false;
