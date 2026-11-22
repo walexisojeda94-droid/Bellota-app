@@ -69,6 +69,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private final AtomicBoolean closed = new AtomicBoolean(true);
     private final AtomicBoolean offerSubmitted = new AtomicBoolean(false);
     private final AtomicInteger retryCount = new AtomicInteger(0);
+    private final AtomicBoolean retryScheduled = new AtomicBoolean(false);
     private final AtomicLong totalSessionTokens = new AtomicLong(0L);
     private volatile List<BellotaBackendClient.IceServerConfig> configuredIceServers = Collections.emptyList();
     private volatile HttpURLConnection activeHttpConnection;
@@ -111,6 +112,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         sessionConfig = config;
         offerSubmitted.set(false);
         retryCount.set(0);
+        retryScheduled.set(false);
         totalSessionTokens.set(0L);
         mainHandler.removeCallbacks(negotiationTimeout);
         mainHandler.postDelayed(negotiationTimeout, 60000L);
@@ -475,10 +477,11 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         HttpURLConnection connection = activeHttpConnection;
         if (connection != null) connection.disconnect();
         releaseResources();
+        notifyState(State.CLOSED, "Sesión WebRTC cerrada.");
         shutdownWorker();
     }
 
-    private void releaseResources() {
+    private synchronized void releaseResources() {
         exchangeSecret = null;
         try { if (dataChannel != null) { dataChannel.unregisterObserver(); dataChannel.close(); dataChannel.dispose(); } }
         catch (RuntimeException ignored) { }
@@ -501,12 +504,12 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             } catch (RuntimeException ignored) { }
         }
         audioModeChanged = false;
-        notifyState(State.CLOSED, "Sesión WebRTC cerrada.");
     }
 
-    private void fail(Failure failure, boolean recoverable, String detail) {
-        if (closed.get()) return;
+    private synchronized void fail(Failure failure, boolean recoverable, String detail) {
+        if (closed.get() || retryScheduled.get()) return;
         if (recoverable && retryCount.getAndIncrement() < MAX_RECOVERY_ATTEMPTS) {
+            retryScheduled.set(true);
             connected = false;
             cancelIceDisconnectTimeout();
             HttpURLConnection connection = activeHttpConnection;
@@ -515,7 +518,10 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             offerSubmitted.set(false);
             notifyState(State.RECONNECTING, "Fallo transitorio. Se realizará un único intento de recuperación.");
             long delay = failure == Failure.RATE_LIMIT ? 5000L : 1200L;
+            mainHandler.removeCallbacks(negotiationTimeout);
+            mainHandler.postDelayed(negotiationTimeout, 60000L);
             mainHandler.postDelayed(() -> {
+                retryScheduled.set(false);
                 if (!closed.get()) executeWorker(() -> establishSession(sessionConfig));
             }, delay);
             return;
