@@ -80,6 +80,18 @@ public class VoiceProviderManagerTest {
         assertEquals(0, secondary.toolResultCount);
     }
 
+    @Test public void reusedCallIdCannotReviveAnOldSessionResult() {
+        FakeProvider primary = new FakeProvider("openai");
+        VoiceProviderManager manager = new VoiceProviderManager(primary, null, new RecordingListener());
+        manager.connect(config());
+        primary.requestToolCall("reused-call");
+        manager.connect(config());
+        primary.requestToolCall("reused-call");
+        assertFalse(manager.isToolCallCurrent("reused-call"));
+        manager.sendToolResult("reused-call", "old result", false);
+        assertEquals(0, primary.toolResultCount);
+    }
+
     @Test public void pendingToolCallIsInvalidatedOnDisconnect() {
         FakeProvider primary = new FakeProvider("openai");
         VoiceProviderManager manager = new VoiceProviderManager(primary, null, new RecordingListener());
