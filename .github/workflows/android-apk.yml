@@ -58,6 +58,10 @@ jobs:
         run: ./gradlew --no-daemon :app:assembleDebug
       - name: Smoke test on Android 7 (API 24)
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # GitHub-hosted Linux runners do not expose KVM. Android Emulator
+          # requires this opt-in to use its software CPU emulation (TCG).
+          ANDROID_I_WANT_MY_TCG: "yes"
         with:
           api-level: 24
           arch: x86
