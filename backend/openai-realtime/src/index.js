@@ -114,14 +114,14 @@ async function pairDevice(request, env) {
   // D1 batch is transactional: code consumption and device creation commit or roll back together.
   const results = await env.DB.batch([
     env.DB.prepare(
-      "UPDATE pairing_codes SET consumed_at = ? WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?"
-    ).bind(now, codeHash, now),
+      "UPDATE pairing_codes SET consumed_at = ?, device_id = ? WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?"
+    ).bind(now, deviceId, codeHash, now),
     env.DB.prepare(
       "INSERT INTO devices (id, device_name, refresh_token_hash, created_at, refresh_expires_at) " +
       "SELECT ?, ?, ?, ?, ? WHERE EXISTS " +
-      "(SELECT 1 FROM pairing_codes WHERE code_hash = ? AND consumed_at = ?)"
+      "(SELECT 1 FROM pairing_codes WHERE code_hash = ? AND consumed_at = ? AND device_id = ?)"
     ).bind(deviceId, label || "Bellota Android", refreshHash, now,
-      now + REFRESH_TTL_DAYS * 86400, codeHash, now)
+      now + REFRESH_TTL_DAYS * 86400, codeHash, now, deviceId)
   ]);
   if (!results[0]?.meta?.changes || !results[1]?.meta?.changes)
     return fail("pairing_code_invalid", 401, "El código venció o ya fue utilizado.");
