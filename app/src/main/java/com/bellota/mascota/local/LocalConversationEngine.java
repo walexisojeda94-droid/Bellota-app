@@ -233,7 +233,12 @@ public final class LocalConversationEngine {
 
     static boolean hasNegatedLikePrefix(String prefix) {
         String normalized = TextUtil.normalize(prefix);
-        return "no".equals(normalized) || normalized.endsWith(" no");
+        return "no".equals(normalized) || normalized.endsWith(" no")
+                || normalized.equals("no se") || normalized.startsWith("no se ")
+                || normalized.startsWith("no estoy seguro") || normalized.startsWith("no estoy segura")
+                || normalized.startsWith("tal vez") || normalized.startsWith("quizas")
+                || normalized.startsWith("creo que") || normalized.startsWith("capaz")
+                || normalized.startsWith("puede que");
     }
 
     private String extractUnlike(String raw) {
