@@ -31,6 +31,7 @@ import com.bellota.mascota.local.OfflineReplies;
 import com.bellota.mascota.local.LocalConversationEngine;
 import com.bellota.mascota.local.Reply;
 import com.bellota.mascota.local.Utterance;
+import com.bellota.mascota.local.VoiceCommandIntent;
 import com.bellota.mascota.ui.EyePetView;
 import com.bellota.mascota.voice.VoiceRecognitionService;
 import com.bellota.mascota.voice.LocalVoice;
@@ -993,34 +994,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         VoiceRecognitionService.start(this);
     }
 
-    private static boolean isMuteCommand(Utterance utterance) {
-        if (utterance == null || utterance.isEmpty()) return false;
-        if (utterance.hasPhrase("no quiero silencio")
-                || utterance.hasPhrase("no me dejes en silencio")
-                || utterance.hasPhrase("no pongas silencio")) return false;
-        return utterance.hasPhrase("callate")
-                || utterance.hasPhrase("no hables")
-                || utterance.hasPhrase("deja de hablar")
-                || utterance.hasPhrase("desactiva el sonido")
-                || utterance.hasPhrase("apaga el sonido")
-                || utterance.text.equals("silencio")
-                || utterance.text.equals("quiero silencio")
-                || utterance.text.equals("ponete en silencio")
-                || utterance.text.equals("quedate en silencio");
-    }
-
-    private static boolean isUnmuteCommand(Utterance utterance) {
-        if (utterance == null || utterance.isEmpty()) return false;
-        return utterance.text.equals("sonido")
-                || utterance.hasPhrase("activa el sonido")
-                || utterance.hasPhrase("prende el sonido")
-                || utterance.hasPhrase("enciende el sonido")
-                || utterance.hasPhrase("habilita el sonido")
-                || utterance.hasPhrase("volvi a hablar")
-                || utterance.hasPhrase("volve a hablar")
-                || utterance.hasPhrase("habla bellota");
-    }
-
     private void handleVoiceCommand(String spoken) {
         handleVoiceCommand(spoken, false);
     }
@@ -1035,13 +1008,13 @@ public class MainActivity extends Activity implements SensorEventListener {
         // Se usa el mismo detector de palabra completa que en el reconocimiento local.
         if (isAsleep() && !containsWakeWord(text)) return;
         if (handleCompanionCommand(text, true)) return;
-        if (isMuteCommand(utterance)) {
+        if (VoiceCommandIntent.isMuteRequest(utterance)) {
             soundEnabled = false;
             if (localVoice != null) localVoice.stop();
             if (eyes != null) eyes.setMood(EyePetView.Mood.CALM);
             return;
         }
-        if (isUnmuteCommand(utterance)) {
+        if (VoiceCommandIntent.isUnmuteRequest(utterance)) {
             soundEnabled = true;
             speakIfEnabled("Ya puedo hablar otra vez.");
             return;
