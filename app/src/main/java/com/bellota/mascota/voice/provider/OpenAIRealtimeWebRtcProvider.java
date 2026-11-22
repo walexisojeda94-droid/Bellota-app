@@ -379,8 +379,13 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             session.put("output_modalities", new JSONArray().put("audio"));
             session.put("max_output_tokens", maxOutputTokens);
             JSONObject audio = new JSONObject();
-            audio.put("input", new JSONObject().put("turn_detection",
-                    new JSONObject().put("type", "server_vad")));
+            JSONObject input = new JSONObject();
+            input.put("turn_detection", new JSONObject().put("type", "server_vad"));
+            // Transcription is disabled by default in Realtime. Enable it so the same
+            // final user turns can update Bellota's shared local/online memory.
+            // No language is forced: the transcription model detects it automatically.
+            input.put("transcription", new JSONObject().put("model", "gpt-transcribe"));
+            audio.put("input", input);
             audio.put("output", new JSONObject().put("voice",
                     sessionConfig.voice.isEmpty() ? "marin" : sessionConfig.voice));
             session.put("audio", audio);
