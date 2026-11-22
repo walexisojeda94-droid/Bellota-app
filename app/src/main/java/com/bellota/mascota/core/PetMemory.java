@@ -70,7 +70,6 @@ public final class PetMemory {
     }
 
     private byte[] readPlaintext() throws Exception {
-        if (!journal.exists()) return new byte[0];
         byte[] stored;
         try (FileInputStream input = atomicJournal.openRead();
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
@@ -78,11 +77,20 @@ public final class PetMemory {
             int count;
             while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
             stored = output.toByteArray();
+        } catch (java.io.FileNotFoundException missing) {
+            return new byte[0];
         }
         if (!hasMagic(stored)) {
             // Migrate the previous plaintext JSONL diary on first write.
             byte[] legacy = trimToLimit(stored);
-            writeEncrypted(legacy);
+            try {
+                writeEncrypted(legacy);
+            } catch (Exception encryptionUnavailable) {
+                // Do not leave an unencrypted diary behind if secure migration cannot complete.
+                journal.delete();
+                new File(journal.getPath() + ".bak").delete();
+                throw encryptionUnavailable;
+            }
             return legacy;
         }
         try {
@@ -102,17 +110,26 @@ public final class PetMemory {
     }
 
     private void writeEncrypted(byte[] plaintext) throws Exception {
-        SecretKey key = getOrCreateKey();
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, key);
-        byte[] encrypted = cipher.doFinal(plaintext);
-        byte[] iv = cipher.getIV();
-        if (iv == null || iv.length != GCM_IV_BYTES)
-            throw new GeneralSecurityException("IV AES-GCM inválido.");
-        byte[] payload = new byte[MAGIC.length + iv.length + encrypted.length];
-        System.arraycopy(MAGIC, 0, payload, 0, MAGIC.length);
-        System.arraycopy(iv, 0, payload, MAGIC.length, iv.length);
-        System.arraycopy(encrypted, 0, payload, MAGIC.length + iv.length, encrypted.length);
+        byte[] payload = null;
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
+                byte[] encrypted = cipher.doFinal(plaintext);
+                byte[] iv = cipher.getIV();
+                if (iv == null || iv.length != GCM_IV_BYTES)
+                    throw new GeneralSecurityException("IV AES-GCM inválido.");
+                payload = new byte[MAGIC.length + iv.length + encrypted.length];
+                System.arraycopy(MAGIC, 0, payload, 0, MAGIC.length);
+                System.arraycopy(iv, 0, payload, MAGIC.length, iv.length);
+                System.arraycopy(encrypted, 0, payload, MAGIC.length + iv.length, encrypted.length);
+                break;
+            } catch (GeneralSecurityException invalidatedKey) {
+                deleteKey();
+                if (attempt == 1) throw invalidatedKey;
+            }
+        }
+        if (payload == null) throw new GeneralSecurityException("No se pudo recuperar la clave del diario.");
         FileOutputStream output = null;
         try {
             output = atomicJournal.startWrite();
