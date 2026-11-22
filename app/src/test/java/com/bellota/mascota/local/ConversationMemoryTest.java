@@ -79,6 +79,14 @@ public class ConversationMemoryTest {
         assertTrue(memory.likes().isEmpty());
     }
 
+    @Test public void onlineRepeatedNegativePreferenceRemovesAnExistingLike() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        memory.addLike("el ananá");
+        LocalConversationEngine engine = new LocalConversationEngine(memory);
+        engine.rememberOnlineMessage("No, ya no me gusta el ananá");
+        assertTrue(memory.likes().isEmpty());
+    }
+
     @Test public void onlineNegativePreferenceRemovesAnExistingLike() {
         ConversationMemory memory = ConversationMemory.inMemory();
         memory.addLike("el ananá");
