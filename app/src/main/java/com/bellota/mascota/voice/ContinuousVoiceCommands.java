@@ -46,6 +46,7 @@ public class ContinuousVoiceCommands {
     private int clientErrorCount;
     private int throttleCount;
     private int noMatchCount;
+    private int networkErrorCount;
     private long generation;
 
     public ContinuousVoiceCommands(Context context, Listener listener) {
@@ -66,6 +67,7 @@ public class ContinuousVoiceCommands {
         clientErrorCount = 0;
         throttleCount = 0;
         noMatchCount = 0;
+        networkErrorCount = 0;
         final long session = ++generation;
 
         try {
@@ -206,6 +208,7 @@ public class ContinuousVoiceCommands {
             clientErrorCount = 0;
             throttleCount = 0;
             noMatchCount = 0;
+            networkErrorCount = 0;
             ArrayList<String> matches = results == null ? null
                     : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
             if (matches != null && !matches.isEmpty()
@@ -235,6 +238,13 @@ public class ContinuousVoiceCommands {
             if (error == ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT
                     || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {
                 moveToNextLanguageMode(session);
+                return;
+            }
+
+            if (error == SpeechRecognizer.ERROR_NETWORK || error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT) {
+                long delay = Math.min(60000L, 5000L * (1L << Math.min(networkErrorCount++, 3)));
+                status("El servicio de voz no tiene conexión estable; se ampliará la espera antes de reintentar.");
+                listenAgain(session, delay);
                 return;
             }
 
