@@ -181,7 +181,7 @@ public final class LocalConversationEngine {
     private static final Pattern NICKNAME = Pattern.compile(
             "(?i)\\b(?:ll[aá]mame|decime|me dicen|mi apodo es|mi sobrenombre es)\\s+(\\p{L}{2,20})\\s*[.!¡]*\\s*$");
     private static final Pattern LIKE = Pattern.compile("(?i)\\bme (?:gusta|gustan|encanta|encantan)\\s+(.{2,80})$");
-    private static final Pattern UNLIKE = Pattern.compile("(?i)\\b(?:ya\\s+)?no me (?:gusta|gustan|encanta|encantan)\\s+(.{2,80})$");
+    private static final Pattern UNLIKE = Pattern.compile("(?i)\\b(?:(?:no[\\s,]+)?ya\\s+|no[\\s,]+)?no me (?:gusta|gustan|encanta|encantan)\\s+(.{2,80})$");
     private static final String[] NOT_NAMES = {"algo", "hora", "fecha", "clima", "chiste", "cuando", "como", "que",
             "donde", "quien", "por", "si", "no", "la", "el", "una", "un", "lo", "los", "las", "mas"};
 
