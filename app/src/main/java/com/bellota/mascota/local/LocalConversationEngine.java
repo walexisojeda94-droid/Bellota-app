@@ -72,11 +72,6 @@ public final class LocalConversationEngine {
             return Reply.text("¡Volviste! Pasó un buen rato desde la última vez que hablamos. ¿Cómo estuviste?");
         }
 
-        if (u.hasPhrase("silencio") || u.hasPhrase("sonido")) {
-            memory.afterTurn("voice_mode");
-            return Reply.needsAi().withSkill("voice_mode");
-        }
-
         if (legacy.isWeatherQuestion(input)) {
             memory.afterTurn("weather");
             return Reply.weather().withSkill("weather");
