@@ -903,7 +903,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         DebugLog.i("BellotaVoice", status);
         if (status.startsWith("Error de reconocimiento:")) {
             long now = System.currentTimeMillis();
-            if (now - lastVoiceDiagnosticToastAt >= 10000L) {
+            if (!paused && now - lastVoiceDiagnosticToastAt >= 10000L) {
                 lastVoiceDiagnosticToastAt = now;
                 Toast.makeText(this, status, Toast.LENGTH_LONG).show();
             }
@@ -1134,6 +1134,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     @Override protected void onPause() {
+        boolean wasOnlineVoiceActive = onlineVoiceConnecting || onlineVoiceManager != null;
         paused = true;
         disconnectOnlineVoice(false);
         handler.removeCallbacks(autonomousRoutine);
@@ -1142,7 +1143,8 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         cancelActivities();
 
-        VoiceRecognitionService.resume(this);
+        if (wasOnlineVoiceActive && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+            VoiceRecognitionService.resume(this);
 
         if (eyes != null) eyes.pauseAnimation();
         if(sensorManager!=null)sensorManager.unregisterListener(this);
@@ -1153,6 +1155,10 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         disconnectOnlineVoice(false);
         handler.removeCallbacksAndMessages(null);
+        if (voiceReceiverRegistered) {
+            unregisterReceiver(voiceEventsReceiver);
+            voiceReceiverRegistered = false;
+        }
 
         
 
