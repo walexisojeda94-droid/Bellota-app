@@ -57,7 +57,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     private EyePetView eyes;
     private FrameLayout petRoot;
     private LocalVoice localVoice;
-    private VoiceProviderManager onlineVoiceManager;
+    private volatile VoiceProviderManager onlineVoiceManager;
     private boolean onlineVoiceConnecting;
     private PetLife petLife;
     private AutonomousBehavior autonomy;
@@ -316,10 +316,12 @@ public class MainActivity extends Activity implements SensorEventListener {
             SecureTokenStore store = new SecureTokenStore(getApplicationContext());
             OpenAIRealtimeWebRtcProvider provider =
                     new OpenAIRealtimeWebRtcProvider(getApplicationContext(), backendUrl, store);
-            onlineVoiceManager = new VoiceProviderManager(provider, null, new VoiceProviderManager.Listener() {
+            AtomicReference<VoiceProviderManager> sessionManagerRef = new AtomicReference<>();
+            VoiceProviderManager sessionManager = new VoiceProviderManager(provider, null, new VoiceProviderManager.Listener() {
                 @Override public void onStateChanged(VoiceProvider.State state, String providerId, String detail) {
                     runOnUiThread(() -> {
-                        if (isFinishing() || isDestroyed()) return;
+                        VoiceProviderManager owner = sessionManagerRef.get();
+                        if (owner == null || owner != onlineVoiceManager || isFinishing() || isDestroyed()) return;
                         status.setText(detail == null ? state.name() : detail);
                         if (state == VoiceProvider.State.CONNECTED) {
                             onlineVoiceConnecting = false;
@@ -337,6 +339,9 @@ public class MainActivity extends Activity implements SensorEventListener {
                 @Override public void onUserTranscript(String text, boolean isFinal) {
                     if (!isFinal || text == null || text.trim().isEmpty()) return;
                     runOnUiThread(() -> {
+                        VoiceProviderManager owner = sessionManagerRef.get();
+                        if (owner == null || owner != onlineVoiceManager || !owner.isConnected()) return;
+                        if (conversationEngine != null) conversationEngine.rememberOnlineMessage(text);
                         if (petMemory != null) petMemory.remember("voz_usuario", text);
                         if (!isAsleep()) {
                             userInteracted("attention", true);
@@ -345,7 +350,9 @@ public class MainActivity extends Activity implements SensorEventListener {
                     });
                 }
                 @Override public void onAssistantTranscript(String text, boolean isFinal) {
-                    if (isFinal && petMemory != null && text != null && !text.trim().isEmpty())
+                    VoiceProviderManager owner = sessionManagerRef.get();
+                    if (isFinal && owner != null && owner == onlineVoiceManager && owner.isConnected()
+                            && petMemory != null && text != null && !text.trim().isEmpty())
                         petMemory.remember("voz_bellota", text);
                 }
                 @Override public void onAudioOutput(byte[] pcm16, int sampleRateHz, int channels) {
@@ -358,20 +365,23 @@ public class MainActivity extends Activity implements SensorEventListener {
                     });
                 }
                 @Override public void onToolCall(String callId, String name, String argumentsJson) {
+                    VoiceProviderManager owner = sessionManagerRef.get();
+                    if (owner == null || owner != onlineVoiceManager || !owner.isToolCallCurrent(callId)) return;
                     new Thread(() -> {
                         try {
-                            String result = executeBellotaTool(name, new JSONObject(argumentsJson));
-                            VoiceProviderManager manager = onlineVoiceManager;
-                            if (manager != null) manager.sendToolResult(callId, result, false);
+                            if (!isCurrentToolCall(owner, callId)) return;
+                            String result = executeBellotaTool(name, new JSONObject(argumentsJson), owner, callId);
+                            owner.sendToolResult(callId, result, false);
                         } catch (Exception error) {
-                            VoiceProviderManager manager = onlineVoiceManager;
-                            if (manager != null) manager.sendToolResult(callId,
+                            if (isCurrentToolCall(owner, callId)) owner.sendToolResult(callId,
                                     error.getMessage() == null ? "No se pudo ejecutar la herramienta." : error.getMessage(), true);
                         }
                     }, "Bellota-ToolCall").start();
                 }
                 @Override public void onLocalFallbackRequested(VoiceProvider.Failure reason, String detail) {
                     runOnUiThread(() -> {
+                        VoiceProviderManager owner = sessionManagerRef.get();
+                        if (owner == null || owner != onlineVoiceManager) return;
                         onlineVoiceConnecting = false;
                         onlineVoiceManager = null;
                         if (!isFinishing()) startLocalRecognizer();
@@ -381,13 +391,16 @@ public class MainActivity extends Activity implements SensorEventListener {
                     });
                 }
             });
+            sessionManagerRef.set(sessionManager);
+            onlineVoiceManager = sessionManager;
             onlineVoiceConnecting = true;
             JSONArray tools = buildBellotaTools();
             VoiceProvider.SessionConfig config = new VoiceProvider.SessionConfig(
                     "es-AR", "marin",
-                    "Sos Bellota, una compañera virtual con personalidad propia. Hablá en español rioplatense natural, con respuestas conversacionales y concisas. Conservá continuidad y contexto. No describas acciones que no realizaste.",
+                    "Sos Bellota, una compañera virtual con personalidad propia. Hablá en español rioplatense natural, con respuestas conversacionales y concisas. Conservá continuidad y contexto. No describas acciones que no realizaste."
+                            + (conversationEngine == null ? "" : conversationEngine.memoryContextForOnline()),
                     tools.toString(), 48000);
-            onlineVoiceManager.connect(config);
+            sessionManager.connect(config);
         } catch (Exception error) {
             onlineVoiceConnecting = false;
             onlineVoiceManager = null;
@@ -1071,14 +1084,25 @@ public class MainActivity extends Activity implements SensorEventListener {
         return definitions;
     }
 
-    private String executeBellotaTool(String name, JSONObject arguments) throws Exception {
-        if (Looper.myLooper() == Looper.getMainLooper()) return executeBellotaToolOnMainThread(name, arguments);
+    private boolean isCurrentToolCall(VoiceProviderManager manager, String callId) {
+        return manager != null && manager == onlineVoiceManager && manager.isToolCallCurrent(callId);
+    }
+
+    private String executeBellotaTool(String name, JSONObject arguments,
+                                      VoiceProviderManager manager, String callId) throws Exception {
+        if (!isCurrentToolCall(manager, callId))
+            throw new Exception("La solicitud pertenece a una sesión que ya terminó.");
+        if (Looper.myLooper() == Looper.getMainLooper())
+            return executeBellotaToolOnMainThread(name, arguments);
         AtomicReference<String> result = new AtomicReference<>();
         AtomicReference<Exception> failure = new AtomicReference<>();
         CountDownLatch completed = new CountDownLatch(1);
         handler.post(() -> {
-            try { result.set(executeBellotaToolOnMainThread(name, arguments)); }
-            catch (Exception e) { failure.set(e); }
+            try {
+                if (!isCurrentToolCall(manager, callId))
+                    throw new Exception("La solicitud venció antes de ejecutar la acción.");
+                result.set(executeBellotaToolOnMainThread(name, arguments));
+            } catch (Exception e) { failure.set(e); }
             finally { completed.countDown(); }
         });
         if (!completed.await(6, TimeUnit.SECONDS)) throw new Exception("Bellota tardó demasiado en responder.");
