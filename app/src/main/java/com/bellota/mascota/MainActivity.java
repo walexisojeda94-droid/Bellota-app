@@ -1119,7 +1119,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         // Mientras Realtime está activo, no mezclar la salida TTS local con el audio remoto.
         if (onlineVoiceManager != null && onlineVoiceManager.isConnected()) return;
         if (localVoice == null) return;
-        VoiceRecognitionService.pause(this);
+        pauseLocalRecognition();
         localVoice.speak(text);
     }
 
