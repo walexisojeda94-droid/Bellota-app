@@ -67,6 +67,19 @@ public class VoiceProviderManagerTest {
         assertEquals(0, primary.toolResultCount);
     }
 
+    @Test public void toolCallFromFailedProviderCannotReachFallbackProvider() {
+        FakeProvider primary = new FakeProvider("openai");
+        FakeProvider secondary = new FakeProvider("gemini");
+        VoiceProviderManager manager = new VoiceProviderManager(primary, secondary, new RecordingListener());
+        manager.connect(config());
+        primary.requestToolCall("primary-tool");
+        primary.fail(VoiceProvider.Failure.NETWORK);
+        assertFalse(manager.isToolCallCurrent("primary-tool"));
+        manager.sendToolResult("primary-tool", "late result", false);
+        assertEquals(0, primary.toolResultCount);
+        assertEquals(0, secondary.toolResultCount);
+    }
+
     @Test public void pendingToolCallIsInvalidatedOnDisconnect() {
         FakeProvider primary = new FakeProvider("openai");
         VoiceProviderManager manager = new VoiceProviderManager(primary, null, new RecordingListener());
