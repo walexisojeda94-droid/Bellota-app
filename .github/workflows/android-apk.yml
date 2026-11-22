@@ -11,6 +11,60 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Validate Worker JavaScript and D1 migration
+        run: |
+          node --check backend/openai-realtime/src/index.js
+          python3 - <<'PY'
+          import pathlib
+          import sqlite3
+
+          root = pathlib.Path("backend/openai-realtime")
+          db = sqlite3.connect(":memory:")
+          db.executescript("""
+            CREATE TABLE pairing_codes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              code_hash TEXT NOT NULL UNIQUE,
+              created_at INTEGER NOT NULL,
+              expires_at INTEGER NOT NULL,
+              consumed_at INTEGER
+            );
+            CREATE TABLE devices (
+              id TEXT PRIMARY KEY,
+              device_name TEXT NOT NULL,
+              refresh_token_hash TEXT NOT NULL UNIQUE,
+              created_at INTEGER NOT NULL,
+              refresh_expires_at INTEGER NOT NULL,
+              last_seen_at INTEGER,
+              revoked_at INTEGER
+            );
+          """)
+          db.executescript((root / "migrations/0001_recoverable_refresh.sql").read_text())
+          columns = {row[1] for row in db.execute("PRAGMA table_info(devices)")}
+          pairing_columns = {row[1] for row in db.execute("PRAGMA table_info(pairing_codes)")}
+          assert {"previous_refresh_token_hash", "previous_refresh_valid_until"} <= columns
+          assert "device_id" in pairing_columns
+
+          db.execute("INSERT INTO pairing_codes (code_hash, created_at, expires_at) VALUES ('one-code', 100, 200)")
+          def batch_pair(device_id):
+              with db:
+                  changed = db.execute(
+                      "UPDATE pairing_codes SET consumed_at = ?, device_id = ? "
+                      "WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?",
+                      (150, device_id, "one-code", 150)
+                  ).rowcount
+                  inserted = db.execute(
+                      "INSERT INTO devices (id, device_name, refresh_token_hash, created_at, refresh_expires_at) "
+                      "SELECT ?, ?, ?, ?, ? WHERE EXISTS "
+                      "(SELECT 1 FROM pairing_codes WHERE code_hash = ? AND consumed_at = ? AND device_id = ?)",
+                      (device_id, "test", "hash-" + device_id, 150, 999, "one-code", 150, device_id)
+                  ).rowcount
+                  return changed, inserted
+
+          assert batch_pair("device-a") == (1, 1)
+          assert batch_pair("device-b") == (0, 0)
+          assert db.execute("SELECT COUNT(*) FROM devices").fetchone()[0] == 1
+          print("D1 migration and atomic pairing SQL checks passed.")
+          PY
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
