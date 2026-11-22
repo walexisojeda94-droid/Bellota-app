@@ -98,6 +98,25 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private int previousAudioMode = AudioManager.MODE_NORMAL;
     private boolean previousSpeakerphone;
     private boolean audioModeChanged;
+    private final LinkedHashSet<String> completedUserTranscriptItems = new LinkedHashSet<>();
+    private final Object toolResponseLock = new Object();
+    private final Map<String, PendingToolResponse> pendingToolResponses = new HashMap<>();
+    private final Map<String, String> responseIdByToolCall = new HashMap<>();
+    private final Map<String, ToolOutput> toolOutputsAwaitingResponse = new HashMap<>();
+
+    private static final class PendingToolResponse {
+        final LinkedHashSet<String> callIds = new LinkedHashSet<>();
+        final Map<String, ToolOutput> outputs = new HashMap<>();
+    }
+
+    private static final class ToolOutput {
+        final String result;
+        final boolean isError;
+        ToolOutput(String result, boolean isError) {
+            this.result = result == null ? "" : result;
+            this.isError = isError;
+        }
+    }
 
     public OpenAIRealtimeWebRtcProvider(Context context, String backendUrl, SecureTokenStore tokenStore) {
         if (context == null) throw new IllegalArgumentException("Context obligatorio.");
