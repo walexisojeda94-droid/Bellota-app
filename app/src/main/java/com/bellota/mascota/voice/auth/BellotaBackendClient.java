@@ -156,7 +156,8 @@ public final class BellotaBackendClient {
         return new RealtimeCredential(value, expiresAt, response.optString("model", ""),
                 parseIceServers(response.optJSONArray("ice_servers")),
                 response.optInt("max_output_tokens", 1024),
-                response.optLong("session_max_duration_seconds", 2700L));
+                response.optLong("session_max_duration_seconds", 2700L),
+                response.optLong("session_expires_at", 0L));
     }
 
     static List<IceServerConfig> parseIceServers(JSONArray servers) {
@@ -200,14 +201,17 @@ public final class BellotaBackendClient {
         public final List<IceServerConfig> iceServers;
         public final int maxOutputTokens;
         public final long sessionMaxDurationSeconds;
+        public final long sessionExpiresAtEpochSeconds;
         RealtimeCredential(String value, long expiresAtEpochSeconds, String model,
-                           List<IceServerConfig> iceServers, int maxOutputTokens, long sessionMaxDurationSeconds) {
+                           List<IceServerConfig> iceServers, int maxOutputTokens, long sessionMaxDurationSeconds,
+                           long sessionExpiresAtEpochSeconds) {
             this.value = value;
             this.expiresAtEpochSeconds = expiresAtEpochSeconds;
             this.model = model;
             this.iceServers = iceServers;
             this.maxOutputTokens = maxOutputTokens;
             this.sessionMaxDurationSeconds = sessionMaxDurationSeconds;
+            this.sessionExpiresAtEpochSeconds = sessionExpiresAtEpochSeconds;
         }
     }
 
