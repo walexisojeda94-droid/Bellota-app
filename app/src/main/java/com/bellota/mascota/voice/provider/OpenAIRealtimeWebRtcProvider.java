@@ -155,8 +155,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         iceServers.add(IceServer.builder("stun:stun.l.google.com:19302").createIceServer());
         PeerConnection.RTCConfiguration rtc = new PeerConnection.RTCConfiguration(iceServers);
         rtc.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
-        // GATHER_ONCE permite que la recolección ICE llegue a COMPLETE; con GATHER_CONTINUALLY
-        // nunca termina y la oferta SDP quedaría sin enviarse.
+        // Recolección única: GATHER_CONTINUALLY no llega a COMPLETE y bloquea el envío SDP.
         rtc.continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_ONCE;
         peerConnection = factory.createPeerConnection(rtc, new PeerConnection.Observer() {
             @Override public void onSignalingChange(PeerConnection.SignalingState state) { }
@@ -235,7 +234,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         }, new MediaConstraints());
     }
 
-    /** Si la recolección ICE no informa COMPLETE a tiempo, se envía la oferta con lo reunido hasta ahora. */
+    /** Envía la oferta con los candidatos ICE reunidos si COMPLETE no llega a tiempo. */
     private void scheduleOfferFallback() {
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             if (!closed.get() && offerSubmitted.compareAndSet(false, true)) {
