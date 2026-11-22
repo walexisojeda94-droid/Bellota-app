@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS devices (
   id TEXT PRIMARY KEY,
   device_name TEXT NOT NULL,
   refresh_token_hash TEXT NOT NULL UNIQUE,
+  previous_refresh_token_hash TEXT,
+  previous_refresh_valid_until INTEGER,
   created_at INTEGER NOT NULL,
   refresh_expires_at INTEGER NOT NULL,
   last_seen_at INTEGER,
