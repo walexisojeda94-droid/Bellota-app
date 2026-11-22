@@ -102,6 +102,7 @@ public class VoiceRecognitionService extends Service {
             startRecognition();
         } else {
             paused = false;
+            externalMicActive = false;
             updateNotification();
             startRecognition();
         }
