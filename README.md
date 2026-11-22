@@ -11,7 +11,7 @@ Aplicación Android nativa de mascota virtual. Bellota mantiene su interfaz, com
 - Consulta del clima mediante Open-Meteo.
 - Integración Android de OpenAI Realtime mediante WebRTC, autenticación con backend, límites de sesión, recuperación acotada y fallback local implementados en el código.
 - OpenAI Realtime es el único proveedor online implementado. Gemini Live todavía no está integrado.
-- El servicio de voz persistente en segundo plano mediante Foreground Service todavía no está implementado. El ciclo de vida actual de la actividad puede detener la sesión al salir de la pantalla.
+- El reconocimiento local se ejecuta mediante un Foreground Service con notificación persistente mientras la tarea permanece activa. El servicio se detiene al cerrar la actividad/tarea; la sesión OpenAI WebRTC sigue ligada a MainActivity y no está garantizada en segundo plano.
 
 **Importante:** que la integración exista en el código y que CI compile no significa que OpenAI o TURN estén validados en producción. La conexión real requiere desplegar el Worker, configurar D1 y secretos, y probar con credenciales válidas y una red restrictiva.
 
