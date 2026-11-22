@@ -37,7 +37,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * OpenAI Realtime audio-only transport over native Android WebRTC.
@@ -58,13 +61,18 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private final Context appContext;
     private final String backendUrl;
     private final SecureTokenStore tokenStore;
-    private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "Bellota-Realtime-WebRTC");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private volatile ExecutorService worker = newWorker();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final AtomicBoolean closed = new AtomicBoolean(true);
     private final AtomicBoolean offerSubmitted = new AtomicBoolean(false);
+    private final AtomicInteger retryCount = new AtomicInteger(0);
+    private final AtomicLong totalSessionTokens = new AtomicLong(0L);
+    private volatile List<BellotaBackendClient.IceServerConfig> configuredIceServers = Collections.emptyList();
+    private volatile HttpURLConnection activeHttpConnection;
+    private volatile long sessionMaxDurationMs = 2700000L;
+    private final Runnable negotiationTimeout = () -> fail(Failure.NETWORK, true, "La negociación WebRTC superó el tiempo máximo.");
+    private volatile Runnable iceDisconnectTimeout;
+    private volatile Runnable sessionTimeout;
     private volatile Listener listener;
     private volatile boolean connected;
     private volatile SessionConfig sessionConfig;
@@ -96,10 +104,15 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     @Override public void connect(SessionConfig config) {
         if (config == null) throw new IllegalArgumentException("La configuración de sesión es obligatoria.");
         if (!closed.compareAndSet(true, false)) return;
+        ensureWorker();
         sessionConfig = config;
         offerSubmitted.set(false);
+        retryCount.set(0);
+        totalSessionTokens.set(0L);
+        mainHandler.removeCallbacks(negotiationTimeout);
+        mainHandler.postDelayed(negotiationTimeout, 60000L);
         notifyState(State.REQUESTING_CREDENTIAL, "Solicitando credencial temporal de OpenAI.");
-        worker.execute(() -> establishSession(config));
+        executeWorker(() -> establishSession(config));
     }
 
     private void establishSession(SessionConfig config) {
@@ -108,6 +121,8 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             BellotaBackendClient.RealtimeCredential credential =
                     backend.createRealtimeClientSecret(config.instructions, config.voice);
             if (closed.get()) return;
+            configuredIceServers = credential.iceServers == null ? Collections.emptyList() : credential.iceServers;
+            sessionMaxDurationMs = Math.max(60000L, Math.min(3600000L, credential.sessionMaxDurationSeconds * 1000L));
             notifyState(State.CONNECTING, "Preparando conexión WebRTC.");
             initializeWebRtc();
             createPeerConnection();
@@ -116,7 +131,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             exchangeSecret = credential.value;
             createOffer();
         } catch (BellotaBackendClient.BackendException error) {
-            fail(mapBackendFailure(error), error.httpStatus == 401, error.getMessage());
+            fail(mapBackendFailure(error), error.httpStatus == 429 || error.httpStatus >= 500, error.getMessage());
         } catch (Exception error) {
             fail(error instanceof IOException ? Failure.NETWORK : Failure.AUDIO, true,
                     safeMessage(error));
@@ -153,6 +168,14 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private void createPeerConnection() {
         List<PeerConnection.IceServer> iceServers = new ArrayList<>();
         iceServers.add(IceServer.builder("stun:stun.l.google.com:19302").createIceServer());
+        for (BellotaBackendClient.IceServerConfig configured : configuredIceServers) {
+            for (String url : configured.urls) {
+                PeerConnection.IceServer.Builder builder = IceServer.builder(url);
+                if (!configured.username.isEmpty()) builder.setUsername(configured.username);
+                if (!configured.credential.isEmpty()) builder.setPassword(configured.credential);
+                iceServers.add(builder.createIceServer());
+            }
+        }
         PeerConnection.RTCConfiguration rtc = new PeerConnection.RTCConfiguration(iceServers);
         rtc.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
         // GATHER_ONCE permite que la recolección ICE llegue a COMPLETE; con GATHER_CONTINUALLY
@@ -165,10 +188,15 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                 if (state == PeerConnection.IceConnectionState.CONNECTED
                         || state == PeerConnection.IceConnectionState.COMPLETED) {
                     connected = true;
+                    retryCount.set(0);
+                    mainHandler.removeCallbacks(negotiationTimeout);
+                    cancelIceDisconnectTimeout();
+                    scheduleSessionTimeout();
                     notifyState(State.CONNECTED, "OpenAI Realtime conectado por WebRTC.");
                 } else if (state == PeerConnection.IceConnectionState.DISCONNECTED) {
                     connected = false;
                     notifyState(State.RECONNECTING, "Se interrumpió temporalmente la conexión WebRTC.");
+                    scheduleIceDisconnectTimeout();
                 } else if (state == PeerConnection.IceConnectionState.FAILED) {
                     fail(Failure.NETWORK, true, "Falló la conexión ICE de WebRTC.");
                 }
@@ -176,7 +204,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             @Override public void onIceConnectionReceivingChange(boolean receiving) { }
             @Override public void onIceGatheringChange(PeerConnection.IceGatheringState state) {
                 if (state == PeerConnection.IceGatheringState.COMPLETE && offerSubmitted.compareAndSet(false, true)) {
-                    worker.execute(OpenAIRealtimeWebRtcProvider.this::exchangeOffer);
+                    executeWorker(OpenAIRealtimeWebRtcProvider.this::exchangeOffer);
                 }
             }
             @Override public void onIceCandidate(IceCandidate candidate) { }
@@ -239,7 +267,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private void scheduleOfferFallback() {
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             if (!closed.get() && offerSubmitted.compareAndSet(false, true)) {
-                worker.execute(this::exchangeOffer);
+                executeWorker(this::exchangeOffer);
             }
         }, OFFER_GATHER_TIMEOUT_MS);
     }
