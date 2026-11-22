@@ -559,6 +559,11 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             activeAttemptId = attemptSequence.incrementAndGet();
             connected = false;
             cancelIceDisconnectTimeout();
+            // A retry creates a new server session with a new expires_at; do not keep
+            // the previous session's timeout or it may close the replacement early.
+            Runnable pendingSessionTimeout = sessionTimeout;
+            if (pendingSessionTimeout != null) mainHandler.removeCallbacks(pendingSessionTimeout);
+            sessionTimeout = null;
             Runnable pendingOfferTimeout = offerFallbackTimeout;
             if (pendingOfferTimeout != null) mainHandler.removeCallbacks(pendingOfferTimeout);
             offerFallbackTimeout = null;
