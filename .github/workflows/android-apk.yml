@@ -145,10 +145,7 @@ jobs:
             adb shell am start -n com.bellota.mascota/.MainActivity
             sleep 10
             adb shell pidof com.bellota.mascota
-            if adb logcat -d -s AndroidRuntime:E | grep -F "com.bellota.mascota" ; then
-              echo "Bellota crashed on Android 12."
-              exit 1
-            fi
+            ! adb logcat -d -t 2000 | grep -A 8 -F "FATAL EXCEPTION" | grep -F "com.bellota.mascota"
       - name: Build signed release APK
         if: steps.signing.outputs.enabled == 'true'
         env:
