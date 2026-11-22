@@ -47,7 +47,7 @@ public class VoiceRecognitionService extends Service {
     }
 
     public static void stop(Context context) {
-        startServiceAction(context, ACTION_STOP);
+        context.stopService(new Intent(context, VoiceRecognitionService.class));
     }
 
     public static void setExternalMicActive(Context context, boolean active) {
