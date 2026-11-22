@@ -35,7 +35,7 @@ El tope acumulado es una protección del cliente. La duración tiene además ven
 1. Crear una TURN key en Cloudflare Realtime.
 2. Guardar `TURN_KEY_ID` y `TURN_KEY_API_TOKEN` como secretos del Worker.
 3. Desplegar el Worker actualizado.
-4. Verificar en una red restrictiva que se selecciona un candidato relay y que el audio funciona en ambos sentidos.
+4. Verificar en una red restrictiva que se selecciona un candidato relay y que el audio funciona en ambos sentidos. El Worker filtra el puerto 53 para evitar demoras de recolección ICE en la negociación SDP sin trickle.
 5. Configurar límites y alertas de gasto en OpenAI.
 
 Sin los dos secretos TURN, el Worker devuelve una lista ICE vacía y la app conserva el STUN de Google como compatibilidad. En ese estado no hay relay TURN. Si se configura solo uno de los secretos o Cloudflare no puede emitir credenciales, el Worker responde `503 turn_unavailable` en lugar de degradar silenciosamente.
