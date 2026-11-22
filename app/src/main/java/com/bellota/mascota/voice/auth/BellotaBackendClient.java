@@ -180,10 +180,12 @@ public final class BellotaBackendClient {
         try { body.put("refresh_token", refresh); }
         catch (JSONException impossible) { throw new IllegalStateException(impossible); }
         request("POST", "/v1/device/revoke", body, null);
+        if (!tokenStore.clear())
+            throw new BackendException("secure_storage_error", 500,
+                    "El servidor revocó el dispositivo, pero no se pudo borrar la credencial local. Podés reintentar.");
         synchronized (authLock) {
             accessToken = null;
             accessTokenExpiresAtMs = 0L;
-            tokenStore.clear();
         }
     }
 
