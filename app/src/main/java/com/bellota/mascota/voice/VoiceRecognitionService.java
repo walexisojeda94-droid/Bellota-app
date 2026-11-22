@@ -127,7 +127,7 @@ public class VoiceRecognitionService extends Service {
                 : new Notification.Builder(this);
         builder.setSmallIcon(R.drawable.ic_bellota)
                 .setContentTitle(externalMicActive ? "Bellota en conversación online" : paused ? "Micrófono de Bellota en pausa" : "Bellota está escuchando")
-                .setContentText(paused ? "El reconocimiento local está temporalmente pausado."
+                .setContentText(externalMicActive ? "Micrófono activo para OpenAI Realtime." : paused ? "El reconocimiento local está temporalmente pausado."
                         : Build.VERSION.SDK_INT >= 31
                         ? "Audio procesado por el reconocedor del dispositivo."
                         : "Se solicita modo sin conexión; Android puede usar su proveedor configurado.")
