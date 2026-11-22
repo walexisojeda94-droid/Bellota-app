@@ -103,7 +103,7 @@ public class VoiceRecognitionService extends Service {
                 : new Notification.Builder(this);
         builder.setSmallIcon(R.drawable.ic_bellota)
                 .setContentTitle(paused ? "Micrófono de Bellota en pausa" : "Bellota está escuchando")
-                .setContentText(paused ? "El reconocimiento local está temporalmente pausado." : "Micrófono activo para comandos de voz en español.")
+                .setContentText(paused ? "El reconocimiento local está temporalmente pausado." : "Micrófono activo; se prefiere el reconocimiento sin conexión de Android.")
                 .setCategory(Notification.CATEGORY_SERVICE)
                 .setPriority(Notification.PRIORITY_LOW)
                 .setOngoing(true)
@@ -146,6 +146,7 @@ public class VoiceRecognitionService extends Service {
                             event.putExtra(EXTRA_TEXT, status);
                             sendBroadcast(event);
                             if (status != null && (status.startsWith("No hay un servicio de reconocimiento")
+                                    || status.startsWith("No hay un reconocedor de voz local")
                                     || status.startsWith("Reconocimiento detenido: Android no concedió permiso"))) {
                                 stopRecognition();
                                 stopForeground(true);
