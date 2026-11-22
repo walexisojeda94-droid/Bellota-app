@@ -90,7 +90,7 @@ public final class VoiceProviderManager {
                 sessionStarted = false;
                 old = activeProvider;
                 activeProvider = null;
-                pendingToolCalls.clear();
+                retirePendingToolCallsLocked();
             }
             dispose(old);
             safeNotifyState(VoiceProvider.State.CLOSED,
@@ -268,7 +268,7 @@ public final class VoiceProviderManager {
             synchronized (lock) {
                 if (!sessionStarted || sessionGeneration != generation || activeProvider != provider) return;
                 activeProvider = null;
-                pendingToolCalls.clear();
+                retirePendingToolCallsLocked();
             }
             dispose(provider);
             safeNotifyState(VoiceProvider.State.RECONNECTING, safeProviderId(provider),
