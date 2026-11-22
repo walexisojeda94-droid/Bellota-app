@@ -263,6 +263,7 @@ public final class LocalConversationEngine {
                 || text.equals("para nada") || text.equals("ya no")
                 || text.startsWith("no me gusta") || text.startsWith("no me encanta")
                 || text.startsWith("no me siguen gustando") || text.startsWith("no me sigue gustando")
+                || text.startsWith("ya no me gusta") || text.startsWith("ya no me encanta")
                 || text.startsWith("no ya no") || text.startsWith("no no me gusta")
                 || text.startsWith("no no me encanta");
     }
@@ -272,6 +273,7 @@ public final class LocalConversationEngine {
         return text.equals("si") || text.equals("si claro") || text.equals("dale")
                 || text.equals("obvio") || text.equals("obvio que si") || text.equals("claro")
                 || text.equals("siempre") || text.equals("mucho") || text.equals("por supuesto")
+                || text.startsWith("si me gusta") || text.startsWith("si me encanta")
                 || text.startsWith("si me sigue gustando") || text.startsWith("si todavia me gusta");
     }
 }
