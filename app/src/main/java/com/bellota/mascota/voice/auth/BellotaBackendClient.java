@@ -2,6 +2,7 @@ package com.bellota.mascota.voice.auth;
 
 import android.os.Looper;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -12,6 +13,9 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Synchronous HTTPS client for Bellota's device-auth Worker.
@@ -149,18 +153,61 @@ public final class BellotaBackendClient {
         if (value.isEmpty() || expiresAt <= 0L)
             throw new BackendException("invalid_response", 502,
                     "El backend devolvió una credencial temporal incompleta.");
-        return new RealtimeCredential(value, expiresAt, response.optString("model", ""));
+        return new RealtimeCredential(value, expiresAt, response.optString("model", ""),
+                parseIceServers(response.optJSONArray("ice_servers")),
+                response.optInt("max_output_tokens", 1024),
+                response.optLong("session_max_duration_seconds", 2700L));
+    }
+
+    private static List<IceServerConfig> parseIceServers(JSONArray servers) {
+        if (servers == null || servers.length() == 0) return Collections.emptyList();
+        List<IceServerConfig> parsed = new ArrayList<>();
+        for (int i = 0; i < servers.length(); i++) {
+            org.json.JSONObject item = servers.optJSONObject(i);
+            if (item == null) continue;
+            JSONArray urlsJson = item.optJSONArray("urls");
+            List<String> urls = new ArrayList<>();
+            if (urlsJson != null) {
+                for (int j = 0; j < urlsJson.length(); j++) {
+                    String url = urlsJson.optString(j, "").trim();
+                    if (url.startsWith("stun:") || url.startsWith("turn:") || url.startsWith("turns:")) urls.add(url);
+                }
+            } else {
+                String url = item.optString("urls", "").trim();
+                if (url.startsWith("stun:") || url.startsWith("turn:") || url.startsWith("turns:")) urls.add(url);
+            }
+            if (!urls.isEmpty()) parsed.add(new IceServerConfig(urls,
+                    item.optString("username", ""), item.optString("credential", "")));
+        }
+        return Collections.unmodifiableList(parsed);
+    }
+
+    public static final class IceServerConfig {
+        public final List<String> urls;
+        public final String username;
+        public final String credential;
+        IceServerConfig(List<String> urls, String username, String credential) {
+            this.urls = Collections.unmodifiableList(new ArrayList<>(urls));
+            this.username = username;
+            this.credential = credential;
+        }
     }
 
     public static final class RealtimeCredential {
         public final String value;
         public final long expiresAtEpochSeconds;
         public final String model;
-
-        RealtimeCredential(String value, long expiresAtEpochSeconds, String model) {
+        public final List<IceServerConfig> iceServers;
+        public final int maxOutputTokens;
+        public final long sessionMaxDurationSeconds;
+        RealtimeCredential(String value, long expiresAtEpochSeconds, String model,
+                           List<IceServerConfig> iceServers, int maxOutputTokens, long sessionMaxDurationSeconds) {
             this.value = value;
             this.expiresAtEpochSeconds = expiresAtEpochSeconds;
             this.model = model;
+            this.iceServers = iceServers;
+            this.maxOutputTokens = maxOutputTokens;
+            this.sessionMaxDurationSeconds = sessionMaxDurationSeconds;
         }
     }
 
