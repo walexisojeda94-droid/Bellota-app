@@ -104,7 +104,7 @@ public final class ConversationMemory {
         String clean = like == null ? "" : like.replace("|", " ").trim();
         if (clean.isEmpty()) return;
         List<String> list = likes();
-        for (String s : list) if (s.equalsIgnoreCase(clean)) return;
+        for (String s : list) if (TextUtil.normalize(s).equals(TextUtil.normalize(clean))) return;
         list.add(clean);
         while (list.size() > MAX_LIKES) list.remove(0);
         StringBuilder sb = new StringBuilder();
@@ -120,7 +120,7 @@ public final class ConversationMemory {
         List<String> list = likes();
         boolean changed = false;
         for (int i = list.size() - 1; i >= 0; i--) {
-            if (list.get(i).equalsIgnoreCase(like.trim())) { list.remove(i); changed = true; }
+            if (TextUtil.normalize(list.get(i)).equals(TextUtil.normalize(like))) { list.remove(i); changed = true; }
         }
         if (!changed) return;
         store.put("likes", join(list));
