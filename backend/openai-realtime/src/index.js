@@ -213,6 +213,9 @@ async function createTurnIceServers(env) {
     const result = { urls };
     if (typeof server.username === "string" && server.username) result.username = server.username;
     if (typeof server.credential === "string" && server.credential) result.credential = server.credential;
+    const hasTurn = urls.some((url) => url.startsWith("turn:") || url.startsWith("turns:"));
+    if (hasTurn && (!result.username || !result.credential))
+      throw new Error("Cloudflare TURN devolvió servidores sin credenciales.");
     return result;
   }).filter(Boolean);
   if (filtered.length === 0) throw new Error("Cloudflare TURN no devolvió servidores ICE utilizables.");
