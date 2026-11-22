@@ -116,7 +116,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         applySleepVisuals();
         localVoice = new LocalVoice(this, (ready, detail) -> { });
         localVoice.setOnSpeechFinished(() -> {
-            if (!paused && !isFinishing()) resumeLocalRecognition();
+            if (!isFinishing()) resumeLocalRecognition();
         });
         setupAmbientTheme();
         registerVoiceReceiver();
