@@ -352,16 +352,20 @@ public class MainActivity extends Activity implements SensorEventListener {
                     });
                 }
                 @Override public void onAssistantTranscript(String text, boolean isFinal) {
-                    VoiceProviderManager owner = sessionManagerRef.get();
-                    if (isFinal && owner != null && owner == onlineVoiceManager && owner.isConnected()
-                            && petMemory != null && text != null && !text.trim().isEmpty())
-                        petMemory.remember("voz_bellota", text);
+                    if (!isFinal || text == null || text.trim().isEmpty()) return;
+                    runOnUiThread(() -> {
+                        VoiceProviderManager owner = sessionManagerRef.get();
+                        if (owner == null || owner != onlineVoiceManager || !owner.isConnected()) return;
+                        if (petMemory != null) petMemory.remember("voz_bellota", text);
+                    });
                 }
                 @Override public void onAudioOutput(byte[] pcm16, int sampleRateHz, int channels) {
                     // WebRTC reproduce el audio remoto directamente mediante su dispositivo de audio nativo.
                 }
                 @Override public void onAssistantSpeaking(boolean speaking) {
                     runOnUiThread(() -> {
+                        VoiceProviderManager owner = sessionManagerRef.get();
+                        if (owner == null || owner != onlineVoiceManager || !owner.isConnected()) return;
                         if (eyes != null && !isAsleep())
                             eyes.setMood(speaking ? EyePetView.Mood.THINKING : EyePetView.Mood.CALM);
                     });
