@@ -109,9 +109,9 @@ public final class SecureTokenStore {
         }
     }
 
-    public void clear() {
+    public boolean clear() {
         synchronized (lock) {
-            preferences.edit().remove(TOKEN_KEY).commit();
+            return preferences.edit().remove(TOKEN_KEY).commit();
         }
     }
 
