@@ -40,7 +40,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * OpenAI Realtime audio-only transport over native Android WebRTC.
@@ -53,8 +52,6 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private static final String PROVIDER_ID = "openai-realtime-webrtc";
     private static final String OPENAI_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
     private static final int HTTP_TIMEOUT_MS = 15000;
-    private static final int MAX_OUTPUT_TOKENS_PER_RESPONSE = 1024;
-    private static final long MAX_SESSION_TOTAL_TOKENS = 24000L;
     private static final int MAX_RECOVERY_ATTEMPTS = 1;
     private static final int MAX_SDP_BYTES = 262144;
     private static final long OFFER_GATHER_TIMEOUT_MS = 4000L;
@@ -70,7 +67,8 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private final AtomicBoolean offerSubmitted = new AtomicBoolean(false);
     private final AtomicInteger retryCount = new AtomicInteger(0);
     private final AtomicBoolean retryScheduled = new AtomicBoolean(false);
-    private final AtomicLong totalSessionTokens = new AtomicLong(0L);
+    private final RealtimeSessionBudget sessionBudget = new RealtimeSessionBudget();
+    private volatile int maxOutputTokens = RealtimeSessionBudget.MAX_OUTPUT_TOKENS_PER_RESPONSE;
     private volatile List<BellotaBackendClient.IceServerConfig> configuredIceServers = Collections.emptyList();
     private volatile HttpURLConnection activeHttpConnection;
     private volatile long sessionMaxDurationMs = 2700000L;
@@ -113,7 +111,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         offerSubmitted.set(false);
         retryCount.set(0);
         retryScheduled.set(false);
-        totalSessionTokens.set(0L);
+        sessionBudget.reset();
         mainHandler.removeCallbacks(negotiationTimeout);
         mainHandler.postDelayed(negotiationTimeout, 60000L);
         notifyState(State.REQUESTING_CREDENTIAL, "Solicitando credencial temporal de OpenAI.");
@@ -127,7 +125,8 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                     backend.createRealtimeClientSecret(config.instructions, config.voice);
             if (closed.get()) return;
             configuredIceServers = credential.iceServers == null ? Collections.emptyList() : credential.iceServers;
-            sessionMaxDurationMs = Math.max(60000L, Math.min(3600000L, credential.sessionMaxDurationSeconds * 1000L));
+            maxOutputTokens = Math.max(1, Math.min(4096, credential.maxOutputTokens));
+            sessionMaxDurationMs = Math.max(60000L, Math.min(RealtimeSessionBudget.MAX_DURATION_SECONDS * 1000L, credential.sessionMaxDurationSeconds * 1000L));
             notifyState(State.CONNECTING, "Preparando conexión WebRTC.");
             initializeWebRtc();
             createPeerConnection();
@@ -337,7 +336,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                     ? "Sos Bellota, una compañera virtual conversacional. Hablá en español rioplatense natural."
                     : sessionConfig.instructions);
             session.put("output_modalities", new JSONArray().put("audio"));
-            session.put("max_output_tokens", MAX_OUTPUT_TOKENS_PER_RESPONSE);
+            session.put("max_output_tokens", maxOutputTokens);
             JSONObject audio = new JSONObject();
             audio.put("input", new JSONObject().put("turn_detection",
                     new JSONObject().put("type", "server_vad")));
@@ -406,7 +405,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                     JSONObject response = event.optJSONObject("response");
                     JSONObject usage = response == null ? null : response.optJSONObject("usage");
                     long used = usage == null ? 0L : usage.optLong("total_tokens", 0L);
-                    if (used > 0L && totalSessionTokens.addAndGet(used) >= MAX_SESSION_TOTAL_TOKENS) {
+                    if (used > 0L && sessionBudget.recordResponseUsage(used)) {
                         fail(Failure.QUOTA, false, "Se alcanzó el límite de consumo configurado para esta sesión.");
                         return;
                     }
