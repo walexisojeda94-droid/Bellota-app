@@ -153,7 +153,7 @@ public final class PetMemory {
             try {
                 long timestamp = new JSONObject(line).optLong("timestamp", 0L);
                 if (timestamp >= cutoff && timestamp <= now + 24L * 60L * 60L * 1000L)
-                    retained.append(line).append('\\n');
+                    retained.append(line).append('\n');
             } catch (Exception ignored) {
                 // Malformed or unrecognized legacy entries are not retained.
             }
