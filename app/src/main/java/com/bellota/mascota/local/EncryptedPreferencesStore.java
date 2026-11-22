@@ -61,7 +61,7 @@ public final class EncryptedPreferencesStore implements ConversationMemory.Store
     @Override public void put(String key, String value) {
         synchronized (lock) {
             if (value == null) {
-                preferences.edit().remove(key).commit();
+                preferences.edit().remove(key).apply();
                 return;
             }
             writeEncryptedLocked(key, value);
@@ -92,10 +92,9 @@ public final class EncryptedPreferencesStore implements ConversationMemory.Store
                 byte[] payload = new byte[iv.length + encrypted.length];
                 System.arraycopy(iv, 0, payload, 0, iv.length);
                 System.arraycopy(encrypted, 0, payload, iv.length, encrypted.length);
-                boolean saved = preferences.edit()
+                preferences.edit()
                         .putString(key, PREFIX + Base64.encodeToString(payload, Base64.NO_WRAP))
-                        .commit();
-                if (!saved) throw new IllegalStateException("No se pudo guardar la memoria cifrada.");
+                        .apply();
                 return;
             } catch (GeneralSecurityException invalidatedKey) {
                 resetAllMemory();
@@ -134,7 +133,7 @@ public final class EncryptedPreferencesStore implements ConversationMemory.Store
     }
 
     private void resetAllMemory() {
-        preferences.edit().clear().commit();
+        preferences.edit().clear().apply();
         try {
             KeyStore keyStore = KeyStore.getInstance(ANDROID_KEY_STORE);
             keyStore.load(null);
