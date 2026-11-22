@@ -900,21 +900,26 @@ public class MainActivity extends Activity implements SensorEventListener {
     /** "No te duermas", "dormite", "despertate". Devuelve true si el texto era uno de esos comandos. */
     private boolean handleCompanionCommand(String text, boolean speak) {
         if (autonomy == null || text == null || text.isEmpty()) return false;
-        if (text.contains("no te duermas") || text.contains("no te vayas a dormir")
-                || text.contains("no te vayas a descansar") || text.contains("quedate despierta")) {
+        Utterance utterance = Utterance.of(text);
+        if (utterance.hasPhrase("no te duermas") || utterance.hasPhrase("no te vayas a dormir")
+                || utterance.hasPhrase("no te vayas a descansar") || utterance.hasPhrase("quedate despierta")) {
             onStayAwake(speak);
             return true;
         }
-        if (text.contains("dormite") || text.contains("anda a dormir") || text.contains("andate a dormir")
-                || text.contains("anda a descansar")) {
+        boolean sleepRequest = utterance.text.equals("dormite")
+                || utterance.startsWith("anda a dormir") || utterance.startsWith("andate a dormir")
+                || utterance.startsWith("anda a descansar") || utterance.startsWith("por favor dormite");
+        if (sleepRequest) {
             if (!autonomy.isSleeping() && pendingSleepTask == null) {
                 autonomy.setStayAwake(false);
                 startSleepSequence("asked");
             }
             return true;
         }
-        if ((text.contains("despertate") || text.contains("levantate") || text.contains("desperta"))
-                && autonomy.isSleeping() && !autonomy.isForcedSleep()) {
+        boolean wakeRequest = utterance.text.equals("despertate") || utterance.text.equals("levantate")
+                || utterance.text.equals("desperta") || utterance.startsWith("despertate bellota")
+                || utterance.startsWith("levantate bellota");
+        if (wakeRequest && autonomy.isSleeping() && !autonomy.isForcedSleep()) {
             wakeUp(true, speak);
             return true;
         }
