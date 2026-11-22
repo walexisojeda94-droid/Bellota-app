@@ -216,6 +216,7 @@ async function createRealtimeSecret(request, env) {
   const session = {
     type: "realtime",
     model: OPENAI_MODEL,
+    expires_at: Math.floor(Date.now() / 1000) + 2700,
     output_modalities: ["audio"],
     instructions: instructions || "Sos Bellota, una compañera virtual conversacional. Hablá en español rioplatense natural.",
     audio: {
@@ -251,6 +252,7 @@ async function createRealtimeSecret(request, env) {
     model: OPENAI_MODEL,
     max_output_tokens: REALTIME_MAX_OUTPUT_TOKENS,
     session_max_duration_seconds: 2700,
+    session_expires_at: session.expires_at,
     ice_servers: iceServers
   });
 }
