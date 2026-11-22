@@ -339,7 +339,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                     runOnUiThread(() -> {
                         onlineVoiceConnecting = false;
                         onlineVoiceManager = null;
-                        if (!paused && !isFinishing()) startLocalRecognizer();
+                        if (!isFinishing()) startLocalRecognizer();
                         status.setText("OpenAI no está disponible. Bellota volvió a la voz local: " + detail);
                         onlineButton.setText("Conectar");
                         onlineButton.setEnabled(true);
@@ -937,7 +937,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void startLocalRecognizer() {
-        if (paused || isFinishing() || onlineVoiceConnecting
+        if (isFinishing() || onlineVoiceConnecting
                 || (onlineVoiceManager != null && onlineVoiceManager.isConnected())
                 || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         localRecognitionPaused = false;
