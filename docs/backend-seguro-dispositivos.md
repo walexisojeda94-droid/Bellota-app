@@ -33,7 +33,7 @@ El alta inicial utiliza un código de un solo uso. El propietario lo genera desd
 - El refresh token se cifra con AES-GCM y una clave no exportable de Android Keystore. Los access tokens y las credenciales temporales OpenAI permanecen en memoria.
 - Si Android invalida la clave del refresh token, la app elimina la credencial ilegible y requiere volver a vincular el dispositivo. No intenta usar el token como texto plano.
 - El diario `PetMemory` se cifra con AES-GCM y una clave Keystore independiente. Conserva entradas de hasta 180 días, con un máximo de 512 KiB de contenido descifrado; elimina primero los registros vencidos y luego las entradas más antiguas.
-- La memoria conversacional persistente en SharedPreferences también se cifra individualmente con AES-GCM. Los valores previos en texto plano se migran al almacenamiento cifrado al iniciar el motor.
+- La memoria conversacional persistente en SharedPreferences también se cifra individualmente con AES-GCM. Los valores previos en texto plano se migran al almacenamiento cifrado al iniciar el motor. Nombre, gustos y apodos se conservan localmente hasta que se borren los datos de la app o se desinstale; no se sincronizan con el Worker.
 - Si se invalida la clave del diario, el archivo cifrado queda apartado como archivo `.locked` y Bellota inicia un diario nuevo. Sin la clave original no es posible recuperar esos recuerdos.
 - El manifiesto establece `android:allowBackup="false"`, por lo que las credenciales y memorias privadas no se incluyen en los respaldos Android.
 
