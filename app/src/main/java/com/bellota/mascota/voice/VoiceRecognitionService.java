@@ -103,7 +103,10 @@ public class VoiceRecognitionService extends Service {
                 : new Notification.Builder(this);
         builder.setSmallIcon(R.drawable.ic_bellota)
                 .setContentTitle(paused ? "Micrófono de Bellota en pausa" : "Bellota está escuchando")
-                .setContentText(paused ? "El reconocimiento local está temporalmente pausado." : "Micrófono activo; se prefiere el reconocimiento sin conexión de Android.")
+                .setContentText(paused ? "El reconocimiento local está temporalmente pausado."
+                        : Build.VERSION.SDK_INT >= 31
+                        ? "Audio procesado por el reconocedor del dispositivo."
+                        : "Se solicita modo sin conexión; Android puede usar su proveedor configurado.")
                 .setCategory(Notification.CATEGORY_SERVICE)
                 .setPriority(Notification.PRIORITY_LOW)
                 .setOngoing(true)
