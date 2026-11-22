@@ -31,7 +31,7 @@ public class OfflineReplies {
         if (asksWeather(text)) return null; // Se resuelve con ubicación y el servicio meteorológico.
         if (asksHowAreYou(text)) return moodReply(mood);
         String emotionalState = mood == null ? "NEUTRAL" : mood.toUpperCase(Locale.ROOT);
-        if (emotionalState.contains("OFFENDED") && (text.contains("hola") || text.startsWith("buen dia") || text.startsWith("buenas"))) {
+        if (emotionalState.contains("OFFENDED") && (text.equals("hola") || text.startsWith("hola ") || text.startsWith("buen dia") || text.startsWith("buenas"))) {
             return choose("Hola... sí, te escucho.", "Buenas. Todavía estoy un poquito dolida, pero podemos hablar.", "Volviste. Me quedo acá, aunque sigo algo sentida.");
         }
         if (emotionalState.contains("ANGRY") && (text.contains("hola") || text.startsWith("buen dia") || text.startsWith("buenas"))) {
@@ -58,7 +58,7 @@ public class OfflineReplies {
         if (text.endsWith("por que") || text.startsWith("por que ")) {
             return choose("No quiero inventarte una explicación. ¿Me das un poco más de contexto?", "Puede depender de varias cosas. ¿A qué situación te referís?");
         }
-        if (text.contains(" podes ") || text.startsWith("podes ") || text.contains(" puedes ")) {
+        if (text.startsWith("podes ") || text.equals("podes") || text.startsWith("puedes ")) {
             return choose("Puedo intentarlo desde lo que tengo disponible acá. ¿Qué parte querés resolver primero?", "Veamos cómo hacerlo. Contame un poquito más de lo que necesitás.");
         }
         // Las consultas no reconocidas se delegan al fallback contextual de LocalConversationEngine.
