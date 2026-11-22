@@ -40,6 +40,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * OpenAI Realtime audio-only transport over native Android WebRTC.
@@ -66,6 +67,8 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private final AtomicBoolean closed = new AtomicBoolean(true);
     private final AtomicBoolean offerSubmitted = new AtomicBoolean(false);
     private final AtomicInteger retryCount = new AtomicInteger(0);
+    private final AtomicLong attemptSequence = new AtomicLong(0L);
+    private volatile long activeAttemptId;
     private final AtomicBoolean retryScheduled = new AtomicBoolean(false);
     private final RealtimeSessionBudget sessionBudget = new RealtimeSessionBudget();
     private volatile int maxOutputTokens = RealtimeSessionBudget.MAX_OUTPUT_TOKENS_PER_RESPONSE;
@@ -75,6 +78,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private final Runnable negotiationTimeout = () -> fail(Failure.NETWORK, true, "La negociación WebRTC superó el tiempo máximo.");
     private volatile Runnable iceDisconnectTimeout;
     private volatile Runnable sessionTimeout;
+    private volatile Runnable offerFallbackTimeout;
     private volatile Listener listener;
     private volatile boolean connected;
     private volatile SessionConfig sessionConfig;
@@ -119,6 +123,8 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     }
 
     private void establishSession(SessionConfig config) {
+        final long attempt = attemptSequence.incrementAndGet();
+        activeAttemptId = attempt;
         try {
             BellotaBackendClient backend = new BellotaBackendClient(backendUrl, tokenStore);
             BellotaBackendClient.RealtimeCredential credential =
@@ -129,11 +135,11 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             sessionMaxDurationMs = Math.max(60000L, Math.min(RealtimeSessionBudget.MAX_DURATION_SECONDS * 1000L, credential.sessionMaxDurationSeconds * 1000L));
             notifyState(State.CONNECTING, "Preparando conexión WebRTC.");
             initializeWebRtc();
-            createPeerConnection();
-            createAudioAndDataTracks();
+            createPeerConnection(attempt);
+            createAudioAndDataTracks(attempt);
             // Set the ephemeral secret before SDP gathering can complete asynchronously.
             exchangeSecret = credential.value;
-            createOffer();
+            createOffer(attempt);
         } catch (BellotaBackendClient.BackendException error) {
             fail(mapBackendFailure(error), error.httpStatus == 429 || error.httpStatus >= 500, error.getMessage());
         } catch (Exception error) {
@@ -169,7 +175,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         }
     }
 
-    private void createPeerConnection() {
+    private void createPeerConnection(final long attempt) {
         List<PeerConnection.IceServer> iceServers = new ArrayList<>();
         iceServers.add(IceServer.builder("stun:stun.l.google.com:19302").createIceServer());
         for (BellotaBackendClient.IceServerConfig configured : configuredIceServers) {
@@ -190,7 +196,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         peerConnection = factory.createPeerConnection(rtc, new PeerConnection.Observer() {
             @Override public void onSignalingChange(PeerConnection.SignalingState state) { }
             @Override public void onIceConnectionChange(PeerConnection.IceConnectionState state) {
-                if (closed.get()) return;
+                if (closed.get() || attempt != activeAttemptId) return;
                 if (state == PeerConnection.IceConnectionState.CONNECTED
                         || state == PeerConnection.IceConnectionState.COMPLETED) {
                     connected = true;
@@ -208,8 +214,8 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             }
             @Override public void onIceConnectionReceivingChange(boolean receiving) { }
             @Override public void onIceGatheringChange(PeerConnection.IceGatheringState state) {
-                if (state == PeerConnection.IceGatheringState.COMPLETE && offerSubmitted.compareAndSet(false, true)) {
-                    executeWorker(OpenAIRealtimeWebRtcProvider.this::exchangeOffer);
+                if (attempt == activeAttemptId && state == PeerConnection.IceGatheringState.COMPLETE && offerSubmitted.compareAndSet(false, true)) {
+                    executeWorker(() -> exchangeOffer(attempt));
                 }
             }
             @Override public void onIceCandidate(IceCandidate candidate) { }
@@ -224,7 +230,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         if (peerConnection == null) throw new IllegalStateException("No se pudo crear PeerConnection.");
     }
 
-    private void createAudioAndDataTracks() {
+    private void createAudioAndDataTracks(final long attempt) {
         audioSource = factory.createAudioSource(new MediaConstraints());
         localAudioTrack = factory.createAudioTrack("bellota-microphone", audioSource);
         localAudioTrack.setEnabled(true);
@@ -236,9 +242,10 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         dataChannel.registerObserver(new DataChannel.Observer() {
             @Override public void onBufferedAmountChange(long previousAmount) { }
             @Override public void onStateChange() {
-                if (dataChannel != null && dataChannel.state() == DataChannel.State.OPEN) sendSessionUpdate();
+                if (attempt == activeAttemptId && dataChannel != null && dataChannel.state() == DataChannel.State.OPEN) sendSessionUpdate();
             }
             @Override public void onMessage(DataChannel.Buffer buffer) {
+                if (attempt != activeAttemptId || closed.get()) return;
                 ByteBuffer data = buffer.data;
                 byte[] bytes = new byte[data.remaining()];
                 data.get(bytes);
@@ -247,14 +254,16 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         });
     }
 
-    private void createOffer() {
-        peerConnection.createOffer(new SdpObserver() {
+    private void createOffer(final long attempt) {
+        final PeerConnection currentPeer = peerConnection;
+        if (currentPeer == null) { fail(Failure.NETWORK, true, "No hay PeerConnection para crear la oferta SDP."); return; }
+        currentPeer.createOffer(new SdpObserver() {
             @Override public void onCreateSuccess(SessionDescription offer) {
-                if (closed.get()) return;
-                peerConnection.setLocalDescription(new SdpObserver() {
-                    @Override public void onSetSuccess() { scheduleOfferFallback(); }
+                if (closed.get() || attempt != activeAttemptId || currentPeer != peerConnection) return;
+                currentPeer.setLocalDescription(new SdpObserver() {
+                    @Override public void onSetSuccess() { scheduleOfferFallback(attempt); }
                     @Override public void onSetFailure(String error) {
-                        fail(Failure.NETWORK, true, "No se pudo establecer la oferta SDP: " + error);
+                        if (attempt == activeAttemptId) fail(Failure.NETWORK, true, "No se pudo establecer la oferta SDP: " + error);
                     }
                     @Override public void onCreateSuccess(SessionDescription ignored) { }
                     @Override public void onCreateFailure(String error) { }
@@ -262,25 +271,30 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             }
             @Override public void onSetSuccess() { }
             @Override public void onCreateFailure(String error) {
-                fail(Failure.NETWORK, true, "No se pudo crear la oferta SDP: " + error);
+                if (attempt == activeAttemptId) fail(Failure.NETWORK, true, "No se pudo crear la oferta SDP: " + error);
             }
             @Override public void onSetFailure(String error) { }
         }, new MediaConstraints());
     }
 
     /** Si la recolección ICE no informa COMPLETE a tiempo, se envía la oferta con lo reunido hasta ahora. */
-    private void scheduleOfferFallback() {
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            if (!closed.get() && offerSubmitted.compareAndSet(false, true)) {
-                executeWorker(this::exchangeOffer);
+    private void scheduleOfferFallback(final long attempt) {
+        Runnable old = offerFallbackTimeout;
+        if (old != null) mainHandler.removeCallbacks(old);
+        Runnable timeout = () -> {
+            if (!closed.get() && attempt == activeAttemptId && offerSubmitted.compareAndSet(false, true)) {
+                executeWorker(() -> exchangeOffer(attempt));
             }
-        }, OFFER_GATHER_TIMEOUT_MS);
+        };
+        offerFallbackTimeout = timeout;
+        mainHandler.postDelayed(timeout, OFFER_GATHER_TIMEOUT_MS);
     }
 
-    private void exchangeOffer() {
-        if (closed.get() || peerConnection == null) return;
+    private void exchangeOffer(long attempt) {
+        final PeerConnection currentPeer = peerConnection;
+        if (closed.get() || attempt != activeAttemptId || currentPeer == null) return;
         try {
-            SessionDescription local = peerConnection.getLocalDescription();
+            SessionDescription local = currentPeer.getLocalDescription();
             if (local == null || local.description == null || local.description.isEmpty())
                 throw new IOException("La oferta SDP local está vacía.");
             HttpURLConnection connection = (HttpURLConnection) new URL(OPENAI_CALLS_URL).openConnection();
@@ -307,12 +321,13 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                             "OpenAI rechazó la negociación WebRTC (HTTP " + status + ").");
                 }
                 if (answer.trim().isEmpty()) throw new IOException("OpenAI devolvió una respuesta SDP vacía.");
-                peerConnection.setRemoteDescription(new SdpObserver() {
+                if (closed.get() || attempt != activeAttemptId || currentPeer != peerConnection) return;
+                currentPeer.setRemoteDescription(new SdpObserver() {
                     @Override public void onSetSuccess() {
-                        exchangeSecret = null;
+                        if (attempt == activeAttemptId) exchangeSecret = null;
                     }
                     @Override public void onSetFailure(String error) {
-                        fail(Failure.NETWORK, true, "No se pudo aplicar la respuesta SDP: " + error);
+                        if (attempt == activeAttemptId) fail(Failure.NETWORK, true, "No se pudo aplicar la respuesta SDP: " + error);
                     }
                     @Override public void onCreateSuccess(SessionDescription ignored) { }
                     @Override public void onCreateFailure(String error) { }
@@ -593,6 +608,9 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         cancelIceDisconnectTimeout();
         Runnable timeout = sessionTimeout;
         if (timeout != null) mainHandler.removeCallbacks(timeout);
+        Runnable offerTimeout = offerFallbackTimeout;
+        if (offerTimeout != null) mainHandler.removeCallbacks(offerTimeout);
+        offerFallbackTimeout = null;
         sessionTimeout = null;
     }
 
