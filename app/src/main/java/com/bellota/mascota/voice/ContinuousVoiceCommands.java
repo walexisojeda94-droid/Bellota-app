@@ -78,7 +78,9 @@ public class ContinuousVoiceCommands {
             running = false;
             generation++;
             releaseRecognizer();
-            status("No se pudo crear el reconocedor: " + error.getClass().getSimpleName() + ".");
+            status(android.os.Build.VERSION.SDK_INT >= 31
+                    ? "No hay un reconocedor de voz local disponible en este dispositivo."
+                    : "No se pudo crear el reconocedor: " + error.getClass().getSimpleName() + ".");
         }
     }
 
@@ -93,7 +95,14 @@ public class ContinuousVoiceCommands {
     }
 
     private void createRecognizer(long session) {
-        SpeechRecognizer created = SpeechRecognizer.createSpeechRecognizer(context);
+        SpeechRecognizer created;
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            if (!SpeechRecognizer.isOnDeviceRecognitionAvailable(context))
+                throw new IllegalStateException("No hay motor de voz en el dispositivo.");
+            created = SpeechRecognizer.createOnDeviceSpeechRecognizer(context);
+        } else {
+            created = SpeechRecognizer.createSpeechRecognizer(context);
+        }
         recognizer = created;
         created.setRecognitionListener(new SessionListener(session, created));
     }
@@ -165,21 +174,15 @@ public class ContinuousVoiceCommands {
     }
 
     private void moveToNextLanguageMode(long session) {
-        if (preferOffline) {
-            preferOffline = false;
-            status("El modelo español sin conexión no está disponible; probando el servicio en línea.");
-        } else if (languageCandidateIndex + 1 < languageCandidates.size()) {
+        if (languageCandidateIndex + 1 < languageCandidates.size()) {
             languageCandidateIndex++;
-            preferOffline = true;
-            status("La variante anterior no está disponible; probando " + languageTag() + ".");
+            status("La variante española anterior no está disponible; probando " + languageTag() + " sin conexión.");
+            listenAgain(session, 1200L);
         } else {
             languageCandidateIndex = 0;
-            preferOffline = true;
-            status("No hay modelos españoles compatibles instalados. Se reintentará en un minuto; no se usará el idioma del teléfono.");
+            status("No hay un modelo español local compatible. Se reintentará en un minuto; no se cambiará al idioma del teléfono ni al reconocimiento en línea.");
             listenAgain(session, LANGUAGE_RETRY_DELAY_MS);
-            return;
         }
-        listenAgain(session, 1200L);
     }
 
     private final class SessionListener implements RecognitionListener {
