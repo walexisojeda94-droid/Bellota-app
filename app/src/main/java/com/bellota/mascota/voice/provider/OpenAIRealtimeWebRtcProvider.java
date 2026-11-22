@@ -151,8 +151,14 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             exchangeSecret = credential.value;
             createOffer(attempt);
         } catch (BellotaBackendClient.BackendException error) {
-            if (attempt == activeAttemptId)
-                fail(mapBackendFailure(error), error.httpStatus == 429 || error.httpStatus >= 500, error.getMessage());
+            if (attempt == activeAttemptId) {
+                boolean permanentBackendFailure = "provider_authentication".equals(error.code)
+                        || "provider_quota".equals(error.code)
+                        || "server_not_configured".equals(error.code);
+                boolean recoverable = !permanentBackendFailure
+                        && (error.httpStatus == 429 || error.httpStatus >= 500);
+                fail(mapBackendFailure(error), recoverable, error.getMessage());
+            }
         } catch (Exception error) {
             if (attempt == activeAttemptId)
                 fail(error instanceof IOException ? Failure.NETWORK : Failure.AUDIO, true,
