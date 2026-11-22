@@ -287,6 +287,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                         status.setText(detail == null ? state.name() : detail);
                         if (state == VoiceProvider.State.CONNECTED) {
                             onlineVoiceConnecting = false;
+                            VoiceRecognitionService.setExternalMicActive(MainActivity.this, true);
                             onlineButton.setText("Desconectar");
                             onlineButton.setEnabled(true);
                         } else if (state == VoiceProvider.State.FALLBACK_LOCAL
@@ -928,11 +929,14 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void startVoiceCommands() {
+        if (onlineVoiceConnecting || (onlineVoiceManager != null && onlineVoiceManager.isConnected())) return;
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startLocalRecognizer();
     }
 
     private void startLocalRecognizer() {
-        if (paused || isFinishing() || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+        if (paused || isFinishing() || onlineVoiceConnecting
+                || (onlineVoiceManager != null && onlineVoiceManager.isConnected())
+                || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         localRecognitionPaused = false;
         VoiceRecognitionService.start(this);
     }
@@ -1153,14 +1157,14 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     @Override protected void onPause() {
         paused = true;
-        disconnectOnlineVoice(false);
         handler.removeCallbacks(autonomousRoutine);
 
         if (localVoice != null) localVoice.stop();
 
         cancelActivities();
 
-        if (localRecognitionPaused && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+        if (localRecognitionPaused && onlineVoiceManager == null && !onlineVoiceConnecting
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             localRecognitionPaused = false;
             VoiceRecognitionService.resume(this);
         }
@@ -1173,6 +1177,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     @Override protected void onDestroy() {
 
         disconnectOnlineVoice(false);
+        VoiceRecognitionService.stop(this);
         handler.removeCallbacksAndMessages(null);
         if (voiceReceiverRegistered) {
             unregisterReceiver(voiceEventsReceiver);
