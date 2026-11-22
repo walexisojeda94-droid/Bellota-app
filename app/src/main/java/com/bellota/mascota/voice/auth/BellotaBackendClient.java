@@ -63,7 +63,11 @@ public final class BellotaBackendClient {
             tokenStore.saveRefreshToken(refresh);
         } catch (Exception error) {
             // Do not leave an unmanageable device registered if secure storage failed.
-            try { request("POST", "/v1/device/revoke", null, access); } catch (Exception ignored) { }
+            try {
+                JSONObject revokeBody = new JSONObject();
+                revokeBody.put("refresh_token", refresh);
+                request("POST", "/v1/device/revoke", revokeBody, null);
+            } catch (Exception ignored) { }
             throw new BackendException("secure_storage_error", 500,
                     "No se pudo guardar la vinculación segura. El servidor intentó revocar el dispositivo.");
         }
