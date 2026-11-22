@@ -225,10 +225,9 @@ public class MainActivity extends Activity implements SensorEventListener {
                             status.setTextColor(revoked ? 0xFF9ED8C8 : 0xFFFFA6A6);
                             online.setEnabled(false);
                             if (revoked) {
-                                codeInput.setVisibility(View.VISIBLE);
-                                explanation.setText("El dispositivo fue revocado. Podés vincularlo nuevamente con un código de un solo uso.");
-                                primary.setText("Vincular");
-                                primary.setEnabled(true);
+                                dialog.dismiss();
+                                android.widget.Toast.makeText(MainActivity.this,
+                                        "Dispositivo revocado correctamente.", android.widget.Toast.LENGTH_LONG).show();
                             } else {
                                 primary.setText("Reintentar revocación");
                                 primary.setEnabled(true);
