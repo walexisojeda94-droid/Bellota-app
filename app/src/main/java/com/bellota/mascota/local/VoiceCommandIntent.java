@@ -34,6 +34,32 @@ public final class VoiceCommandIntent {
                 || matches(utterance, "habla bellota");
     }
 
+    public static boolean isBatteryQuery(Utterance utterance) {
+        if (utterance == null || utterance.isEmpty()) return false;
+        return matches(utterance, "bateria")
+                || matches(utterance, "nivel de bateria")
+                || utterance.startsWith("cuanta bateria tiene")
+                || utterance.startsWith("como esta la bateria")
+                || utterance.startsWith("cuanta carga tiene el telefono")
+                || matches(utterance, "carga del telefono");
+    }
+
+    public static boolean isTimeOrDateQuery(Utterance utterance) {
+        if (utterance == null || utterance.isEmpty()) return false;
+        return matches(utterance, "hora") || utterance.startsWith("que hora es")
+                || utterance.startsWith("decime la hora") || utterance.startsWith("decir la hora")
+                || utterance.startsWith("que dia es hoy") || utterance.startsWith("que fecha es hoy")
+                || matches(utterance, "fecha de hoy") || matches(utterance, "fecha");
+    }
+
+    public static boolean isVolumeQuery(Utterance utterance) {
+        if (utterance == null || utterance.isEmpty()) return false;
+        return matches(utterance, "volumen actual")
+                || utterance.startsWith("que volumen tiene")
+                || utterance.startsWith("a cuanto esta el volumen")
+                || utterance.startsWith("cuanto volumen tiene el telefono");
+    }
+
     private static boolean matches(Utterance utterance, String command) {
         return utterance.text.equals(command) || utterance.text.equals(command + " por favor");
     }
