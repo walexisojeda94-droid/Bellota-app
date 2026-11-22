@@ -26,6 +26,15 @@ public class VoiceCommandIntentTest {
         assertTrue(VoiceCommandIntent.isUnmuteRequest(Utterance.of("Volvé a hablar")));
     }
 
+    @Test public void systemQueriesRequireAnActualRequest() {
+        assertTrue(VoiceCommandIntent.isBatteryQuery(Utterance.of("Cuánta batería tiene el teléfono")));
+        assertTrue(VoiceCommandIntent.isTimeOrDateQuery(Utterance.of("Qué hora es")));
+        assertTrue(VoiceCommandIntent.isVolumeQuery(Utterance.of("Volumen actual")));
+        assertFalse(VoiceCommandIntent.isBatteryQuery(Utterance.of("No me gusta la batería")));
+        assertFalse(VoiceCommandIntent.isTimeOrDateQuery(Utterance.of("No sé qué hora era")));
+        assertFalse(VoiceCommandIntent.isVolumeQuery(Utterance.of("El volumen actual del juego")));
+    }
+
     @Test public void incidentalSoundMentionDoesNotUnmute() {
         assertFalse(VoiceCommandIntent.isUnmuteRequest(Utterance.of("No hay sonido")));
         assertFalse(VoiceCommandIntent.isUnmuteRequest(Utterance.of("Me gusta ese sonido")));
