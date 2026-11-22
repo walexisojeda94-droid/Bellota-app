@@ -47,6 +47,9 @@ import com.bellota.mascota.local.PetVoiceLines;
 import com.bellota.mascota.ui.PlayfieldView;
 import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -54,6 +57,11 @@ public class MainActivity extends Activity implements SensorEventListener {
     private static final int MICROPHONE_PERMISSION = 41;
     private static final int LOCATION_PERMISSION = 42;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final ExecutorService toolCallExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "Bellota-ToolCall");
+        thread.setDaemon(true);
+        return thread;
+    });
     private final OfflineReplies offlineReplies = new OfflineReplies();
     private LocalConversationEngine conversationEngine;
     private EyePetView eyes;
@@ -373,16 +381,21 @@ public class MainActivity extends Activity implements SensorEventListener {
                 @Override public void onToolCall(String callId, String name, String argumentsJson) {
                     VoiceProviderManager owner = sessionManagerRef.get();
                     if (owner == null || owner != onlineVoiceManager || !owner.isToolCallCurrent(callId)) return;
-                    new Thread(() -> {
-                        try {
-                            if (!isCurrentToolCall(owner, callId)) return;
-                            String result = executeBellotaTool(name, new JSONObject(argumentsJson), owner, callId);
-                            owner.sendToolResult(callId, result, false);
-                        } catch (Exception error) {
-                            if (isCurrentToolCall(owner, callId)) owner.sendToolResult(callId,
-                                    error.getMessage() == null ? "No se pudo ejecutar la herramienta." : error.getMessage(), true);
-                        }
-                    }, "Bellota-ToolCall").start();
+                    try {
+                        toolCallExecutor.execute(() -> {
+                            try {
+                                if (!isCurrentToolCall(owner, callId)) return;
+                                String result = executeBellotaTool(name, new JSONObject(argumentsJson), owner, callId);
+                                owner.sendToolResult(callId, result, false);
+                            } catch (Exception error) {
+                                if (isCurrentToolCall(owner, callId)) owner.sendToolResult(callId,
+                                        error.getMessage() == null ? "No se pudo ejecutar la herramienta." : error.getMessage(), true);
+                            }
+                        });
+                    } catch (RejectedExecutionException stopped) {
+                        if (isCurrentToolCall(owner, callId))
+                            owner.sendToolResult(callId, "Bellota está cerrando y no puede ejecutar esta acción.", true);
+                    }
                 }
                 @Override public void onLocalFallbackRequested(VoiceProvider.Failure reason, String detail) {
                     runOnUiThread(() -> {
@@ -1244,6 +1257,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     @Override protected void onDestroy() {
 
         disconnectOnlineVoice(false);
+        toolCallExecutor.shutdownNow();
         VoiceRecognitionService.stop(this);
         handler.removeCallbacksAndMessages(null);
         if (voiceReceiverRegistered) {
