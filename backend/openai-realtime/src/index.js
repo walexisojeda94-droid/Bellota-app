@@ -168,11 +168,19 @@ async function refreshDevice(request, env) {
 }
 
 async function revokeDevice(request, env) {
-  const deviceId = await authenticatedDevice(request, env);
-  if (!deviceId) return fail("device_unauthorized", 401, "La vinculación del dispositivo no es válida.");
+  const body = await readJson(request);
+  if (!body || typeof body.refresh_token !== "string" || body.refresh_token.length < 32)
+    return fail("invalid_request", 400, "Falta la credencial del dispositivo.");
+  const tokenHash = await sha256(body.refresh_token);
   const now = Math.floor(Date.now() / 1000);
-  await env.DB.prepare("UPDATE devices SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
-    .bind(now, deviceId).run();
+  // Keep this endpoint idempotent so a lost response can safely be retried.
+  const device = await env.DB.prepare(
+    "SELECT id FROM devices WHERE refresh_token_hash = ? OR " +
+    "(previous_refresh_token_hash = ? AND previous_refresh_valid_until > ?)"
+  ).bind(tokenHash, tokenHash, now).first();
+  if (!device) return fail("device_unauthorized", 401, "La credencial del dispositivo no es válida.");
+  await env.DB.prepare("UPDATE devices SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?")
+    .bind(now, device.id).run();
   return json({ ok: true, revoked: true });
 }
 
