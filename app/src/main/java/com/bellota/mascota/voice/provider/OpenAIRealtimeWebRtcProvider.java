@@ -250,7 +250,11 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         dataChannel.registerObserver(new DataChannel.Observer() {
             @Override public void onBufferedAmountChange(long previousAmount) { }
             @Override public void onStateChange() {
-                if (attempt == activeAttemptId && dataChannel != null && dataChannel.state() == DataChannel.State.OPEN) sendSessionUpdate();
+                if (attempt != activeAttemptId || closed.get() || dataChannel == null) return;
+                DataChannel.State state = dataChannel.state();
+                if (state == DataChannel.State.OPEN) sendSessionUpdate();
+                else if (state == DataChannel.State.CLOSED)
+                    fail(Failure.NETWORK, true, "El canal de eventos WebRTC se cerró inesperadamente.");
             }
             @Override public void onMessage(DataChannel.Buffer buffer) {
                 if (attempt != activeAttemptId || closed.get()) return;
