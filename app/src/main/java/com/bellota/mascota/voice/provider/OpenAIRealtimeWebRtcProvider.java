@@ -556,6 +556,9 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             activeAttemptId = attemptSequence.incrementAndGet();
             connected = false;
             cancelIceDisconnectTimeout();
+            Runnable pendingOfferTimeout = offerFallbackTimeout;
+            if (pendingOfferTimeout != null) mainHandler.removeCallbacks(pendingOfferTimeout);
+            offerFallbackTimeout = null;
             HttpURLConnection connection = activeHttpConnection;
             if (connection != null) connection.disconnect();
             offerSubmitted.set(false);
