@@ -72,6 +72,21 @@ public class ConversationMemoryTest {
         assertTrue(engine.memoryContextForOnline().contains("gustos: el mate"));
     }
 
+    @Test public void uncertainOnlinePreferenceIsNotLearned() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        LocalConversationEngine engine = new LocalConversationEngine(memory);
+        engine.rememberOnlineMessage("No sé si me gusta el ananá");
+        assertTrue(memory.likes().isEmpty());
+    }
+
+    @Test public void contrastiveOnlinePreferenceCanStillBeLearned() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        LocalConversationEngine engine = new LocalConversationEngine(memory);
+        engine.rememberOnlineMessage("No, pero me gusta el mate");
+        assertEquals(1, memory.likes().size());
+        assertEquals("el mate", memory.likes().get(0));
+    }
+
     @Test public void onlineNegativePreferenceDoesNotGetStoredAsALike() {
         ConversationMemory memory = ConversationMemory.inMemory();
         LocalConversationEngine engine = new LocalConversationEngine(memory);
