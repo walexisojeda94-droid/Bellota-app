@@ -3,6 +3,10 @@ package com.bellota.mascota;
 import android.Manifest;
 import android.app.Activity;
 import android.content.pm.PackageManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Bundle;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -27,7 +31,7 @@ import com.bellota.mascota.local.OfflineReplies;
 import com.bellota.mascota.local.LocalConversationEngine;
 import com.bellota.mascota.local.Reply;
 import com.bellota.mascota.ui.EyePetView;
-import com.bellota.mascota.voice.ContinuousVoiceCommands;
+import com.bellota.mascota.voice.VoiceRecognitionService;
 import com.bellota.mascota.voice.LocalVoice;
 import com.bellota.mascota.voice.provider.VoiceProvider;
 import com.bellota.mascota.voice.provider.VoiceProviderManager;
@@ -53,7 +57,6 @@ public class MainActivity extends Activity implements SensorEventListener {
     private EyePetView eyes;
     private FrameLayout petRoot;
     private LocalVoice localVoice;
-    private ContinuousVoiceCommands voiceCommands;
     private VoiceProviderManager onlineVoiceManager;
     private boolean onlineVoiceConnecting;
     private PetLife petLife;
@@ -63,6 +66,16 @@ public class MainActivity extends Activity implements SensorEventListener {
     private float touchStartX, touchStartY, touchPressure;
     private boolean paused;
     private long lastVoiceDiagnosticToastAt;
+    private boolean voiceReceiverRegistered;
+    private final BroadcastReceiver voiceEventsReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (intent == null) return;
+            String value = intent.getStringExtra(VoiceRecognitionService.EXTRA_TEXT);
+            if (VoiceRecognitionService.ACTION_RECOGNIZED.equals(intent.getAction())) {
+                if (value != null && !value.trim().isEmpty()) handleVoiceCommand(value);
+            } else if (VoiceRecognitionService.ACTION_STATUS.equals(intent.getAction())) handleVoiceStatus(value);
+        }
+    };
     private boolean soundEnabled = true;
     private boolean waitingForWeatherPermission;
     private PlayfieldView playfield;
@@ -96,16 +109,16 @@ public class MainActivity extends Activity implements SensorEventListener {
         petMemory = new PetMemory(this);
         conversationEngine = new LocalConversationEngine(this);
         petMemory.remember("inicio", "Bellota inició una nueva sesión.");
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enterImmersiveMode();
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         buildPetScreen();
         applySleepVisuals();
         localVoice = new LocalVoice(this, (ready, detail) -> { });
         localVoice.setOnSpeechFinished(() -> {
-            if (!paused && !isFinishing() && voiceCommands != null) voiceCommands.start();
+            if (!paused && !isFinishing()) VoiceRecognitionService.resume(MainActivity.this);
         });
         setupAmbientTheme();
+        registerVoiceReceiver();
         requestMicrophonePermission();
         handler.postDelayed(autonomousRoutine, 1800L);
     }
@@ -260,7 +273,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             onlineButton.setEnabled(true);
             return;
         }
-        if (voiceCommands != null) voiceCommands.stop();
+        VoiceRecognitionService.pause(this);
         if (localVoice != null) localVoice.stop();
         try {
             SecureTokenStore store = new SecureTokenStore(getApplicationContext());
@@ -875,38 +888,35 @@ public class MainActivity extends Activity implements SensorEventListener {
         else requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, MICROPHONE_PERMISSION);
     }
 
-    /** Reconocimiento local de Android. */
+    private void registerVoiceReceiver() {
+        if (voiceReceiverRegistered) return;
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(VoiceRecognitionService.ACTION_RECOGNIZED);
+        filter.addAction(VoiceRecognitionService.ACTION_STATUS);
+        if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(voiceEventsReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        else registerReceiver(voiceEventsReceiver, filter);
+        voiceReceiverRegistered = true;
+    }
+
+    private void handleVoiceStatus(String status) {
+        if (status == null || status.trim().isEmpty()) return;
+        DebugLog.i("BellotaVoice", status);
+        if (status.startsWith("Error de reconocimiento:")) {
+            long now = System.currentTimeMillis();
+            if (now - lastVoiceDiagnosticToastAt >= 10000L) {
+                lastVoiceDiagnosticToastAt = now;
+                Toast.makeText(this, status, Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
     private void startVoiceCommands() {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
-        startLocalRecognizer();
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startLocalRecognizer();
     }
 
     private void startLocalRecognizer() {
-        if (paused || isFinishing()) return;
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
-        // Reutilizar la instancia evita destruir y recrear el reconocedor en cada onResume.
-        if (voiceCommands != null) {
-            voiceCommands.start();
-            return;
-        }
-        voiceCommands = new ContinuousVoiceCommands(this, new ContinuousVoiceCommands.Listener() {
-            @Override public void onRecognized(String spoken) {
-                DebugLog.i("BellotaVoice", "Transcripción recibida; se procesa el comando.");
-                handleVoiceCommand(spoken);
-            }
-            @Override public void onStatus(String status) {
-                if (status == null) return;
-                DebugLog.i("BellotaVoice", status);
-                if (status.startsWith("Error de reconocimiento:")) {
-                    long now = System.currentTimeMillis();
-                    if (now - lastVoiceDiagnosticToastAt >= 10000L) {
-                        lastVoiceDiagnosticToastAt = now;
-                        runOnUiThread(() -> Toast.makeText(MainActivity.this, status, Toast.LENGTH_LONG).show());
-                    }
-                }
-            }
-        });
-        voiceCommands.start();
+        if (paused || isFinishing() || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+        VoiceRecognitionService.start(this);
     }
 
     private void handleVoiceCommand(String spoken) {
@@ -1094,7 +1104,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         // Mientras Realtime está activo, no mezclar la salida TTS local con el audio remoto.
         if (onlineVoiceManager != null && onlineVoiceManager.isConnected()) return;
         if (localVoice == null) return;
-        if (voiceCommands != null) voiceCommands.stop();
+        VoiceRecognitionService.pause(this);
         localVoice.speak(text);
     }
 
@@ -1119,7 +1129,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         enterImmersiveMode();
         applySleepVisuals();
         if(sensorManager!=null&&lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         startVoiceCommands();
         if (eyes != null) eyes.resumeAnimation();
     }
@@ -1133,7 +1142,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         cancelActivities();
 
-        if (voiceCommands != null) voiceCommands.stop();
+        VoiceRecognitionService.resume(this);
 
         if (eyes != null) eyes.pauseAnimation();
         if(sensorManager!=null)sensorManager.unregisterListener(this);
@@ -1145,7 +1154,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         disconnectOnlineVoice(false);
         handler.removeCallbacksAndMessages(null);
 
-        if (voiceCommands != null) { voiceCommands.stop(); voiceCommands = null; }
+        
 
         if (localVoice != null) { localVoice.stop(); localVoice.release(); localVoice = null; }
 
