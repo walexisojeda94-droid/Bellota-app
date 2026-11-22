@@ -52,7 +52,10 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private static final String PROVIDER_ID = "openai-realtime-webrtc";
     private static final String OPENAI_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
-    private static final int HTTP_TIMEOUT_MS = 20000;
+    private static final int HTTP_TIMEOUT_MS = 15000;
+    private static final int MAX_OUTPUT_TOKENS_PER_RESPONSE = 1024;
+    private static final long MAX_SESSION_TOTAL_TOKENS = 24000L;
+    private static final int MAX_RECOVERY_ATTEMPTS = 1;
     private static final int MAX_SDP_BYTES = 262144;
     private static final long OFFER_GATHER_TIMEOUT_MS = 4000L;
     private static final Object FACTORY_LOCK = new Object();
@@ -170,10 +173,12 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         iceServers.add(IceServer.builder("stun:stun.l.google.com:19302").createIceServer());
         for (BellotaBackendClient.IceServerConfig configured : configuredIceServers) {
             for (String url : configured.urls) {
-                PeerConnection.IceServer.Builder builder = IceServer.builder(url);
-                if (!configured.username.isEmpty()) builder.setUsername(configured.username);
-                if (!configured.credential.isEmpty()) builder.setPassword(configured.credential);
-                iceServers.add(builder.createIceServer());
+                if (configured.username.isEmpty() && configured.credential.isEmpty()) {
+                    iceServers.add(IceServer.builder(url).createIceServer());
+                } else {
+                    iceServers.add(IceServer.builder(url).setUsername(configured.username)
+                            .setPassword(configured.credential).createIceServer());
+                }
             }
         }
         PeerConnection.RTCConfiguration rtc = new PeerConnection.RTCConfiguration(iceServers);
@@ -188,7 +193,6 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                 if (state == PeerConnection.IceConnectionState.CONNECTED
                         || state == PeerConnection.IceConnectionState.COMPLETED) {
                     connected = true;
-                    retryCount.set(0);
                     mainHandler.removeCallbacks(negotiationTimeout);
                     cancelIceDisconnectTimeout();
                     scheduleSessionTimeout();
@@ -279,6 +283,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             if (local == null || local.description == null || local.description.isEmpty())
                 throw new IOException("La oferta SDP local está vacía.");
             HttpURLConnection connection = (HttpURLConnection) new URL(OPENAI_CALLS_URL).openConnection();
+            activeHttpConnection = connection;
             try {
                 connection.setRequestMethod("POST");
                 connection.setConnectTimeout(HTTP_TIMEOUT_MS);
@@ -313,9 +318,10 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                 }, new SessionDescription(SessionDescription.Type.ANSWER, answer));
             } finally {
                 connection.disconnect();
+                if (activeHttpConnection == connection) activeHttpConnection = null;
             }
         } catch (ProviderHttpException error) {
-            fail(error.failure, error.status == 401 || error.status == 429 || error.status >= 500, error.getMessage());
+            fail(error.failure, error.status == 429 || error.status >= 500, error.getMessage());
         } catch (Exception error) {
             fail(error instanceof IOException ? Failure.NETWORK : Failure.PROVIDER, true, safeMessage(error));
         }
@@ -329,6 +335,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                     ? "Sos Bellota, una compañera virtual conversacional. Hablá en español rioplatense natural."
                     : sessionConfig.instructions);
             session.put("output_modalities", new JSONArray().put("audio"));
+            session.put("max_output_tokens", MAX_OUTPUT_TOKENS_PER_RESPONSE);
             JSONObject audio = new JSONObject();
             audio.put("input", new JSONObject().put("turn_detection",
                     new JSONObject().put("type", "server_vad")));
@@ -394,6 +401,13 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                     break;
                 case "response.done":
                     notifySpeaking(false);
+                    JSONObject response = event.optJSONObject("response");
+                    JSONObject usage = response == null ? null : response.optJSONObject("usage");
+                    long used = usage == null ? 0L : usage.optLong("total_tokens", 0L);
+                    if (used > 0L && totalSessionTokens.addAndGet(used) >= MAX_SESSION_TOTAL_TOKENS) {
+                        fail(Failure.QUOTA, false, "Se alcanzó el límite de consumo configurado para esta sesión.");
+                        return;
+                    }
                     break;
                 case "response.function_call_arguments.done":
                     notifyToolCall(event.optString("call_id", ""), event.optString("name", ""),
@@ -456,8 +470,12 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     @Override public void disconnect() {
         if (!closed.compareAndSet(false, true)) return;
         connected = false;
-        worker.execute(this::releaseResources);
         notifyState(State.CLOSING, "Cerrando sesión WebRTC.");
+        cancelPendingCallbacks();
+        HttpURLConnection connection = activeHttpConnection;
+        if (connection != null) connection.disconnect();
+        releaseResources();
+        shutdownWorker();
     }
 
     private void releaseResources() {
@@ -487,32 +505,111 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     }
 
     private void fail(Failure failure, boolean recoverable, String detail) {
+        if (closed.get()) return;
+        if (recoverable && retryCount.getAndIncrement() < MAX_RECOVERY_ATTEMPTS) {
+            connected = false;
+            cancelIceDisconnectTimeout();
+            HttpURLConnection connection = activeHttpConnection;
+            if (connection != null) connection.disconnect();
+            releaseResources();
+            offerSubmitted.set(false);
+            notifyState(State.RECONNECTING, "Fallo transitorio. Se realizará un único intento de recuperación.");
+            long delay = failure == Failure.RATE_LIMIT ? 5000L : 1200L;
+            mainHandler.postDelayed(() -> {
+                if (!closed.get()) executeWorker(() -> establishSession(sessionConfig));
+            }, delay);
+            return;
+        }
         if (!closed.compareAndSet(false, true)) return;
         connected = false;
-        worker.execute(this::releaseResources);
+        cancelPendingCallbacks();
+        HttpURLConnection connection = activeHttpConnection;
+        if (connection != null) connection.disconnect();
+        releaseResources();
+        shutdownWorker();
         Listener current = listener;
-        if (current != null) current.onError(failure, recoverable, detail);
+        if (current != null) {
+            try { current.onError(failure, recoverable, detail); } catch (RuntimeException ignored) { }
+        }
+    }
+
+    private static ExecutorService newWorker() {
+        return Executors.newSingleThreadExecutor(r -> {
+            Thread thread = new Thread(r, "Bellota-Realtime-WebRTC");
+            thread.setDaemon(true);
+            return thread;
+        });
+    }
+
+    private synchronized void ensureWorker() {
+        if (worker == null || worker.isShutdown()) worker = newWorker();
+    }
+
+    private void executeWorker(Runnable task) {
+        ExecutorService executor = worker;
+        if (executor == null || executor.isShutdown() || closed.get()) return;
+        try { executor.execute(task); } catch (RejectedExecutionException ignored) { }
+    }
+
+    private void shutdownWorker() {
+        ExecutorService executor = worker;
+        if (executor != null) executor.shutdownNow();
+    }
+
+    private void scheduleIceDisconnectTimeout() {
+        cancelIceDisconnectTimeout();
+        Runnable timeout = () -> {
+            if (!closed.get() && !connected)
+                fail(Failure.NETWORK, true, "La conexión ICE no se recuperó dentro del período de gracia.");
+        };
+        iceDisconnectTimeout = timeout;
+        mainHandler.postDelayed(timeout, 10000L);
+    }
+
+    private void cancelIceDisconnectTimeout() {
+        Runnable timeout = iceDisconnectTimeout;
+        if (timeout != null) mainHandler.removeCallbacks(timeout);
+        iceDisconnectTimeout = null;
+    }
+
+    private void scheduleSessionTimeout() {
+        Runnable old = sessionTimeout;
+        if (old != null) mainHandler.removeCallbacks(old);
+        Runnable timeout = () -> {
+            if (!closed.get()) fail(Failure.SESSION_EXPIRED, false,
+                    "La sesión alcanzó su duración máxima y se cerrará para controlar el consumo.");
+        };
+        sessionTimeout = timeout;
+        mainHandler.postDelayed(timeout, sessionMaxDurationMs);
+    }
+
+    private void cancelPendingCallbacks() {
+        mainHandler.removeCallbacks(negotiationTimeout);
+        cancelIceDisconnectTimeout();
+        Runnable timeout = sessionTimeout;
+        if (timeout != null) mainHandler.removeCallbacks(timeout);
+        sessionTimeout = null;
     }
 
     private void notifyState(State state, String detail) {
         Listener current = listener;
-        if (current != null) current.onStateChanged(state, detail);
+        if (current != null) { try { current.onStateChanged(state, detail); } catch (RuntimeException ignored) { } }
     }
     private void notifyUserTranscript(String text, boolean isFinal) {
         Listener current = listener;
-        if (current != null && text != null && !text.isEmpty()) current.onUserTranscript(text, isFinal);
+        if (current != null && text != null && !text.isEmpty()) { try { current.onUserTranscript(text, isFinal); } catch (RuntimeException ignored) { } }
     }
     private void notifyAssistantTranscript(String text, boolean isFinal) {
         Listener current = listener;
-        if (current != null && text != null && !text.isEmpty()) current.onAssistantTranscript(text, isFinal);
+        if (current != null && text != null && !text.isEmpty()) { try { current.onAssistantTranscript(text, isFinal); } catch (RuntimeException ignored) { } }
     }
     private void notifySpeaking(boolean speaking) {
         Listener current = listener;
-        if (current != null) current.onAssistantSpeaking(speaking);
+        if (current != null) { try { current.onAssistantSpeaking(speaking); } catch (RuntimeException ignored) { } }
     }
     private void notifyToolCall(String callId, String name, String args) {
         Listener current = listener;
-        if (current != null && !callId.isEmpty() && !name.isEmpty()) current.onToolCall(callId, name, args);
+        if (current != null && !callId.isEmpty() && !name.isEmpty()) { try { current.onToolCall(callId, name, args); } catch (RuntimeException ignored) { } }
     }
 
     private static Failure mapBackendFailure(BellotaBackendClient.BackendException error) {
