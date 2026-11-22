@@ -35,6 +35,12 @@ async function sha256(value) {
 async function hmacKey(secret) {
   return crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }
+async function deriveRefreshToken(deviceId, oldHash, secret) {
+  const key = await hmacKey(secret);
+  const signature = await crypto.subtle.sign("HMAC", key,
+    new TextEncoder().encode("bellota-refresh-rotation:" + deviceId + ":" + oldHash));
+  return b64url(new Uint8Array(signature));
+}
 async function issueAccessToken(deviceId, secret) {
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(new TextEncoder().encode(JSON.stringify({ alg: "HS256", typ: "JWT" })));
@@ -100,17 +106,25 @@ async function pairDevice(request, env) {
   const code = body.code.trim().toUpperCase();
   if (!/^[A-Z0-9_-]{6,32}$/.test(code)) return fail("invalid_code", 400, "El código no es válido.");
   const now = Math.floor(Date.now() / 1000);
-  const consumed = await env.DB.prepare(
-    "UPDATE pairing_codes SET consumed_at = ? WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ? RETURNING id"
-  ).bind(now, await sha256(code), now).first();
-  if (!consumed) return fail("pairing_code_invalid", 401, "El código venció o ya fue utilizado.");
+  const codeHash = await sha256(code);
   const deviceId = crypto.randomUUID();
   const refreshToken = randomToken(32);
   const refreshHash = await sha256(refreshToken);
   const label = typeof body.device_name === "string" ? body.device_name.trim().slice(0, 80) : "Bellota Android";
-  await env.DB.prepare(
-    "INSERT INTO devices (id, device_name, refresh_token_hash, created_at, refresh_expires_at) VALUES (?, ?, ?, ?, ?)"
-  ).bind(deviceId, label || "Bellota Android", refreshHash, now, now + REFRESH_TTL_DAYS * 86400).run();
+  // D1 batch is transactional: code consumption and device creation commit or roll back together.
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE pairing_codes SET consumed_at = ? WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?"
+    ).bind(now, codeHash, now),
+    env.DB.prepare(
+      "INSERT INTO devices (id, device_name, refresh_token_hash, created_at, refresh_expires_at) " +
+      "SELECT ?, ?, ?, ?, ? WHERE EXISTS " +
+      "(SELECT 1 FROM pairing_codes WHERE code_hash = ? AND consumed_at = ?)"
+    ).bind(deviceId, label || "Bellota Android", refreshHash, now,
+      now + REFRESH_TTL_DAYS * 86400, codeHash, now)
+  ]);
+  if (!results[0]?.meta?.changes || !results[1]?.meta?.changes)
+    return fail("pairing_code_invalid", 401, "El código venció o ya fue utilizado.");
   return json({ device_id: deviceId, refresh_token: refreshToken, access_token: await issueAccessToken(deviceId, env.JWT_SECRET), access_expires_in: ACCESS_TTL_SECONDS });
 }
 
@@ -120,17 +134,46 @@ async function refreshDevice(request, env) {
   if (!body || typeof body.refresh_token !== "string" || body.refresh_token.length < 32)
     return fail("invalid_request", 400, "Token de renovación inválido.");
   const oldHash = await sha256(body.refresh_token);
+  const now = Math.floor(Date.now() / 1000);
   const device = await env.DB.prepare(
-    "SELECT id FROM devices WHERE refresh_token_hash = ? AND revoked_at IS NULL AND refresh_expires_at > ?"
-  ).bind(oldHash, Math.floor(Date.now() / 1000)).first();
+    "SELECT id, refresh_token_hash, previous_refresh_token_hash, previous_refresh_valid_until " +
+    "FROM devices WHERE (refresh_token_hash = ? OR " +
+    "(previous_refresh_token_hash = ? AND previous_refresh_valid_until > ?)) " +
+    "AND revoked_at IS NULL AND refresh_expires_at > ?"
+  ).bind(oldHash, oldHash, now, now).first();
   if (!device) return fail("refresh_invalid", 401, "La vinculación venció o fue revocada. Es necesario volver a vincular Bellota.");
-  const nextRefresh = randomToken(32);
+
+  // Deterministic rotation lets a client retry the previous token after a lost HTTP response.
+  const nextRefresh = await deriveRefreshToken(device.id, oldHash, env.JWT_SECRET);
   const nextHash = await sha256(nextRefresh);
+  if (device.refresh_token_hash === nextHash) {
+    return json({ refresh_token: nextRefresh, access_token: await issueAccessToken(device.id, env.JWT_SECRET), access_expires_in: ACCESS_TTL_SECONDS });
+  }
+  if (device.refresh_token_hash !== oldHash)
+    return fail("refresh_replayed", 401, "El token anterior ya no puede recuperarse. Volvé a vincular el dispositivo.");
+
   const updated = await env.DB.prepare(
-    "UPDATE devices SET refresh_token_hash = ?, refresh_expires_at = ? WHERE id = ? AND refresh_token_hash = ? AND revoked_at IS NULL RETURNING id"
-  ).bind(nextHash, Math.floor(Date.now() / 1000) + REFRESH_TTL_DAYS * 86400, device.id, oldHash).first();
-  if (!updated) return fail("refresh_replayed", 401, "El token ya fue renovado. Solicitá una nueva vinculación si el problema continúa.");
+    "UPDATE devices SET previous_refresh_token_hash = refresh_token_hash, " +
+    "previous_refresh_valid_until = ?, refresh_token_hash = ?, refresh_expires_at = ? " +
+    "WHERE id = ? AND refresh_token_hash = ? AND revoked_at IS NULL RETURNING id"
+  ).bind(now + 120, nextHash, now + REFRESH_TTL_DAYS * 86400, device.id, oldHash).first();
+  if (!updated) {
+    const latest = await env.DB.prepare(
+      "SELECT refresh_token_hash FROM devices WHERE id = ? AND revoked_at IS NULL"
+    ).bind(device.id).first();
+    if (!latest || latest.refresh_token_hash !== nextHash)
+      return fail("refresh_replayed", 401, "El token ya fue renovado. Volvé a vincular el dispositivo si el problema continúa.");
+  }
   return json({ refresh_token: nextRefresh, access_token: await issueAccessToken(device.id, env.JWT_SECRET), access_expires_in: ACCESS_TTL_SECONDS });
+}
+
+async function revokeDevice(request, env) {
+  const deviceId = await authenticatedDevice(request, env);
+  if (!deviceId) return fail("device_unauthorized", 401, "La vinculación del dispositivo no es válida.");
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare("UPDATE devices SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
+    .bind(now, deviceId).run();
+  return json({ ok: true, revoked: true });
 }
 
 async function createRealtimeSecret(request, env) {
@@ -174,6 +217,7 @@ export default {
     if (request.method === "POST" && url.pathname === "/admin/pairing-code") return createPairingCode(request, env);
     if (request.method === "POST" && url.pathname === "/v1/pair") return pairDevice(request, env);
     if (request.method === "POST" && url.pathname === "/v1/auth/refresh") return refreshDevice(request, env);
+    if (request.method === "POST" && url.pathname === "/v1/device/revoke") return revokeDevice(request, env);
     if (request.method === "POST" && url.pathname === "/v1/realtime/client-secret") return createRealtimeSecret(request, env);
     return fail("not_found", 404, "Ruta no encontrada.");
   }
