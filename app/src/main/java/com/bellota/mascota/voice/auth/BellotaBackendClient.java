@@ -86,7 +86,7 @@ public final class BellotaBackendClient {
                 refresh = tokenStore.readRefreshToken();
             } catch (Exception error) {
                 throw new BackendException("secure_storage_error", 500,
-                        "No se pudo leer la vinculación segura del dispositivo.");
+                        "La credencial segura no se pudo descifrar. Volvé a vincular el dispositivo.");
             }
             if (refresh == null || refresh.isEmpty())
                 throw new BackendException("not_paired", 401, "Bellota todavía no está vinculada.");
@@ -103,7 +103,7 @@ public final class BellotaBackendClient {
                 tokenStore.saveRefreshToken(nextRefresh);
             } catch (Exception error) {
                 throw new BackendException("secure_storage_error", 500,
-                        "No se pudo guardar la nueva vinculación segura.");
+                        "No se pudo guardar la renovación segura. Bellota puede reintentar la misma rotación durante 120 segundos.");
             }
             accessToken = nextAccess;
             accessTokenExpiresAtMs = System.currentTimeMillis() + ttl * 1000L;
