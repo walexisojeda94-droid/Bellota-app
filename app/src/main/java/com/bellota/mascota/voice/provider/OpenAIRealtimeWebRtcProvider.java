@@ -34,8 +34,10 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -120,6 +122,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         retryCount.set(0);
         retryScheduled.set(false);
         synchronized (completedUserTranscriptItems) { completedUserTranscriptItems.clear(); }
+        clearPendingToolResponses();
         sessionBudget.reset();
         mainHandler.removeCallbacks(negotiationTimeout);
         mainHandler.postDelayed(negotiationTimeout, 60000L);
@@ -459,6 +462,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                         fail(Failure.QUOTA, false, "Se alcanzó el límite de consumo configurado para esta sesión.");
                         return;
                     }
+                    recordCompletedToolResponse(response);
                     break;
                 case "response.function_call_arguments.done":
                     notifyToolCall(event.optString("call_id", ""), event.optString("name", ""),
@@ -489,7 +493,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         }
     }
 
-    private void sendEvent(JSONObject event) {
+    private synchronized void sendEvent(JSONObject event) {
         DataChannel channel = dataChannel;
         if (channel == null || channel.state() != DataChannel.State.OPEN) return;
         byte[] bytes = event.toString().getBytes(StandardCharsets.UTF_8);
@@ -517,14 +521,83 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
 
     @Override public void sendToolResult(String callId, String result, boolean isError) {
         if (callId == null || callId.trim().isEmpty()) return;
+        String responseIdToContinue = null;
+        synchronized (toolResponseLock) {
+            String responseId = responseIdByToolCall.get(callId);
+            ToolOutput output = new ToolOutput(result, isError);
+            if (responseId == null) {
+                toolOutputsAwaitingResponse.put(callId, output);
+                return;
+            }
+            PendingToolResponse pending = pendingToolResponses.get(responseId);
+            if (pending == null || !pending.callIds.contains(callId)) return;
+            pending.outputs.put(callId, output);
+            if (pending.outputs.size() == pending.callIds.size()) {
+                responseIdToContinue = responseId;
+                pendingToolResponses.remove(responseId);
+                for (String completedCallId : pending.callIds) responseIdByToolCall.remove(completedCallId);
+            }
+        }
+        if (responseIdToContinue != null) sendCompletedToolOutputs(responseIdToContinue);
+    }
+
+    private void recordCompletedToolResponse(JSONObject response) {
+        if (response == null) return;
+        String responseId = response.optString("id", "");
+        JSONArray outputItems = response.optJSONArray("output");
+        if (responseId.isEmpty() || outputItems == null) return;
+        synchronized (toolResponseLock) {
+            PendingToolResponse pending = pendingToolResponses.get(responseId);
+            for (int i = 0; i < outputItems.length(); i++) {
+                JSONObject item = outputItems.optJSONObject(i);
+                if (item == null || !"function_call".equals(item.optString("type", ""))) continue;
+                String callId = item.optString("call_id", "");
+                if (callId.isEmpty()) continue;
+                if (pending == null) {
+                    pending = new PendingToolResponse();
+                    pendingToolResponses.put(responseId, pending);
+                }
+                pending.callIds.add(callId);
+                responseIdByToolCall.put(callId, responseId);
+                ToolOutput earlyOutput = toolOutputsAwaitingResponse.remove(callId);
+                if (earlyOutput != null) pending.outputs.put(callId, earlyOutput);
+            }
+            if (pending != null && !pending.callIds.isEmpty()
+                    && pending.outputs.size() == pending.callIds.size()) {
+                pendingToolResponses.remove(responseId);
+                for (String callId : pending.callIds) responseIdByToolCall.remove(callId);
+                // All outputs were already returned before response.done arrived.
+                sendCompletedToolOutputs(responseId, pending);
+            }
+        }
+    }
+
+    private void sendCompletedToolOutputs(String responseId) {
+        PendingToolResponse pending;
+        synchronized (toolResponseLock) { pending = pendingToolResponses.get(responseId); }
+        if (pending != null) sendCompletedToolOutputs(responseId, pending);
+    }
+
+    private void sendCompletedToolOutputs(String responseId, PendingToolResponse pending) {
         try {
-            String output = result == null ? "" : result;
-            if (isError) output = "La herramienta devolvió un error: " + output;
-            JSONObject item = new JSONObject().put("type", "function_call_output")
-                    .put("call_id", callId).put("output", output);
-            sendEvent(new JSONObject().put("type", "conversation.item.create").put("item", item));
+            for (String callId : pending.callIds) {
+                ToolOutput output = pending.outputs.get(callId);
+                if (output == null) return;
+                String value = output.isError ? "La herramienta devolvió un error: " + output.result : output.result;
+                JSONObject item = new JSONObject().put("type", "function_call_output")
+                        .put("call_id", callId).put("output", value);
+                sendEvent(new JSONObject().put("type", "conversation.item.create").put("item", item));
+            }
             sendEvent(new JSONObject().put("type", "response.create"));
         } catch (JSONException ignored) { }
+    }
+
+    private void clearPendingToolResponses() {
+        synchronized (toolResponseLock) {
+            pendingToolResponses.clear();
+            responseIdByToolCall.clear();
+            toolOutputsAwaitingResponse.clear();
+        }
     }
 
     @Override public void interrupt() {
@@ -699,6 +772,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         offerFallbackTimeout = null;
         Runnable retry = retryTimeout;
         if (retry != null) mainHandler.removeCallbacks(retry);
+        clearPendingToolResponses();
         retryTimeout = null;
         retryScheduled.set(false);
         sessionTimeout = null;
