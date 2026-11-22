@@ -575,12 +575,6 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         if (completed != null) sendCompletedToolOutputs(responseId, completed);
     }
 
-    private void sendCompletedToolOutputs(String responseId) {
-        PendingToolResponse pending;
-        synchronized (toolResponseLock) { pending = pendingToolResponses.get(responseId); }
-        if (pending != null) sendCompletedToolOutputs(responseId, pending);
-    }
-
     private void sendCompletedToolOutputs(String responseId, PendingToolResponse pending) {
         try {
             for (String callId : pending.callIds) {
