@@ -35,6 +35,24 @@ public class OfflineRepliesTest {
         assertTrue(offended.contains("dolida") || offended.contains("sentida") || offended.contains("triste"));
     }
 
+    @Test public void incidentalWeatherMentionIsNotTreatedAsAWeatherRequest() {
+        OfflineReplies replies = new OfflineReplies();
+        assertFalse(replies.isWeatherQuestion("Me gusta el clima"));
+        assertFalse(replies.isWeatherQuestion("No me gusta la temperatura"));
+    }
+
+    @Test public void incidentalTimeAndNameMentionsAreNotTreatedAsQuestions() {
+        OfflineReplies replies = new OfflineReplies();
+        assertNull(replies.reply("No sé qué hora era"));
+        assertNull(replies.reply("No me gusta tu nombre"));
+    }
+
+    @Test public void greetingsAndFarewellsRequirePhraseBoundaries() {
+        OfflineReplies replies = new OfflineReplies();
+        assertNull(replies.reply("Me contaron hola ayer"));
+        assertNull(replies.reply("No me digas chau"));
+    }
+
     @Test public void nullInputStillProducesAUsableFallback() {
         assertNotNull(new OfflineReplies().reply(null));
     }
