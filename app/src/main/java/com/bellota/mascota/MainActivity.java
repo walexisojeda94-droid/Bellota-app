@@ -30,6 +30,7 @@ import com.bellota.mascota.core.AutonomousBehavior;
 import com.bellota.mascota.local.OfflineReplies;
 import com.bellota.mascota.local.LocalConversationEngine;
 import com.bellota.mascota.local.Reply;
+import com.bellota.mascota.local.Utterance;
 import com.bellota.mascota.ui.EyePetView;
 import com.bellota.mascota.voice.VoiceRecognitionService;
 import com.bellota.mascota.voice.LocalVoice;
@@ -992,28 +993,55 @@ public class MainActivity extends Activity implements SensorEventListener {
         VoiceRecognitionService.start(this);
     }
 
+    private static boolean isMuteCommand(Utterance utterance) {
+        if (utterance == null || utterance.isEmpty()) return false;
+        if (utterance.hasPhrase("no quiero silencio")
+                || utterance.hasPhrase("no me dejes en silencio")
+                || utterance.hasPhrase("no pongas silencio")) return false;
+        return utterance.hasPhrase("callate")
+                || utterance.hasPhrase("no hables")
+                || utterance.hasPhrase("deja de hablar")
+                || utterance.hasPhrase("desactiva el sonido")
+                || utterance.hasPhrase("apaga el sonido")
+                || utterance.text.equals("silencio")
+                || utterance.text.equals("quiero silencio")
+                || utterance.text.equals("ponete en silencio")
+                || utterance.text.equals("quedate en silencio");
+    }
+
+    private static boolean isUnmuteCommand(Utterance utterance) {
+        if (utterance == null || utterance.isEmpty()) return false;
+        return utterance.text.equals("sonido")
+                || utterance.hasPhrase("activa el sonido")
+                || utterance.hasPhrase("prende el sonido")
+                || utterance.hasPhrase("enciende el sonido")
+                || utterance.hasPhrase("habilita el sonido")
+                || utterance.hasPhrase("volvi a hablar")
+                || utterance.hasPhrase("volve a hablar")
+                || utterance.hasPhrase("habla bellota");
+    }
+
     private void handleVoiceCommand(String spoken) {
         handleVoiceCommand(spoken, false);
     }
 
     private void handleVoiceCommand(String spoken, boolean interactionAlreadyRecorded) {
         if (spoken == null || spoken.trim().isEmpty()) return;
-        String text = spoken.toLowerCase(new Locale("es", "AR"))
-                .replace("á", "a").replace("é", "e").replace("í", "i")
-                .replace("ó", "o").replace("ú", "u").trim();
+        Utterance utterance = Utterance.of(spoken);
+        String text = utterance.text;
         // El sueño obligatorio solo termina al recuperar la energía mínima.
         if (isForcedState()) return;
         // En sueño normal, la palabra de activación se exige también en reconocimiento local.
         // Se usa el mismo detector de palabra completa que en el reconocimiento local.
         if (isAsleep() && !containsWakeWord(text)) return;
         if (handleCompanionCommand(text, true)) return;
-        if (text.contains("silencio")) {
+        if (isMuteCommand(utterance)) {
             soundEnabled = false;
             if (localVoice != null) localVoice.stop();
             if (eyes != null) eyes.setMood(EyePetView.Mood.CALM);
             return;
         }
-        if (text.contains("sonido")) {
+        if (isUnmuteCommand(utterance)) {
             soundEnabled = true;
             speakIfEnabled("Ya puedo hablar otra vez.");
             return;
