@@ -97,6 +97,26 @@ public class ConversationMemoryTest {
         assertNull(memory.expecting(System.currentTimeMillis()));
     }
 
+    @Test public void uncertainOnlineReplyDoesNotResolvePendingPreferenceQuestion() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        memory.addLike("el mate");
+        memory.expect("like:el mate", System.currentTimeMillis());
+        LocalConversationEngine engine = new LocalConversationEngine(memory);
+        engine.rememberOnlineMessage("No sé si me gusta");
+        assertEquals(1, memory.likes().size());
+        assertNotNull(memory.expecting(System.currentTimeMillis()));
+    }
+
+    @Test public void clearOnlineNegativeReplyResolvesPendingPreferenceQuestion() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        memory.addLike("el mate");
+        memory.expect("like:el mate", System.currentTimeMillis());
+        LocalConversationEngine engine = new LocalConversationEngine(memory);
+        engine.rememberOnlineMessage("No, ya no me gusta");
+        assertTrue(memory.likes().isEmpty());
+        assertNull(memory.expecting(System.currentTimeMillis()));
+    }
+
     @Test public void onlineMemoryContextIsEmptyWhenThereAreNoKnownFacts() {
         LocalConversationEngine engine = new LocalConversationEngine(ConversationMemory.inMemory());
         assertEquals("", engine.memoryContextForOnline());
