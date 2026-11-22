@@ -160,18 +160,22 @@ public final class BellotaBackendClient {
         }
     }
 
-    /** Revokes the device remotely first. Local credentials are retained if the server cannot confirm revocation. */
+    /** Revokes the device remotely first. The refresh credential makes revocation safely retryable. */
     public void unpair() throws IOException, BackendException {
         requireWorkerThread();
-        String token = getAccessToken();
+        final String refresh;
         try {
-            request("POST", "/v1/device/revoke", null, token);
-        } catch (BackendException unauthorized) {
-            if (unauthorized.httpStatus != 401) throw unauthorized;
-            refresh();
-            synchronized (authLock) { token = accessToken; }
-            request("POST", "/v1/device/revoke", null, token);
+            refresh = tokenStore.readRefreshToken();
+        } catch (Exception error) {
+            throw new BackendException("secure_storage_error", 500,
+                    "No se pudo leer la credencial segura para revocar el dispositivo.");
         }
+        if (refresh == null || refresh.isEmpty())
+            throw new BackendException("not_paired", 401, "Este dispositivo no tiene una vinculación local.");
+        JSONObject body = new JSONObject();
+        try { body.put("refresh_token", refresh); }
+        catch (JSONException impossible) { throw new IllegalStateException(impossible); }
+        request("POST", "/v1/device/revoke", body, null);
         synchronized (authLock) {
             accessToken = null;
             accessTokenExpiresAtMs = 0L;
