@@ -21,6 +21,7 @@ import javax.crypto.spec.GCMParameterSpec;
 /** AES-GCM encrypted private diary, with a non-exportable Android Keystore key. */
 public final class PetMemory {
     private static final long MAX_JOURNAL_BYTES = 512L * 1024L;
+    private static final long MAX_ENTRY_AGE_MS = 180L * 24L * 60L * 60L * 1000L;
     private static final String KEY_ALIAS = "bellota_pet_memory_v1";
     private static final String ANDROID_KEY_STORE = "AndroidKeyStore";
     private static final int GCM_TAG_BITS = 128;
@@ -59,7 +60,7 @@ public final class PetMemory {
                 entry.put("detail", safeDetail.substring(0, end));
                 line = (entry.toString() + "\n").getBytes(StandardCharsets.UTF_8);
             }
-            byte[] previous = readPlaintext();
+            byte[] previous = pruneExpired(readPlaintext(), System.currentTimeMillis());
             byte[] combined = new byte[previous.length + line.length];
             System.arraycopy(previous, 0, combined, 0, previous.length);
             System.arraycopy(line, 0, combined, previous.length, line.length);
@@ -140,6 +141,24 @@ public final class PetMemory {
             if (output != null) atomicJournal.failWrite(output);
             throw error;
         }
+    }
+
+    private static byte[] pruneExpired(byte[] data, long now) {
+        if (data.length == 0) return data;
+        long cutoff = now - MAX_ENTRY_AGE_MS;
+        String[] lines = new String(data, StandardCharsets.UTF_8).split("\\n");
+        StringBuilder retained = new StringBuilder();
+        for (String line : lines) {
+            if (line.isEmpty()) continue;
+            try {
+                long timestamp = new JSONObject(line).optLong("timestamp", 0L);
+                if (timestamp >= cutoff && timestamp <= now + 24L * 60L * 60L * 1000L)
+                    retained.append(line).append('\\n');
+            } catch (Exception ignored) {
+                // Malformed or unrecognized legacy entries are not retained.
+            }
+        }
+        return retained.toString().getBytes(StandardCharsets.UTF_8);
     }
 
     private static byte[] trimToLimit(byte[] data) {
