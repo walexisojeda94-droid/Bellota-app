@@ -228,6 +228,11 @@ public class MainActivity extends Activity implements SensorEventListener {
                                 dialog.dismiss();
                                 android.widget.Toast.makeText(MainActivity.this,
                                         "Dispositivo revocado correctamente.", android.widget.Toast.LENGTH_LONG).show();
+                            } else if (!tokenStore.hasRefreshToken()) {
+                                dialog.dismiss();
+                                android.widget.Toast.makeText(MainActivity.this,
+                                        "La clave segura dejó de ser válida. Abrí nuevamente la opción online para vincular el dispositivo otra vez.",
+                                        android.widget.Toast.LENGTH_LONG).show();
                             } else {
                                 primary.setText("Reintentar revocación");
                                 primary.setEnabled(true);
