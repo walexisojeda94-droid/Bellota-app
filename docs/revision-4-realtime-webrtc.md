@@ -20,7 +20,7 @@ El tope acumulado y la duración son protecciones del cliente. No sustituyen los
 ## Recuperación y liberación
 
 - Timeout global de negociación: 60 segundos.
-- Recolección ICE: se intenta enviar la oferta cuando termina; a los 4 segundos se envía la oferta con los candidatos reunidos hasta ese momento.
+- Recolección ICE: se intenta enviar la oferta cuando termina; a los 10 segundos se envía la oferta con los candidatos reunidos hasta ese momento.
 - Estado ICE `DISCONNECTED`: período de gracia de 10 segundos.
 - Fallo transitorio: un reintento automático; 1,2 segundos de espera general o 5 segundos ante HTTP 429.
 - Callbacks asociados a intentos anteriores se descartan por identificador de intento.
