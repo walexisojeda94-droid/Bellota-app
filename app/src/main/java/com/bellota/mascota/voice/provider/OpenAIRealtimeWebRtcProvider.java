@@ -518,8 +518,10 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     @Override public void sendToolResult(String callId, String result, boolean isError) {
         if (callId == null || callId.trim().isEmpty()) return;
         try {
+            String output = result == null ? "" : result;
+            if (isError) output = "La herramienta devolvió un error: " + output;
             JSONObject item = new JSONObject().put("type", "function_call_output")
-                    .put("call_id", callId).put("output", result == null ? "" : result);
+                    .put("call_id", callId).put("output", output);
             sendEvent(new JSONObject().put("type", "conversation.item.create").put("item", item));
             sendEvent(new JSONObject().put("type", "response.create"));
         } catch (JSONException ignored) { }
