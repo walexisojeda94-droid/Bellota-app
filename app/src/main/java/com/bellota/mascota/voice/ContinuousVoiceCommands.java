@@ -8,285 +8,287 @@ import android.os.Looper;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
+
 import com.bellota.mascota.core.DebugLog;
+
 import java.util.ArrayList;
+import java.util.Arrays;
 
-/** Reconocimiento continuo con recuperación de idioma y del servicio Android. */
+/**
+ * Reconocimiento continuo de comandos en español.
+ *
+ * El idioma es una decisión de la aplicación y nunca se hereda del idioma
+ * configurado en Android. Si no hay un modelo español instalado, se informa
+ * y se reintenta más tarde sin cambiar silenciosamente a otro idioma.
+ */
 public class ContinuousVoiceCommands {
- private static final String TAG = "BellotaSpeech";
- public interface Listener { void onRecognized(String text); void onStatus(String status); }
+    private static final String TAG = "BellotaSpeech";
+    private static final int ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT = 12;
+    private static final long LANGUAGE_RETRY_DELAY_MS = 60000L;
+    private static final String[] SPANISH_LANGUAGES = {"es-AR", "es-ES", "es-US"};
 
- // ERROR_LANGUAGE_NOT_SUPPORTED se incorporó en versiones nuevas de Android.
- private static final int ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT = 12;
- private final Context context;
- private final Listener listener;
- private final Handler handler = new Handler(Looper.getMainLooper());
- private SpeechRecognizer recognizer;
- private boolean running;
- private boolean restarting;
- private boolean preferOffline = true;
- private boolean systemLanguageFallback;
- private int clientErrorCount;
- private int throttleCount;
- private long generation;
- private final ArrayList<String> languageCandidates = new ArrayList<>();
- private int languageCandidateIndex;
-
- public ContinuousVoiceCommands(Context context, Listener listener) {
-  this.context = context.getApplicationContext();
-  this.listener = listener;
- }
-
- public void start() {
-  if (running) return;
-  if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-   status("No hay un servicio de reconocimiento de voz disponible.");
-   return;
-  }
-  running = true;
-  preferOffline = true;
-  systemLanguageFallback = false;
-  prepareLanguageCandidates();
-  languageCandidateIndex = 0;
-  clientErrorCount = 0;
-  throttleCount = 0;
-  final long session = ++generation;
-  try {
-   createRecognizer(session);
-   status("Servicio de reconocimiento Android iniciado; preparando el micrófono.");
-   listenAgain(session, 250);
-  } catch (Exception e) {
-   running = false;
-   generation++;
-   releaseRecognizer();
-   status("No se pudo crear el reconocedor: " + e.getClass().getSimpleName() + ".");
-  }
- }
-
- public void stop() {
-  // No repetir destrucción ni registrar detenciones si ya estaba inactivo.
-  if (!running && !restarting && recognizer == null) return;
-  running = false;
-  restarting = false;
-  generation++;
-  handler.removeCallbacksAndMessages(null);
-  releaseRecognizer();
-  status("Reconocimiento local detenido.");
- }
-
- private void createRecognizer(long session) {
-  SpeechRecognizer created = SpeechRecognizer.createSpeechRecognizer(context);
-  recognizer = created;
-  created.setRecognitionListener(new SessionListener(session, created));
- }
-
- private void releaseRecognizer() {
-  SpeechRecognizer current = recognizer;
-  recognizer = null;
-  if (current != null) {
-   try { current.cancel(); } catch (Exception ignored) { }
-   try { current.destroy(); } catch (Exception ignored) { }
-  }
- }
-
- private boolean isCurrent(long session, SpeechRecognizer source) {
-  return running && generation == session && recognizer == source;
- }
-
- private void listenAgain(final long session, long delay) {
-  if (!running || generation != session || recognizer == null || restarting) return;
-  restarting = true;
-  handler.postDelayed(() -> {
-   if (!running || generation != session || recognizer == null) return;
-   restarting = false;
-   SpeechRecognizer current = recognizer;
-   try {
-    Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-    intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-    String language = languageTag();
-    if (language != null) {
-     intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, language);
+    public interface Listener {
+        void onRecognized(String text);
+        void onStatus(String status);
     }
-    intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
-    // El idioma se toma de la configuración regional del teléfono.
-    intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline);
-    intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
-    DebugLog.i(TAG, "startListening: locale=" + (language == null ? "sistema" : language)
-      + "; offline=" + preferOffline + "; generation=" + session + ".");
-    current.startListening(intent);
-    status("Escucha solicitada a Android (" + (language == null ? "idioma del sistema" : language)
-      + (preferOffline ? ", modo sin conexión" : ", modo en línea") + ").");
-   } catch (Exception e) {
-    if (!running || generation != session || recognizer != current) return;
-    status("No se pudo iniciar la escucha: " + e.getClass().getSimpleName() + ".");
-    listenAgain(session, 2500);
-   }
-  }, delay);
- }
 
- private void prepareLanguageCandidates() {
-  languageCandidates.clear();
-  String systemTag = java.util.Locale.getDefault().toLanguageTag();
-  boolean systemSpanish = systemTag != null && systemTag.toLowerCase(java.util.Locale.ROOT).startsWith("es");
-  if (systemSpanish) addLanguageCandidate(systemTag);
-  // Bellota reconoce comandos en español. Se prueban las variantes instaladas
-  // habituales antes de dejar que Android elija un idioma por su cuenta.
-  addLanguageCandidate("es-ES");
-  addLanguageCandidate("es-US");
-  if (!systemSpanish && systemTag != null && !systemTag.isEmpty()
-    && !"und".equalsIgnoreCase(systemTag)) {
-   addLanguageCandidate(systemTag);
-  }
-  DebugLog.i(TAG, "Idiomas candidatos para reconocimiento: " + languageCandidates + ".");
- }
+    private final Context context;
+    private final Listener listener;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final ArrayList<String> languageCandidates =
+            new ArrayList<>(Arrays.asList(SPANISH_LANGUAGES));
 
- private void addLanguageCandidate(String tag) {
-  if (tag == null || tag.trim().isEmpty() || "und".equalsIgnoreCase(tag)) return;
-  for (String existing : languageCandidates) {
-   if (existing.equalsIgnoreCase(tag)) return;
-  }
-  languageCandidates.add(tag);
- }
+    private SpeechRecognizer recognizer;
+    private boolean running;
+    private boolean restarting;
+    private boolean preferOffline = true;
+    private int languageCandidateIndex;
+    private int clientErrorCount;
+    private int throttleCount;
+    private int noMatchCount;
+    private long generation;
 
- private String languageTag() {
-  if (systemLanguageFallback || languageCandidateIndex >= languageCandidates.size()) return null;
-  return languageCandidates.get(languageCandidateIndex);
- }
-
- private void recoverClientError(long session) {
-  if (!running || generation != session || restarting) return;
-  restarting = true;
-  long delay = Math.min(10000L, 2000L * (1L << Math.min(clientErrorCount++, 2)));
-  status("Reiniciando el servicio de reconocimiento Android.");
-  handler.postDelayed(() -> {
-   if (!running || generation != session) return;
-   releaseRecognizer();
-   try {
-    createRecognizer(session);
-    restarting = false;
-    listenAgain(session, 350);
-   } catch (Exception e) {
-    restarting = false;
-    status("Android no pudo reiniciar el reconocimiento; se volverá a intentar.");
-    recoverClientError(session);
-   }
-  }, delay);
- }
-
- private final class SessionListener implements RecognitionListener {
-  private final long session;
-  private final SpeechRecognizer source;
-  SessionListener(long session, SpeechRecognizer source) {
-   this.session = session;
-   this.source = source;
-  }
-
-  @Override public void onReadyForSpeech(Bundle b) {
-   if (isCurrent(session, source)) {
-    status("Android está listo para escuchar.");
-   }
-  }
-  @Override public void onBeginningOfSpeech() {
-   if (isCurrent(session, source)) {
-    DebugLog.i(TAG, "onBeginningOfSpeech; locale=" + (languageTag() == null ? "sistema" : languageTag()) + ".");
-    status("Android detectó el comienzo de voz.");
-   }
-  }
-  @Override public void onEndOfSpeech() {
-   if (isCurrent(session, source)) {
-    DebugLog.i(TAG, "onEndOfSpeech; esperando resultado.");
-    status("Android detectó el fin de voz; esperando el resultado.");
-   }
-  }
-  @Override public void onResults(Bundle results) {
-   if (!isCurrent(session, source)) return;
-   clientErrorCount = 0;
-   throttleCount = 0;
-   ArrayList<String> matches = results == null ? null
-     : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-   if (matches != null && !matches.isEmpty() && matches.get(0) != null
-     && !matches.get(0).trim().isEmpty()) {
-    String recognized = matches.get(0).trim();
-    DebugLog.i(TAG, "onResults: candidatos=" + matches.size() + "; primerResultadoChars=" + recognized.length() + ".");
-    status("Android entregó una transcripción (" + recognized.length() + " caracteres).");
-    if (listener != null && isCurrent(session, source)) listener.onRecognized(recognized);
-   } else {
-    DebugLog.w(TAG, "onResults sin candidatos de transcripción.");
-    status("Android finalizó la escucha, pero no entregó ninguna transcripción.");
-   }
-   listenAgain(session, 450);
-  }
-  @Override public void onError(int error) {
-   if (!isCurrent(session, source)) return;
-   DebugLog.w(TAG, "onError=" + error + " (" + errorName(error) + "); locale="
-     + (languageTag() == null ? "sistema" : languageTag()) + "; offline=" + preferOffline
-     + "; systemLanguageFallback=" + systemLanguageFallback + ".");
-   status("Error de reconocimiento: " + errorName(error) + " (código " + error + ").");
-   if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
-    running = false;
-    restarting = false;
-    generation++;
-    releaseRecognizer();
-    status("Reconocimiento detenido: Android no concedió permiso de micrófono.");
-    return;
-   }
-   if (error == ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {
-    if (preferOffline) {
-     preferOffline = false;
-     status("El idioma " + (languageTag() == null ? "seleccionado" : languageTag())
-       + " no está disponible sin conexión; probando reconocimiento en línea.");
-    } else if (languageCandidateIndex + 1 < languageCandidates.size()) {
-     languageCandidateIndex++;
-     preferOffline = true;
-     status("La variante anterior no está disponible; probando " + languageTag() + " sin conexión.");
-    } else if (!systemLanguageFallback) {
-     systemLanguageFallback = true;
-     status("Las variantes de español probadas no están disponibles; se deja que Android seleccione su idioma predeterminado.");
-    } else {
-     status("Android no ofrece un idioma compatible para el reconocimiento; se reintentará más tarde.");
+    public ContinuousVoiceCommands(Context context, Listener listener) {
+        this.context = context.getApplicationContext();
+        this.listener = listener;
     }
-    listenAgain(session, preferOffline ? 900 : 5000);
-    return;
-   }
-   if (error == SpeechRecognizer.ERROR_TOO_MANY_REQUESTS) {
-    long delay = Math.min(60000L, 10000L * (1L << Math.min(throttleCount++, 3)));
-    status("Android limitó temporalmente las solicitudes de reconocimiento; se esperará antes de reintentar.");
-    listenAgain(session, delay);
-    return;
-   }
-   if (error == SpeechRecognizer.ERROR_CLIENT || error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED
-     || error == SpeechRecognizer.ERROR_AUDIO) {
-    recoverClientError(session);
-    return;
-   }
-   listenAgain(session, error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ? 2500 : 1500);
-  }
-  @Override public void onRmsChanged(float v) { }
-  @Override public void onBufferReceived(byte[] b) { }
-  @Override public void onPartialResults(Bundle b) { }
-  @Override public void onEvent(int i, Bundle b) { }
- }
 
- private String errorName(int error) {
-  switch (error) {
-   case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: return "tiempo de espera de red";
-   case SpeechRecognizer.ERROR_NETWORK: return "error de red";
-   case SpeechRecognizer.ERROR_AUDIO: return "error de audio";
-   case SpeechRecognizer.ERROR_SERVER: return "error del servidor de reconocimiento";
-   case SpeechRecognizer.ERROR_CLIENT: return "error del cliente de reconocimiento";
-   case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: return "no se detectó voz";
-   case SpeechRecognizer.ERROR_NO_MATCH: return "no se pudo reconocer lo dicho";
-   case SpeechRecognizer.ERROR_RECOGNIZER_BUSY: return "reconocedor ocupado";
-   case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: return "permiso de micrófono insuficiente";
-   case SpeechRecognizer.ERROR_TOO_MANY_REQUESTS: return "demasiadas solicitudes al servicio";
-   case SpeechRecognizer.ERROR_SERVER_DISCONNECTED: return "servicio de reconocimiento desconectado";
-   case SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE: return "idioma no disponible";
-   case ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT: return "idioma no compatible";
-   default: return "error no clasificado";
-  }
- }
+    public void start() {
+        if (running) return;
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            status("No hay un servicio de reconocimiento de voz disponible.");
+            return;
+        }
 
- private void status(String value) {
-  if (listener != null) listener.onStatus(value);
- }
+        running = true;
+        preferOffline = true;
+        languageCandidateIndex = 0;
+        clientErrorCount = 0;
+        throttleCount = 0;
+        noMatchCount = 0;
+        final long session = ++generation;
+
+        try {
+            createRecognizer(session);
+            status("Reconocimiento español iniciado; preparando el micrófono.");
+            listenAgain(session, 250L);
+        } catch (Exception error) {
+            running = false;
+            generation++;
+            releaseRecognizer();
+            status("No se pudo crear el reconocedor: " + error.getClass().getSimpleName() + ".");
+        }
+    }
+
+    public void stop() {
+        if (!running && !restarting && recognizer == null) return;
+        running = false;
+        restarting = false;
+        generation++;
+        handler.removeCallbacksAndMessages(null);
+        releaseRecognizer();
+        status("Reconocimiento local detenido.");
+    }
+
+    private void createRecognizer(long session) {
+        SpeechRecognizer created = SpeechRecognizer.createSpeechRecognizer(context);
+        recognizer = created;
+        created.setRecognitionListener(new SessionListener(session, created));
+    }
+
+    private void releaseRecognizer() {
+        SpeechRecognizer current = recognizer;
+        recognizer = null;
+        if (current != null) {
+            try { current.cancel(); } catch (Exception ignored) { }
+            try { current.destroy(); } catch (Exception ignored) { }
+        }
+    }
+
+    private boolean isCurrent(long session, SpeechRecognizer source) {
+        return running && generation == session && recognizer == source;
+    }
+
+    private void listenAgain(final long session, long delay) {
+        if (!running || generation != session || recognizer == null || restarting) return;
+        restarting = true;
+        handler.postDelayed(() -> {
+            if (!running || generation != session || recognizer == null) return;
+            restarting = false;
+            SpeechRecognizer current = recognizer;
+            try {
+                Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag());
+                intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
+                intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline);
+                intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
+
+                DebugLog.i(TAG, "startListening: locale=" + languageTag()
+                        + "; offline=" + preferOffline + "; generation=" + session + ".");
+                current.startListening(intent);
+                status("Escucha solicitada en español (" + languageTag()
+                        + (preferOffline ? ", modo sin conexión)." : ", modo en línea)."));
+            } catch (Exception error) {
+                if (!running || generation != session || recognizer != current) return;
+                status("No se pudo iniciar la escucha: " + error.getClass().getSimpleName() + ".");
+                listenAgain(session, 3000L);
+            }
+        }, delay);
+    }
+
+    private String languageTag() {
+        return languageCandidates.get(languageCandidateIndex);
+    }
+
+    private void recoverClientError(long session) {
+        if (!running || generation != session || restarting) return;
+        restarting = true;
+        long delay = Math.min(30000L, 3000L * (1L << Math.min(clientErrorCount++, 3)));
+        status("El servicio de reconocimiento se reiniciará.");
+        handler.postDelayed(() -> {
+            if (!running || generation != session) return;
+            releaseRecognizer();
+            try {
+                createRecognizer(session);
+                restarting = false;
+                listenAgain(session, 500L);
+            } catch (Exception error) {
+                restarting = false;
+                status("Android no pudo reiniciar el reconocimiento; se volverá a intentar.");
+                recoverClientError(session);
+            }
+        }, delay);
+    }
+
+    private void moveToNextLanguageMode(long session) {
+        if (preferOffline) {
+            preferOffline = false;
+            status("El modelo español sin conexión no está disponible; probando el servicio en línea.");
+        } else if (languageCandidateIndex + 1 < languageCandidates.size()) {
+            languageCandidateIndex++;
+            preferOffline = true;
+            status("La variante anterior no está disponible; probando " + languageTag() + ".");
+        } else {
+            languageCandidateIndex = 0;
+            preferOffline = true;
+            status("No hay modelos españoles compatibles instalados. Se reintentará en un minuto; no se usará el idioma del teléfono.");
+            listenAgain(session, LANGUAGE_RETRY_DELAY_MS);
+            return;
+        }
+        listenAgain(session, 1200L);
+    }
+
+    private final class SessionListener implements RecognitionListener {
+        private final long session;
+        private final SpeechRecognizer source;
+
+        SessionListener(long session, SpeechRecognizer source) {
+            this.session = session;
+            this.source = source;
+        }
+
+        @Override public void onReadyForSpeech(Bundle bundle) {
+            if (isCurrent(session, source)) status("Android está listo para escuchar en español.");
+        }
+
+        @Override public void onBeginningOfSpeech() {
+            if (isCurrent(session, source)) DebugLog.i(TAG, "onBeginningOfSpeech.");
+        }
+
+        @Override public void onEndOfSpeech() {
+            if (isCurrent(session, source)) DebugLog.i(TAG, "onEndOfSpeech.");
+        }
+
+        @Override public void onResults(Bundle results) {
+            if (!isCurrent(session, source)) return;
+            clientErrorCount = 0;
+            throttleCount = 0;
+            noMatchCount = 0;
+            ArrayList<String> matches = results == null ? null
+                    : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+            if (matches != null && !matches.isEmpty()
+                    && matches.get(0) != null && !matches.get(0).trim().isEmpty()) {
+                String recognized = matches.get(0).trim();
+                DebugLog.i(TAG, "Resultado de voz recibido; caracteres=" + recognized.length() + ".");
+                if (listener != null && isCurrent(session, source)) listener.onRecognized(recognized);
+            }
+            listenAgain(session, 500L);
+        }
+
+        @Override public void onError(int error) {
+            if (!isCurrent(session, source)) return;
+            DebugLog.w(TAG, "onError=" + error + " (" + errorName(error)
+                    + "); locale=" + languageTag() + "; offline=" + preferOffline + ".");
+            status("Error de reconocimiento: " + errorName(error) + " (código " + error + ").");
+
+            if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                running = false;
+                restarting = false;
+                generation++;
+                releaseRecognizer();
+                status("Reconocimiento detenido: Android no concedió permiso de micrófono.");
+                return;
+            }
+
+            if (error == ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT
+                    || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {
+                moveToNextLanguageMode(session);
+                return;
+            }
+
+            if (error == SpeechRecognizer.ERROR_TOO_MANY_REQUESTS) {
+                long delay = Math.min(60000L, 10000L * (1L << Math.min(throttleCount++, 3)));
+                status("Android limitó temporalmente el reconocimiento; se aplicará una pausa.");
+                listenAgain(session, delay);
+                return;
+            }
+
+            if (error == SpeechRecognizer.ERROR_CLIENT
+                    || error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED
+                    || error == SpeechRecognizer.ERROR_AUDIO
+                    || error == SpeechRecognizer.ERROR_SERVER) {
+                recoverClientError(session);
+                return;
+            }
+
+            if (error == SpeechRecognizer.ERROR_NO_MATCH
+                    || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                long delay = Math.min(10000L, 1500L * (1L << Math.min(noMatchCount++, 3)));
+                listenAgain(session, delay);
+                return;
+            }
+
+            listenAgain(session, error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ? 3000L : 2500L);
+        }
+
+        @Override public void onRmsChanged(float value) { }
+        @Override public void onBufferReceived(byte[] buffer) { }
+        @Override public void onPartialResults(Bundle bundle) { }
+        @Override public void onEvent(int eventType, Bundle bundle) { }
+    }
+
+    private String errorName(int error) {
+        switch (error) {
+            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: return "tiempo de espera de red";
+            case SpeechRecognizer.ERROR_NETWORK: return "error de red";
+            case SpeechRecognizer.ERROR_AUDIO: return "error de audio";
+            case SpeechRecognizer.ERROR_SERVER: return "error del servidor de reconocimiento";
+            case SpeechRecognizer.ERROR_CLIENT: return "error del cliente de reconocimiento";
+            case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: return "no se detectó voz";
+            case SpeechRecognizer.ERROR_NO_MATCH: return "no se pudo reconocer lo dicho";
+            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY: return "reconocedor ocupado";
+            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: return "permiso de micrófono insuficiente";
+            case SpeechRecognizer.ERROR_TOO_MANY_REQUESTS: return "demasiadas solicitudes al servicio";
+            case SpeechRecognizer.ERROR_SERVER_DISCONNECTED: return "servicio de reconocimiento desconectado";
+            case SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE: return "idioma no disponible";
+            case ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT: return "idioma no compatible";
+            default: return "error no clasificado";
+        }
+    }
+
+    private void status(String value) {
+        if (listener != null) listener.onStatus(value);
+    }
 }
