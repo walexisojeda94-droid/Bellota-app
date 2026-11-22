@@ -521,9 +521,10 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
 
     @Override public void sendToolResult(String callId, String result, boolean isError) {
         if (callId == null || callId.trim().isEmpty()) return;
-        String responseIdToContinue = null;
+        PendingToolResponse completed = null;
+        String responseId = null;
         synchronized (toolResponseLock) {
-            String responseId = responseIdByToolCall.get(callId);
+            responseId = responseIdByToolCall.get(callId);
             ToolOutput output = new ToolOutput(result, isError);
             if (responseId == null) {
                 toolOutputsAwaitingResponse.put(callId, output);
@@ -533,12 +534,12 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             if (pending == null || !pending.callIds.contains(callId)) return;
             pending.outputs.put(callId, output);
             if (pending.outputs.size() == pending.callIds.size()) {
-                responseIdToContinue = responseId;
+                completed = pending;
                 pendingToolResponses.remove(responseId);
                 for (String completedCallId : pending.callIds) responseIdByToolCall.remove(completedCallId);
             }
         }
-        if (responseIdToContinue != null) sendCompletedToolOutputs(responseIdToContinue);
+        if (completed != null) sendCompletedToolOutputs(responseId, completed);
     }
 
     private void recordCompletedToolResponse(JSONObject response) {
@@ -546,6 +547,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         String responseId = response.optString("id", "");
         JSONArray outputItems = response.optJSONArray("output");
         if (responseId.isEmpty() || outputItems == null) return;
+        PendingToolResponse completed = null;
         synchronized (toolResponseLock) {
             PendingToolResponse pending = pendingToolResponses.get(responseId);
             for (int i = 0; i < outputItems.length(); i++) {
@@ -566,10 +568,11 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                     && pending.outputs.size() == pending.callIds.size()) {
                 pendingToolResponses.remove(responseId);
                 for (String callId : pending.callIds) responseIdByToolCall.remove(callId);
-                // All outputs were already returned before response.done arrived.
-                sendCompletedToolOutputs(responseId, pending);
+                completed = pending;
             }
         }
+        // All outputs were already returned before response.done arrived.
+        if (completed != null) sendCompletedToolOutputs(responseId, completed);
     }
 
     private void sendCompletedToolOutputs(String responseId) {
