@@ -67,6 +67,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     private boolean paused;
     private long lastVoiceDiagnosticToastAt;
     private boolean voiceReceiverRegistered;
+    private boolean localRecognitionPaused;
     private final BroadcastReceiver voiceEventsReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
@@ -115,7 +116,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         applySleepVisuals();
         localVoice = new LocalVoice(this, (ready, detail) -> { });
         localVoice.setOnSpeechFinished(() -> {
-            if (!paused && !isFinishing()) VoiceRecognitionService.resume(MainActivity.this);
+            if (!paused && !isFinishing()) resumeLocalRecognition();
         });
         setupAmbientTheme();
         registerVoiceReceiver();
@@ -273,7 +274,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             onlineButton.setEnabled(true);
             return;
         }
-        VoiceRecognitionService.pause(this);
+        pauseLocalRecognition();
         if (localVoice != null) localVoice.stop();
         try {
             SecureTokenStore store = new SecureTokenStore(getApplicationContext());
@@ -910,12 +911,26 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
     }
 
+    private void pauseLocalRecognition() {
+        if (localRecognitionPaused) return;
+        localRecognitionPaused = true;
+        VoiceRecognitionService.pause(this);
+    }
+
+    private void resumeLocalRecognition() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+        if (!localRecognitionPaused) return;
+        localRecognitionPaused = false;
+        VoiceRecognitionService.resume(this);
+    }
+
     private void startVoiceCommands() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startLocalRecognizer();
     }
 
     private void startLocalRecognizer() {
         if (paused || isFinishing() || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+        localRecognitionPaused = false;
         VoiceRecognitionService.start(this);
     }
 
@@ -1142,8 +1157,10 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         cancelActivities();
 
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+        if (localRecognitionPaused && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            localRecognitionPaused = false;
             VoiceRecognitionService.resume(this);
+        }
 
         if (eyes != null) eyes.pauseAnimation();
         if(sensorManager!=null)sensorManager.unregisterListener(this);
