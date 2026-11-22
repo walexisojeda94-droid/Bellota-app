@@ -2,6 +2,8 @@ package com.bellota.mascota.core;
 
 import android.util.Log;
 
+import com.bellota.mascota.BuildConfig;
+
 import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
 import java.util.Date;
@@ -19,11 +21,11 @@ public final class DebugLog {
 
     private DebugLog() { }
 
-    public static void i(String tag, String message) { add("I", tag, message, null); Log.i(tag, message); }
-    public static void w(String tag, String message) { add("W", tag, message, null); Log.w(tag, message); }
-    public static void w(String tag, String message, Throwable t) { add("W", tag, message, t); Log.w(tag, message, t); }
-    public static void e(String tag, String message) { add("E", tag, message, null); Log.e(tag, message); }
-    public static void e(String tag, String message, Throwable t) { add("E", tag, message, t); Log.e(tag, message, t); }
+    public static void i(String tag, String message) { if (!BuildConfig.DEBUG) return; add("I", tag, message, null); Log.i(tag, message); }
+    public static void w(String tag, String message) { if (!BuildConfig.DEBUG) return; add("W", tag, message, null); Log.w(tag, message); }
+    public static void w(String tag, String message, Throwable t) { if (!BuildConfig.DEBUG) return; add("W", tag, message, t); Log.w(tag, message, t); }
+    public static void e(String tag, String message) { if (!BuildConfig.DEBUG) return; add("E", tag, message, null); Log.e(tag, message); }
+    public static void e(String tag, String message, Throwable t) { if (!BuildConfig.DEBUG) return; add("E", tag, message, t); Log.e(tag, message, t); }
 
     private static synchronized void add(String level, String tag, String message, Throwable t) {
         String shortTag = tag == null ? "" : tag.replace("Bellota", "");
@@ -37,6 +39,7 @@ public final class DebugLog {
     }
 
     public static synchronized String dump() {
+        if (!BuildConfig.DEBUG) return "";
         StringBuilder out = new StringBuilder();
         for (String line : LINES) out.append(line).append('\n');
         return out.toString();
