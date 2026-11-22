@@ -41,7 +41,6 @@ public class ContinuousVoiceCommands {
     private SpeechRecognizer recognizer;
     private boolean running;
     private boolean restarting;
-    private boolean preferOffline = true;
     private int languageCandidateIndex;
     private int clientErrorCount;
     private int throttleCount;
@@ -62,7 +61,6 @@ public class ContinuousVoiceCommands {
         }
 
         running = true;
-        preferOffline = true;
         languageCandidateIndex = 0;
         clientErrorCount = 0;
         throttleCount = 0;
@@ -133,14 +131,13 @@ public class ContinuousVoiceCommands {
                         RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
                 intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag());
                 intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
-                intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline);
+                intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
                 intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
 
                 DebugLog.i(TAG, "startListening: locale=" + languageTag()
-                        + "; offline=" + preferOffline + "; generation=" + session + ".");
+                        + "; offlinePreferred=true; generation=" + session + ".");
                 current.startListening(intent);
-                status("Escucha solicitada en español (" + languageTag()
-                        + (preferOffline ? ", modo sin conexión)." : ", modo en línea)."));
+                status("Escucha solicitada en español (" + languageTag() + ", sin conexión preferido).");
             } catch (Exception error) {
                 if (!running || generation != session || recognizer != current) return;
                 status("No se pudo iniciar la escucha: " + error.getClass().getSimpleName() + ".");
@@ -226,7 +223,7 @@ public class ContinuousVoiceCommands {
         @Override public void onError(int error) {
             if (!isCurrent(session, source)) return;
             DebugLog.w(TAG, "onError=" + error + " (" + errorName(error)
-                    + "); locale=" + languageTag() + "; offline=" + preferOffline + ".");
+                    + "); locale=" + languageTag() + "; offlinePreferred=true.");
             status("Error de reconocimiento: " + errorName(error) + " (código " + error + ").");
 
             if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
