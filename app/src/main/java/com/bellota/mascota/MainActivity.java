@@ -902,7 +902,10 @@ public class MainActivity extends Activity implements SensorEventListener {
     private void handleVoiceStatus(String status) {
         if (status == null || status.trim().isEmpty()) return;
         DebugLog.i("BellotaVoice", status);
-        if (status.startsWith("Error de reconocimiento:")) {
+        if (status.startsWith("Error de reconocimiento:")
+                || status.startsWith("No hay un servicio de reconocimiento")
+                || status.startsWith("No hay un reconocedor de voz local")
+                || status.startsWith("No hay un modelo español local")) {
             long now = System.currentTimeMillis();
             if (!paused && now - lastVoiceDiagnosticToastAt >= 10000L) {
                 lastVoiceDiagnosticToastAt = now;
