@@ -49,8 +49,8 @@ test("JSON endpoints reject unsupported content types", async () => {
 test("JSON endpoints reject declared oversized bodies before parsing", async () => {
   const response = await worker.fetch(new Request("https://worker.test/v1/pair", {
     method: "POST",
-    headers: { "content-type": "application/json", "content-length": "20000" },
-    body: "{}"
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: "x".repeat(17000) })
   }), envWithDatabase());
   assert.equal(response.status, 413);
   assert.equal((await response.json()).error, "request_too_large");
