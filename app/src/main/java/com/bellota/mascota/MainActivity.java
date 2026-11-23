@@ -357,7 +357,10 @@ public class MainActivity extends Activity implements SensorEventListener {
             String state = intent.getStringExtra(VoiceSessionService.EXTRA_STATE);
             String detail = intent.getStringExtra(VoiceSessionService.EXTRA_DETAIL);
             if (VoiceProvider.State.CONNECTED.name().equals(state)) onlineVoiceConnecting = false;
-            else if (VoiceProvider.State.CLOSED.name().equals(state)) onlineVoiceConnecting = false;
+            else if (VoiceProvider.State.CLOSED.name().equals(state)) {
+                onlineVoiceConnecting = false;
+                localRecognitionPaused = false;
+            }
             if (detail != null && !detail.isEmpty()) DebugLog.i("BellotaOnlineVoice", detail);
             return;
         }
