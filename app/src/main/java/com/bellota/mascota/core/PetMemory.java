@@ -6,7 +6,6 @@ import android.security.keystore.KeyProperties;
 import android.util.AtomicFile;
 import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
