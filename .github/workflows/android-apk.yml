@@ -1,7 +1,7 @@
 name: Build Bellota APK
 on:
   push:
-    branches: [main, 'fix/xiaozhi-voice-pipeline', 'fix/revision-6-backend-persistence']
+    branches: [main, 'fix/xiaozhi-voice-pipeline', 'fix/revision-6-backend-persistence', 'fix/revision-7-build-dependencies-tests']
   workflow_dispatch:
 concurrency:
   group: bellota-android-${{ github.ref }}
@@ -169,6 +169,20 @@ jobs:
           ANDROID_I_WANT_MY_TCG: "yes"
         with:
           api-level: 24
+          arch: x86
+          profile: Nexus 5
+          script: |
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest
+            adb install app/build/outputs/apk/debug/app-debug.apk
+            adb shell am start -n com.bellota.mascota/.MainActivity
+            sleep 10
+            adb shell pidof com.bellota.mascota
+      - name: Smoke test on Android 8.1 (API 27)
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ANDROID_I_WANT_MY_TCG: "yes"
+        with:
+          api-level: 27
           arch: x86
           profile: Nexus 5
           script: |
