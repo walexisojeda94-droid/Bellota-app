@@ -66,7 +66,7 @@ public final class VoiceSessionService extends Service {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Set<String> pendingToolCalls = new HashSet<>();
-    private VoiceProviderManager manager;
+    private volatile VoiceProviderManager manager;
     private ConnectivityManager connectivityManager;
     private NetworkCallback networkCallback;
     private String backendUrl;
@@ -75,7 +75,7 @@ public final class VoiceSessionService extends Service {
     private String voice;
     private String locale;
     private int retryIndex;
-    private boolean started;
+    private volatile boolean started;
     private boolean connecting;
     private boolean foreground;
 
