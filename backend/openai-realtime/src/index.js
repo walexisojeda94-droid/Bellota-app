@@ -121,10 +121,15 @@ async function healthCheck(env) {
   let database = false;
   if (env.DB) {
     try {
-      const result = await env.DB.prepare(
-        "SELECT COUNT(*) AS table_count FROM sqlite_master WHERE type = 'table' AND name IN ('devices', 'pairing_codes')"
+      await env.DB.prepare(
+        "SELECT id, device_name, refresh_token_hash, previous_refresh_token_hash, " +
+        "previous_refresh_valid_until, created_at, refresh_expires_at, last_seen_at, revoked_at " +
+        "FROM devices LIMIT 0"
       ).first();
-      database = result?.table_count === 2;
+      await env.DB.prepare(
+        "SELECT code_hash, created_at, expires_at, consumed_at, device_id FROM pairing_codes LIMIT 0"
+      ).first();
+      database = true;
     } catch { database = false; }
   }
   const ok = configured && database;
