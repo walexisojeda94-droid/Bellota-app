@@ -57,11 +57,6 @@ public final class VoiceSessionService extends Service {
     private static final int NOTIFICATION_ID = 2402;
     private static final String PREFS = "bellota_voice_session";
     private static final String KEY_ACTIVE = "active";
-    private static final String KEY_BACKEND = "backend";
-    private static final String KEY_INSTRUCTIONS = "instructions";
-    private static final String KEY_TOOLS = "tools";
-    private static final String KEY_VOICE = "voice";
-    private static final String KEY_LOCALE = "locale";
     private static final String KEY_PENDING_CALLS = "pending_tool_calls";
     private static final long[] RETRY_DELAYS_MS = {1500L, 3000L, 6000L, 12000L, 20000L, 30000L, 60000L};
 
@@ -164,11 +159,18 @@ public final class VoiceSessionService extends Service {
             toolsJson = intent.getStringExtra(EXTRA_TOOLS);
             voice = intent.getStringExtra(EXTRA_VOICE);
             locale = intent.getStringExtra(EXTRA_LOCALE);
-            persistConfig();
+            try { persistConfig(); }
+            catch (Exception storageError) {
+                emit("state", VoiceProvider.State.CLOSED.name(),
+                        "No se pudo proteger la configuración de recuperación. La sesión online no se inició.", null);
+                stopSelf();
+                return START_NOT_STICKY;
+            }
         } else if (backendUrl == null) {
             restoreConfig();
         }
         if (!hasConfig()) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -185,21 +187,24 @@ public final class VoiceSessionService extends Service {
                 && instructions != null && toolsJson != null && voice != null && locale != null;
     }
 
-    private void persistConfig() {
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .putBoolean(KEY_ACTIVE, true).putString(KEY_BACKEND, backendUrl)
-                .putString(KEY_INSTRUCTIONS, instructions).putString(KEY_TOOLS, toolsJson)
-                .putString(KEY_VOICE, voice).putString(KEY_LOCALE, locale).apply();
+    private void persistConfig() throws Exception {
+        new VoiceSessionConfigStore(this).save(new VoiceSessionConfigStore.Config(
+                backendUrl, instructions, toolsJson, voice, locale));
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, true).apply();
     }
 
     private void restoreConfig() {
-        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        if (!prefs.getBoolean(KEY_ACTIVE, false)) return;
-        backendUrl = prefs.getString(KEY_BACKEND, null);
-        instructions = prefs.getString(KEY_INSTRUCTIONS, null);
-        toolsJson = prefs.getString(KEY_TOOLS, null);
-        voice = prefs.getString(KEY_VOICE, "marin");
-        locale = prefs.getString(KEY_LOCALE, "es-AR");
+        if (!getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_ACTIVE, false)) return;
+        VoiceSessionConfigStore.Config config = new VoiceSessionConfigStore(this).load();
+        if (config == null) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
+            return;
+        }
+        backendUrl = config.backendUrl;
+        instructions = config.instructions;
+        toolsJson = config.toolsJson;
+        voice = config.voice;
+        locale = config.locale;
     }
 
     private void connectFreshManager() {
@@ -322,7 +327,10 @@ public final class VoiceSessionService extends Service {
         synchronized (pendingToolCalls) { pendingToolCalls.clear(); }
         clearPersistedPendingCalls();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
-        if (resumeLocal) VoiceRecognitionService.resume(this);
+        if (resumeLocal) {
+            new VoiceSessionConfigStore(this).clear();
+            VoiceRecognitionService.resume(this);
+        }
         if (foreground) stopForeground(true);
         foreground = false;
     }
@@ -419,7 +427,17 @@ public final class VoiceSessionService extends Service {
     }
 
     @Override public void onDestroy() {
-        stopSession(false);
+        // Unexpected service teardown must not erase the encrypted restart configuration.
+        // START_STICKY or the next Activity resume can recreate the owner.
+        if (started) {
+            started = false;
+            connecting = false;
+            handler.removeCallbacksAndMessages(null);
+            if (manager != null) manager.disconnect();
+            manager = null;
+            synchronized (pendingToolCalls) { pendingToolCalls.clear(); }
+            clearPersistedPendingCalls();
+        }
         if (connectivityManager != null && networkCallback != null) {
             try { connectivityManager.unregisterNetworkCallback(networkCallback); }
             catch (RuntimeException ignored) { }
