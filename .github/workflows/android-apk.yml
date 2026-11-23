@@ -172,6 +172,7 @@ jobs:
           arch: x86
           profile: Nexus 5
           script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell pm grant com.bellota.mascota android.permission.RECORD_AUDIO
             ./gradlew --no-daemon :app:connectedDebugAndroidTest
             adb install app/build/outputs/apk/debug/app-debug.apk
@@ -187,6 +188,7 @@ jobs:
           arch: x86
           profile: Nexus 5
           script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell pm grant com.bellota.mascota android.permission.RECORD_AUDIO
             ./gradlew --no-daemon :app:connectedDebugAndroidTest
             adb install app/build/outputs/apk/debug/app-debug.apk
@@ -202,6 +204,7 @@ jobs:
           arch: x86_64
           profile: Nexus 5
           script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell pm grant com.bellota.mascota android.permission.RECORD_AUDIO
             ./gradlew --no-daemon :app:connectedDebugAndroidTest
             adb install app/build/outputs/apk/debug/app-debug.apk
