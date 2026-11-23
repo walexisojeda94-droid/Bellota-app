@@ -116,12 +116,14 @@ async function cleanupExpiredRecords(env, now) {
   ).bind(now - 180 * 86400, now - 180 * 86400).run();
 }
 async function healthCheck(env) {
-  const configured = Boolean(env.DB && env.JWT_SECRET && env.OPENAI_API_KEY);
+  const configured = Boolean(env.DB && env.ADMIN_TOKEN && env.JWT_SECRET && env.OPENAI_API_KEY);
   let database = false;
   if (env.DB) {
     try {
-      const result = await env.DB.prepare("SELECT 1 AS ok").first();
-      database = result?.ok === 1;
+      const result = await env.DB.prepare(
+        "SELECT COUNT(*) AS table_count FROM sqlite_master WHERE type = 'table' AND name IN ('devices', 'pairing_codes')"
+      ).first();
+      database = result?.table_count === 2;
     } catch { database = false; }
   }
   const ok = configured && database;
