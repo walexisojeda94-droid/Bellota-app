@@ -34,6 +34,7 @@ import com.bellota.mascota.local.Utterance;
 import com.bellota.mascota.local.VoiceCommandIntent;
 import com.bellota.mascota.ui.EyePetView;
 import com.bellota.mascota.voice.VoiceRecognitionService;
+import com.bellota.mascota.voice.VoiceSessionService;
 import com.bellota.mascota.voice.LocalVoice;
 import com.bellota.mascota.voice.provider.VoiceProvider;
 import com.bellota.mascota.voice.provider.VoiceProviderManager;
@@ -86,6 +87,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 if (value != null && !value.trim().isEmpty()) handleVoiceCommand(value);
             } else if (VoiceRecognitionService.ACTION_STATUS.equals(intent.getAction())) handleVoiceStatus(value);
             else if (VoiceRecognitionService.ACTION_STOPPED.equals(intent.getAction())) disconnectOnlineVoice(false);
+            else if (VoiceSessionService.ACTION_EVENT.equals(intent.getAction())) handleOnlineVoiceEvent(intent);
         }
     };
     private boolean soundEnabled = true;
@@ -198,7 +200,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 .setView(panel)
                 .setNegativeButton("Cerrar", null)
                 .setPositiveButton(paired ? "Desvincular" : "Vincular", null)
-                .setNeutralButton((onlineVoiceConnecting || (onlineVoiceManager != null && onlineVoiceManager.isConnected())) ? "Desconectar" : "Conectar", null)
+                .setNeutralButton((onlineVoiceConnecting || VoiceSessionService.isActive(this)) ? "Desconectar" : "Conectar", null)
                 .create();
         dialog.setOnShowListener(ignored -> {
             android.widget.Button primary = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
@@ -293,7 +295,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             });
 
             online.setOnClickListener(v -> {
-                if (onlineVoiceConnecting || (onlineVoiceManager != null && onlineVoiceManager.isConnected())) {
+                if (onlineVoiceConnecting || VoiceSessionService.isActive(this)) {
                     disconnectOnlineVoice(true);
                     status.setText("Voz online desconectada. Se reanudó la escucha local.");
                     online.setText("Conectar");
@@ -320,121 +322,91 @@ public class MainActivity extends Activity implements SensorEventListener {
             onlineButton.setEnabled(true);
             return;
         }
-        pauseLocalRecognition();
-        if (localVoice != null) localVoice.stop();
         try {
-            SecureTokenStore store = new SecureTokenStore(getApplicationContext());
-            OpenAIRealtimeWebRtcProvider provider =
-                    new OpenAIRealtimeWebRtcProvider(getApplicationContext(), backendUrl, store);
-            AtomicReference<VoiceProviderManager> sessionManagerRef = new AtomicReference<>();
-            VoiceProviderManager sessionManager = new VoiceProviderManager(provider, null, new VoiceProviderManager.Listener() {
-                @Override public void onStateChanged(VoiceProvider.State state, String providerId, String detail) {
-                    runOnUiThread(() -> {
-                        VoiceProviderManager owner = sessionManagerRef.get();
-                        if (owner == null || owner != onlineVoiceManager || isFinishing() || isDestroyed()) return;
-                        status.setText(detail == null ? state.name() : detail);
-                        if (state == VoiceProvider.State.CONNECTED) {
-                            onlineVoiceConnecting = false;
-                            VoiceRecognitionService.setExternalMicActive(MainActivity.this, true);
-                            onlineButton.setText("Desconectar");
-                            onlineButton.setEnabled(true);
-                        } else if (state == VoiceProvider.State.FALLBACK_LOCAL
-                                || state == VoiceProvider.State.CLOSED) {
-                            onlineVoiceConnecting = false;
-                            onlineButton.setText("Conectar");
-                            onlineButton.setEnabled(true);
-                        }
-                    });
-                }
-                @Override public void onUserTranscript(String text, boolean isFinal) {
-                    if (!isFinal || text == null || text.trim().isEmpty()) return;
-                    runOnUiThread(() -> {
-                        VoiceProviderManager owner = sessionManagerRef.get();
-                        if (owner == null || owner != onlineVoiceManager || !owner.isConnected()) return;
-                        if (conversationEngine != null) conversationEngine.rememberOnlineMessage(text);
-                        if (petMemory != null) petMemory.remember("voz_usuario", text);
-                        if (!isAsleep()) {
-                            userInteracted("attention", true);
-                            if (eyes != null) eyes.reactToAttention();
-                        }
-                    });
-                }
-                @Override public void onAssistantTranscript(String text, boolean isFinal) {
-                    if (!isFinal || text == null || text.trim().isEmpty()) return;
-                    runOnUiThread(() -> {
-                        VoiceProviderManager owner = sessionManagerRef.get();
-                        if (owner == null || owner != onlineVoiceManager || !owner.isConnected()) return;
-                        if (petMemory != null) petMemory.remember("voz_bellota", text);
-                    });
-                }
-                @Override public void onAudioOutput(byte[] pcm16, int sampleRateHz, int channels) {
-                    // WebRTC reproduce el audio remoto directamente mediante su dispositivo de audio nativo.
-                }
-                @Override public void onAssistantSpeaking(boolean speaking) {
-                    runOnUiThread(() -> {
-                        VoiceProviderManager owner = sessionManagerRef.get();
-                        if (owner == null || owner != onlineVoiceManager || !owner.isConnected()) return;
-                        if (eyes != null && !isAsleep())
-                            eyes.setMood(speaking ? EyePetView.Mood.THINKING : EyePetView.Mood.CALM);
-                    });
-                }
-                @Override public void onToolCall(String callId, String name, String argumentsJson) {
-                    VoiceProviderManager owner = sessionManagerRef.get();
-                    if (owner == null || owner != onlineVoiceManager || !owner.isToolCallCurrent(callId)) return;
-                    try {
-                        toolCallExecutor.execute(() -> {
-                            try {
-                                if (!isCurrentToolCall(owner, callId)) return;
-                                String result = executeBellotaTool(name, new JSONObject(argumentsJson), owner, callId);
-                                owner.sendToolResult(callId, result, false);
-                            } catch (Exception error) {
-                                if (isCurrentToolCall(owner, callId)) owner.sendToolResult(callId,
-                                        error.getMessage() == null ? "No se pudo ejecutar la herramienta." : error.getMessage(), true);
-                            }
-                        });
-                    } catch (RejectedExecutionException stopped) {
-                        if (isCurrentToolCall(owner, callId))
-                            owner.sendToolResult(callId, "Bellota está cerrando y no puede ejecutar esta acción.", true);
-                    }
-                }
-                @Override public void onLocalFallbackRequested(VoiceProvider.Failure reason, String detail) {
-                    runOnUiThread(() -> {
-                        VoiceProviderManager owner = sessionManagerRef.get();
-                        if (owner == null || owner != onlineVoiceManager) return;
-                        onlineVoiceConnecting = false;
-                        onlineVoiceManager = null;
-                        if (!isFinishing()) startLocalRecognizer();
-                        status.setText("OpenAI no está disponible. Bellota volvió a la voz local: " + detail);
-                        onlineButton.setText("Conectar");
-                        onlineButton.setEnabled(true);
-                    });
-                }
-            });
-            sessionManagerRef.set(sessionManager);
-            onlineVoiceManager = sessionManager;
-            onlineVoiceConnecting = true;
             JSONArray tools = buildBellotaTools();
-            VoiceProvider.SessionConfig config = new VoiceProvider.SessionConfig(
-                    "es-AR", "marin",
-                    "Sos Bellota, una compañera virtual con personalidad propia. Hablá en español rioplatense natural, con respuestas conversacionales y concisas. Conservá continuidad y contexto. No describas acciones que no realizaste."
-                            + (conversationEngine == null ? "" : conversationEngine.memoryContextForOnline()),
-                    tools.toString(), 48000);
-            sessionManager.connect(config);
+            String instructions = "Sos Bellota, una compañera virtual con personalidad propia. "
+                    + "Hablá en español rioplatense natural, con respuestas conversacionales y concisas. "
+                    + "Conservá continuidad y contexto. No describas acciones que no realizaste."
+                    + (conversationEngine == null ? "" : conversationEngine.memoryContextForOnline());
+            onlineVoiceManager = null;
+            onlineVoiceConnecting = true;
+            VoiceRecognitionService.pause(this);
+            VoiceSessionService.start(getApplicationContext(), backendUrl, instructions,
+                    tools.toString(), "marin", "es-AR");
+            status.setText("Iniciando OpenAI Realtime en el servicio persistente...");
+            onlineButton.setText("Desconectar");
+            onlineButton.setEnabled(true);
         } catch (Exception error) {
             onlineVoiceConnecting = false;
-            onlineVoiceManager = null;
-            startLocalRecognizer();
+            VoiceRecognitionService.resume(this);
             status.setText("No se pudo iniciar OpenAI Realtime: " + error.getMessage());
             onlineButton.setEnabled(true);
         }
     }
 
     private void disconnectOnlineVoice(boolean resumeLocal) {
-        VoiceProviderManager manager = onlineVoiceManager;
-        onlineVoiceManager = null;
         onlineVoiceConnecting = false;
-        if (manager != null) manager.disconnect();
+        onlineVoiceManager = null;
+        VoiceSessionService.stop(getApplicationContext());
         if (resumeLocal && !paused && !isFinishing()) startLocalRecognizer();
+    }
+
+    private void handleOnlineVoiceEvent(Intent intent) {
+        String event = intent.getStringExtra(VoiceSessionService.EXTRA_EVENT);
+        if ("state".equals(event)) {
+            String state = intent.getStringExtra(VoiceSessionService.EXTRA_STATE);
+            String detail = intent.getStringExtra(VoiceSessionService.EXTRA_DETAIL);
+            if (VoiceProvider.State.CONNECTED.name().equals(state)) onlineVoiceConnecting = false;
+            else if (VoiceProvider.State.CLOSED.name().equals(state)) onlineVoiceConnecting = false;
+            if (detail != null && !detail.isEmpty()) DebugLog.i("BellotaOnlineVoice", detail);
+            return;
+        }
+        if ("user_transcript".equals(event)) {
+            String text = intent.getStringExtra(VoiceSessionService.EXTRA_TEXT);
+            if (intent.getBooleanExtra(VoiceSessionService.EXTRA_FINAL, false)
+                    && text != null && !text.trim().isEmpty()) {
+                if (conversationEngine != null) conversationEngine.rememberOnlineMessage(text);
+                if (petMemory != null) petMemory.remember("voz_usuario", text);
+                if (!isAsleep()) {
+                    userInteracted("attention", true);
+                    if (eyes != null) eyes.reactToAttention();
+                }
+            }
+            return;
+        }
+        if ("assistant_transcript".equals(event)) {
+            String text = intent.getStringExtra(VoiceSessionService.EXTRA_TEXT);
+            if (intent.getBooleanExtra(VoiceSessionService.EXTRA_FINAL, false)
+                    && text != null && !text.trim().isEmpty() && petMemory != null)
+                petMemory.remember("voz_bellota", text);
+            return;
+        }
+        if ("speaking".equals(event)) {
+            boolean speaking = Boolean.parseBoolean(intent.getStringExtra(VoiceSessionService.EXTRA_TEXT));
+            if (eyes != null && !isAsleep())
+                eyes.setMood(speaking ? EyePetView.Mood.THINKING : EyePetView.Mood.CALM);
+            return;
+        }
+        if ("tool_call".equals(event)) {
+            String callId = intent.getStringExtra(VoiceSessionService.EXTRA_CALL_ID);
+            String name = intent.getStringExtra(VoiceSessionService.EXTRA_TOOL_NAME);
+            String arguments = intent.getStringExtra(VoiceSessionService.EXTRA_ARGUMENTS);
+            if (callId == null || name == null || arguments == null) return;
+            try {
+                toolCallExecutor.execute(() -> {
+                    try {
+                        String result = executeBellotaTool(name, new JSONObject(arguments), null, callId);
+                        VoiceSessionService.sendToolResult(getApplicationContext(), callId, result, false);
+                    } catch (Exception error) {
+                        VoiceSessionService.sendToolResult(getApplicationContext(), callId,
+                                error.getMessage() == null ? "No se pudo ejecutar la herramienta." : error.getMessage(), true);
+                    }
+                });
+            } catch (RejectedExecutionException ignored) {
+                VoiceSessionService.sendToolResult(getApplicationContext(), callId,
+                        "Bellota está cerrando y no puede ejecutar esta acción.", true);
+            }
+        }
     }
 
     private void buildPetScreen() {
@@ -969,6 +941,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         filter.addAction(VoiceRecognitionService.ACTION_RECOGNIZED);
         filter.addAction(VoiceRecognitionService.ACTION_STATUS);
         filter.addAction(VoiceRecognitionService.ACTION_STOPPED);
+        filter.addAction(VoiceSessionService.ACTION_EVENT);
         if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(voiceEventsReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         else registerReceiver(voiceEventsReceiver, filter);
         voiceReceiverRegistered = true;
@@ -1125,7 +1098,8 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private boolean isCurrentToolCall(VoiceProviderManager manager, String callId) {
-        return manager != null && manager == onlineVoiceManager && manager.isToolCallCurrent(callId);
+        return manager != null ? manager.isToolCallCurrent(callId)
+                : VoiceSessionService.isActive(this);
     }
 
     private String executeBellotaTool(String name, JSONObject arguments,
@@ -1227,6 +1201,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (!soundEnabled || text == null || text.isEmpty()) return;
         // Mientras Realtime está activo, no mezclar la salida TTS local con el audio remoto.
         if (onlineVoiceManager != null && onlineVoiceManager.isConnected()) return;
+        if (VoiceSessionService.isActive(this)) return;
         if (localVoice == null) return;
         if (petMemory != null) petMemory.remember("voz_bellota", text);
         pauseLocalRecognition();
@@ -1267,6 +1242,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         cancelActivities();
 
         if (localRecognitionPaused && onlineVoiceManager == null && !onlineVoiceConnecting
+                && !VoiceSessionService.isActive(this)
                 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             localRecognitionPaused = false;
             VoiceRecognitionService.resume(this);
@@ -1279,7 +1255,6 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     @Override protected void onDestroy() {
 
-        disconnectOnlineVoice(false);
         toolCallExecutor.shutdownNow();
         VoiceRecognitionService.stop(this);
         handler.removeCallbacksAndMessages(null);
