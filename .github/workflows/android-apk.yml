@@ -48,10 +48,13 @@ jobs:
             );
           """)
           db.executescript((root / "migrations/0001_recoverable_refresh.sql").read_text())
+          db.executescript((root / "migrations/0002_retention_indexes.sql").read_text())
           columns = {row[1] for row in db.execute("PRAGMA table_info(devices)")}
           pairing_columns = {row[1] for row in db.execute("PRAGMA table_info(pairing_codes)")}
           assert {"previous_refresh_token_hash", "previous_refresh_valid_until"} <= columns
           assert "device_id" in pairing_columns
+          indexes = {row[1] for row in db.execute("PRAGMA index_list(devices)")}
+          assert {"idx_devices_revoked_at", "idx_devices_refresh_expiry"} <= indexes
 
           db.execute("INSERT INTO pairing_codes (code_hash, created_at, expires_at) VALUES ('one-code', 100, 200)")
           def batch_pair(device_id):
