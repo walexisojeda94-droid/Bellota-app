@@ -49,8 +49,10 @@ No subir claves API, tokens, contraseñas ni archivos de firma al repositorio.
 
 - `minSdk 24` (Android 7.0), `targetSdk 28`, `compileSdk 35`.
 - Java 8 para el código de la aplicación.
-- Android Gradle Plugin 8.6.1 y Gradle Wrapper incluido.
-- CI ejecuta pruebas JVM, Android Lint, pruebas instrumentadas y smoke tests en Android 7/API 24 y Android 12/API 31.
+- Android Gradle Plugin 8.13.2 y Gradle Wrapper 8.13 con checksum SHA-256 verificado.
+- WebRTC Android 150.7871.08 se mantiene fijado porque ya era la versión estable más reciente al revisar; no se fuerza una actualización innecesaria.
+- R8 y reducción de recursos activados para release, con reglas de conservación para la superficie JNI de WebRTC.
+- CI ejecuta pruebas JVM, Android Lint, pruebas instrumentadas y smoke tests en Android 7/API 24, Android 8.1/API 27 y Android 12/API 31.
 
 Comandos locales:
 
