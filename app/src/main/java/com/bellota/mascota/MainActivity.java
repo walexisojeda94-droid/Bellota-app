@@ -382,7 +382,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return;
         }
         if ("speaking".equals(event)) {
-            boolean speaking = Boolean.parseBoolean(intent.getStringExtra(VoiceSessionService.EXTRA_TEXT));
+            boolean speaking = Boolean.parseBoolean(intent.getStringExtra(VoiceSessionService.EXTRA_STATE));
             if (eyes != null && !isAsleep())
                 eyes.setMood(speaking ? EyePetView.Mood.THINKING : EyePetView.Mood.CALM);
             return;
@@ -1147,6 +1147,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (phrase.isEmpty() || phrase.length() > 240) throw new Exception("La frase debe tener entre 1 y 240 caracteres.");
             if (isForcedState() || isAsleep()) return "No puedo hablar ahora: estoy durmiendo.";
             if (!soundEnabled) return "La voz está desactivada.";
+            if (VoiceSessionService.isActive(this))
+                return "Decí en voz alta exactamente esta frase, sin agregar comentarios: " + phrase;
             if (onlineVoiceManager != null && onlineVoiceManager.isConnected())
                 return "Decí en voz alta exactamente esta frase, sin agregar comentarios: " + phrase;
             if (localVoice == null || !localVoice.isReady()) return "La voz local todavía no está lista.";
