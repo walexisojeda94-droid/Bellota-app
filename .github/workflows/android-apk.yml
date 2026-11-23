@@ -72,7 +72,46 @@ jobs:
           assert batch_pair("device-a") == (1, 1)
           assert batch_pair("device-b") == (0, 0)
           assert db.execute("SELECT COUNT(*) FROM devices").fetchone()[0] == 1
-          print("D1 migration and atomic pairing SQL checks passed.")
+
+          now = 1_000_000_000
+          db.executemany(
+              "INSERT INTO pairing_codes (code_hash, created_at, expires_at, consumed_at) VALUES (?, ?, ?, ?)",
+              [
+                  ("pair-old-unused", now - 9 * 86400, now - 8 * 86400, None),
+                  ("pair-old-used", now - 9 * 86400, now - 8 * 86400, now - 8 * 86400),
+                  ("pair-recent", now - 2 * 86400, now - 1 * 86400, None),
+              ]
+          )
+          db.execute(
+              "DELETE FROM pairing_codes WHERE expires_at < ? AND (consumed_at IS NULL OR consumed_at < ?)",
+              (now - 7 * 86400, now - 7 * 86400)
+          )
+          retained_codes = {row[0] for row in db.execute("SELECT code_hash FROM pairing_codes")}
+          assert "pair-old-unused" not in retained_codes
+          assert "pair-old-used" not in retained_codes
+          assert "pair-recent" in retained_codes
+
+          db.executemany(
+              "INSERT INTO devices (id, device_name, refresh_token_hash, created_at, refresh_expires_at, revoked_at) "
+              "VALUES (?, ?, ?, ?, ?, ?)",
+              [
+                  ("device-old-revoked", "test", "hash-old-revoked", now - 200 * 86400, now - 100 * 86400, now - 181 * 86400),
+                  ("device-recently-revoked", "test", "hash-recent-revoked", now - 200 * 86400, now - 181 * 86400, now - 1 * 86400),
+                  ("device-old-expired", "test", "hash-old-expired", now - 200 * 86400, now - 181 * 86400, None),
+                  ("device-recent-expired", "test", "hash-recent-expired", now - 200 * 86400, now - 179 * 86400, None),
+              ]
+          )
+          db.execute(
+              "DELETE FROM devices WHERE (revoked_at IS NOT NULL AND revoked_at < ?) OR "
+              "(revoked_at IS NULL AND refresh_expires_at < ?)",
+              (now - 180 * 86400, now - 180 * 86400)
+          )
+          retained_devices = {row[0] for row in db.execute("SELECT id FROM devices")}
+          assert "device-old-revoked" not in retained_devices
+          assert "device-old-expired" not in retained_devices
+          assert "device-recently-revoked" in retained_devices
+          assert "device-recent-expired" in retained_devices
+          print("D1 migration, atomic pairing and retention SQL checks passed.")
           PY
       - name: Set up Java 17
         uses: actions/setup-java@v4
