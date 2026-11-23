@@ -1,15 +1,12 @@
 package com.bellota.mascota.voice;
 
-import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
 import android.os.SystemClock;
-import android.os.ParcelFileDescriptor;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
-import java.io.InputStream;
 
 import com.bellota.mascota.voice.auth.SecureTokenStore;
 
@@ -33,13 +30,6 @@ public class VoiceSessionServiceInstrumentedTest {
 
     @Test public void foregroundOwnerRestoresAfterUnexpectedServiceTeardown() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        ParcelFileDescriptor permissionCommand = InstrumentationRegistry.getInstrumentation()
-                .getUiAutomation().executeShellCommand("pm grant " + context.getPackageName()
-                        + " " + Manifest.permission.RECORD_AUDIO);
-        try (InputStream commandOutput = new ParcelFileDescriptor.AutoCloseInputStream(permissionCommand)) {
-            while (commandOutput.read() != -1) { }
-        }
-
         SecureTokenStore tokenStore = new SecureTokenStore(context);
         VoiceSessionConfigStore configStore = new VoiceSessionConfigStore(context);
         try {
