@@ -115,11 +115,9 @@ public final class WeatherService {
             private void finish(Location location) {
                 if (completed[0]) return;
                 completed[0] = true;
-                handler.removeCallbacks(timeout);
                 try { manager.removeUpdates(this); } catch (RuntimeException ignored) { }
                 callback.onLocation(location);
             }
-            private final Runnable timeout = () -> finish(null);
         };
         handler.postDelayed(() -> {
             if (completed[0]) return;
