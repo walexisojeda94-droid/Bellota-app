@@ -9,7 +9,7 @@ Worker privado para vinculación de dispositivos y emisión de credenciales efí
 - `POST /v1/auth/refresh`: rota el refresh token de forma recuperable. Si la respuesta se pierde, el mismo token anterior permite recuperar la misma rotación durante 120 segundos. Body: `{"refresh_token":"..."}`.
 - `POST /v1/device/revoke`: revoca remotamente el dispositivo. Body: `{"refresh_token":"..."}`. Es idempotente para permitir reintentos cuando se pierde la respuesta.
 - `POST /v1/realtime/client-secret`: requiere access token Bearer de 15 minutos. Body opcional: `{"instructions":"...","voice":"marin"}`.
-- `GET /health`: comprobación básica.
+- `GET /health`: comprueba que D1 responda y que estén presentes las variables de configuración necesarias. Devuelve `503` si falta alguna dependencia, sin exponer secretos ni detalles internos.
 
 ## Preparación
 
@@ -37,6 +37,12 @@ curl -X POST "https://<worker>.<subdomain>.workers.dev/admin/pairing-code" \
 ```
 
 La app intercambia ese código una sola vez por un refresh token aleatorio. Android debe guardarlo exclusivamente mediante Android Keystore, excluirlo de backups y no escribirlo en logs. El backend guarda únicamente su hash. El refresh token se rota al renovarse; el access token firmado dura 15 minutos. La rotación deriva el siguiente token con HMAC del secreto del Worker y conserva el hash anterior por 120 segundos, sin guardar tokens en claro en D1. La vinculación consume el código y crea el dispositivo en un único lote transaccional D1.
+
+## Validación y retención
+
+Las rutas JSON rechazan tipos de contenido incorrectos, JSON malformado, cuerpos superiores al límite y campos con tipos o longitudes inválidos. Las rutas conocidas responden `405` cuando se usa un método incorrecto. El endpoint de salud ejecuta `SELECT 1` contra D1 y no informa valores de secretos. Al generar códigos de vinculación se ejecuta una limpieza acotada: los códigos vencidos se conservan durante siete días y los dispositivos revocados o con refresh vencido durante 180 días antes de eliminarse.
+
+Ejecutar las pruebas del Worker desde esta carpeta con `npm test` (Node.js 20 o superior).
 
 ## Seguridad pendiente antes de producción
 
