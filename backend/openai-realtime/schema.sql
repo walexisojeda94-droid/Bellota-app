@@ -20,3 +20,6 @@ CREATE TABLE IF NOT EXISTS devices (
   revoked_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_devices_refresh_hash ON devices(refresh_token_hash);
+
+CREATE INDEX IF NOT EXISTS idx_devices_revoked_at ON devices(revoked_at);
+CREATE INDEX IF NOT EXISTS idx_devices_refresh_expiry ON devices(refresh_expires_at);

@@ -1,7 +1,7 @@
 name: Build Bellota APK
 on:
   push:
-    branches: [main, 'fix/xiaozhi-voice-pipeline']
+    branches: [main, 'fix/xiaozhi-voice-pipeline', 'fix/revision-6-backend-persistence']
   workflow_dispatch:
 concurrency:
   group: bellota-android-${{ github.ref }}
@@ -15,9 +15,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Validate Worker JavaScript and D1 migration
         run: |
           node --check backend/openai-realtime/src/index.js
+          npm --prefix backend/openai-realtime test
           python3 - <<'PY'
           import pathlib
           import sqlite3
@@ -43,10 +48,13 @@ jobs:
             );
           """)
           db.executescript((root / "migrations/0001_recoverable_refresh.sql").read_text())
+          db.executescript((root / "migrations/0002_retention_indexes.sql").read_text())
           columns = {row[1] for row in db.execute("PRAGMA table_info(devices)")}
           pairing_columns = {row[1] for row in db.execute("PRAGMA table_info(pairing_codes)")}
           assert {"previous_refresh_token_hash", "previous_refresh_valid_until"} <= columns
           assert "device_id" in pairing_columns
+          indexes = {row[1] for row in db.execute("PRAGMA index_list(devices)")}
+          assert {"idx_devices_revoked_at", "idx_devices_refresh_expiry"} <= indexes
 
           db.execute("INSERT INTO pairing_codes (code_hash, created_at, expires_at) VALUES ('one-code', 100, 200)")
           def batch_pair(device_id):
@@ -67,7 +75,46 @@ jobs:
           assert batch_pair("device-a") == (1, 1)
           assert batch_pair("device-b") == (0, 0)
           assert db.execute("SELECT COUNT(*) FROM devices").fetchone()[0] == 1
-          print("D1 migration and atomic pairing SQL checks passed.")
+
+          now = 1_000_000_000
+          db.executemany(
+              "INSERT INTO pairing_codes (code_hash, created_at, expires_at, consumed_at) VALUES (?, ?, ?, ?)",
+              [
+                  ("pair-old-unused", now - 9 * 86400, now - 8 * 86400, None),
+                  ("pair-old-used", now - 9 * 86400, now - 8 * 86400, now - 8 * 86400),
+                  ("pair-recent", now - 2 * 86400, now - 1 * 86400, None),
+              ]
+          )
+          db.execute(
+              "DELETE FROM pairing_codes WHERE expires_at < ? AND (consumed_at IS NULL OR consumed_at < ?)",
+              (now - 7 * 86400, now - 7 * 86400)
+          )
+          retained_codes = {row[0] for row in db.execute("SELECT code_hash FROM pairing_codes")}
+          assert "pair-old-unused" not in retained_codes
+          assert "pair-old-used" not in retained_codes
+          assert "pair-recent" in retained_codes
+
+          db.executemany(
+              "INSERT INTO devices (id, device_name, refresh_token_hash, created_at, refresh_expires_at, revoked_at) "
+              "VALUES (?, ?, ?, ?, ?, ?)",
+              [
+                  ("device-old-revoked", "test", "hash-old-revoked", now - 200 * 86400, now - 100 * 86400, now - 181 * 86400),
+                  ("device-recently-revoked", "test", "hash-recent-revoked", now - 200 * 86400, now - 181 * 86400, now - 1 * 86400),
+                  ("device-old-expired", "test", "hash-old-expired", now - 200 * 86400, now - 181 * 86400, None),
+                  ("device-recent-expired", "test", "hash-recent-expired", now - 200 * 86400, now - 179 * 86400, None),
+              ]
+          )
+          db.execute(
+              "DELETE FROM devices WHERE (revoked_at IS NOT NULL AND revoked_at < ?) OR "
+              "(revoked_at IS NULL AND refresh_expires_at < ?)",
+              (now - 180 * 86400, now - 180 * 86400)
+          )
+          retained_devices = {row[0] for row in db.execute("SELECT id FROM devices")}
+          assert "device-old-revoked" not in retained_devices
+          assert "device-old-expired" not in retained_devices
+          assert "device-recently-revoked" in retained_devices
+          assert "device-recent-expired" in retained_devices
+          print("D1 migration, atomic pairing and retention SQL checks passed.")
           PY
       - name: Set up Java 17
         uses: actions/setup-java@v4

@@ -1,0 +1,8 @@
+{
+  "name": "bellota-openai-realtime",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

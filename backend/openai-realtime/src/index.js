@@ -68,8 +68,76 @@ async function verifyAccessToken(token, secret) {
     return payload.sub;
   } catch { return null; }
 }
-async function readJson(request) {
-  try { return await request.json(); } catch { return null; }
+async function readJson(request, maxBytes = 16384, optional = false) {
+  const contentType = (request.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+  if (!contentType && optional && !request.body) return { ok: true, value: {} };
+  if (contentType !== "application/json") return { ok: false, status: 415, code: "unsupported_media_type", message: "El cuerpo debe enviarse como JSON." };
+  const declaredLength = Number(request.headers.get("content-length") || 0);
+  if (declaredLength > maxBytes) return { ok: false, status: 413, code: "request_too_large", message: "La solicitud supera el tamaño permitido." };
+  if (!request.body) return optional
+    ? { ok: true, value: {} }
+    : { ok: false, status: 400, code: "invalid_json", message: "Falta el cuerpo JSON." };
+  try {
+    const reader = request.body.getReader();
+    const chunks = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return { ok: false, status: 413, code: "request_too_large", message: "La solicitud supera el tamaño permitido." };
+      }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    const parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return { ok: false, status: 400, code: "invalid_json", message: "El JSON debe contener un objeto." };
+    return { ok: true, value: parsed };
+  } catch {
+    return { ok: false, status: 400, code: "invalid_json", message: "El cuerpo JSON no es válido." };
+  }
+}
+function invalidBody(parsed) {
+  return fail(parsed.code, parsed.status, parsed.message);
+}
+async function cleanupExpiredRecords(env, now) {
+  // Pairing codes are short-lived; retain a seven-day audit window.
+  await env.DB.prepare(
+    "DELETE FROM pairing_codes WHERE expires_at < ? AND (consumed_at IS NULL OR consumed_at < ?)"
+  ).bind(now - 7 * 86400, now - 7 * 86400).run();
+  // Keep revoked/expired device records for 180 days before physical cleanup.
+  await env.DB.prepare(
+    "DELETE FROM devices WHERE (revoked_at IS NOT NULL AND revoked_at < ?) OR " +
+    "(revoked_at IS NULL AND refresh_expires_at < ?)"
+  ).bind(now - 180 * 86400, now - 180 * 86400).run();
+}
+async function healthCheck(env) {
+  const configured = Boolean(env.DB && env.ADMIN_TOKEN && env.JWT_SECRET && env.OPENAI_API_KEY);
+  let database = false;
+  if (env.DB) {
+    try {
+      await env.DB.prepare(
+        "SELECT id, device_name, refresh_token_hash, previous_refresh_token_hash, " +
+        "previous_refresh_valid_until, created_at, refresh_expires_at, last_seen_at, revoked_at " +
+        "FROM devices LIMIT 0"
+      ).first();
+      await env.DB.prepare(
+        "SELECT code_hash, created_at, expires_at, consumed_at, device_id FROM pairing_codes LIMIT 0"
+      ).first();
+      database = true;
+    } catch { database = false; }
+  }
+  const ok = configured && database;
+  return json({
+    ok,
+    service: "bellota-openai-realtime",
+    checks: { database, configuration: configured }
+  }, ok ? 200 : 503);
 }
 function bearer(request) {
   const value = request.headers.get("authorization") || "";
@@ -93,9 +161,11 @@ async function createPairingCode(request, env) {
   let difference = suppliedMac.length ^ expectedMac.length;
   for (let i = 0; i < Math.min(suppliedMac.length, expectedMac.length); i++) difference |= suppliedMac[i] ^ expectedMac[i];
   if (!supplied || difference !== 0) return fail("unauthorized", 401, "No autorizado.");
+  const now = Math.floor(Date.now() / 1000);
+  await cleanupExpiredRecords(env, now);
   const code = randomPairingCode();
   const codeHash = await sha256(code);
-  const expiresAt = Math.floor(Date.now() / 1000) + PAIRING_TTL_SECONDS;
+  const expiresAt = now + PAIRING_TTL_SECONDS;
   await env.DB.prepare("INSERT INTO pairing_codes (code_hash, created_at, expires_at) VALUES (?, ?, ?)")
     .bind(codeHash, Math.floor(Date.now() / 1000), expiresAt).run();
   return json({ code, expires_at: expiresAt, expires_in_seconds: PAIRING_TTL_SECONDS });
@@ -103,8 +173,12 @@ async function createPairingCode(request, env) {
 
 async function pairDevice(request, env) {
   if (!env.JWT_SECRET) return fail("server_not_configured", 503, "El backend no está configurado.");
-  const body = await readJson(request);
-  if (!body || typeof body.code !== "string") return fail("invalid_request", 400, "Falta el código de vinculación.");
+  const parsed = await readJson(request);
+  if (!parsed.ok) return invalidBody(parsed);
+  const body = parsed.value;
+  if (typeof body.code !== "string") return fail("invalid_request", 400, "Falta el código de vinculación.");
+  if (body.device_name !== undefined && (typeof body.device_name !== "string" || body.device_name.length > 80))
+    return fail("invalid_request", 400, "El nombre del dispositivo debe ser texto de hasta 80 caracteres.");
   const code = body.code.trim().toUpperCase();
   if (!/^[A-Z0-9_-]{6,32}$/.test(code)) return fail("invalid_code", 400, "El código no es válido.");
   const now = Math.floor(Date.now() / 1000);
@@ -132,8 +206,10 @@ async function pairDevice(request, env) {
 
 async function refreshDevice(request, env) {
   if (!env.JWT_SECRET) return fail("server_not_configured", 503, "El backend no está configurado.");
-  const body = await readJson(request);
-  if (!body || typeof body.refresh_token !== "string" || body.refresh_token.length < 32)
+  const parsed = await readJson(request);
+  if (!parsed.ok) return invalidBody(parsed);
+  const body = parsed.value;
+  if (typeof body.refresh_token !== "string" || body.refresh_token.length < 32 || body.refresh_token.length > 4096)
     return fail("invalid_request", 400, "Token de renovación inválido.");
   const oldHash = await sha256(body.refresh_token);
   const now = Math.floor(Date.now() / 1000);
@@ -170,8 +246,10 @@ async function refreshDevice(request, env) {
 }
 
 async function revokeDevice(request, env) {
-  const body = await readJson(request);
-  if (!body || typeof body.refresh_token !== "string" || body.refresh_token.length < 32)
+  const parsed = await readJson(request);
+  if (!parsed.ok) return invalidBody(parsed);
+  const body = parsed.value;
+  if (typeof body.refresh_token !== "string" || body.refresh_token.length < 32 || body.refresh_token.length > 4096)
     return fail("invalid_request", 400, "Falta la credencial del dispositivo.");
   const tokenHash = await sha256(body.refresh_token);
   const now = Math.floor(Date.now() / 1000);
@@ -225,9 +303,15 @@ async function createRealtimeSecret(request, env) {
   if (!env.OPENAI_API_KEY) return fail("provider_not_configured", 503, "OpenAI todavía no está configurado en el backend.");
   const deviceId = await authenticatedDevice(request, env);
   if (!deviceId) return fail("device_unauthorized", 401, "La vinculación del dispositivo no es válida.");
-  const body = await readJson(request) || {};
-  const instructions = typeof body.instructions === "string" ? body.instructions.trim().slice(0, 12000) : "";
-  const voice = typeof body.voice === "string" && /^[a-z0-9_-]{2,32}$/i.test(body.voice) ? body.voice : "marin";
+  const parsed = await readJson(request, 16384, true);
+  if (!parsed.ok) return invalidBody(parsed);
+  const body = parsed.value;
+  if (body.instructions !== undefined && (typeof body.instructions !== "string" || body.instructions.length > 12000))
+    return fail("invalid_request", 400, "Las instrucciones deben ser texto de hasta 12.000 caracteres.");
+  if (body.voice !== undefined && (typeof body.voice !== "string" || !/^[a-z0-9_-]{2,32}$/i.test(body.voice)))
+    return fail("invalid_request", 400, "La voz solicitada no es válida.");
+  const instructions = typeof body.instructions === "string" ? body.instructions.trim() : "";
+  const voice = body.voice || "marin";
   const session = {
     type: "realtime",
     model: OPENAI_MODEL,
@@ -275,12 +359,21 @@ async function createRealtimeSecret(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (request.method === "GET" && url.pathname === "/health") return json({ ok: true, service: "bellota-openai-realtime" });
-    if (request.method === "POST" && url.pathname === "/admin/pairing-code") return createPairingCode(request, env);
-    if (request.method === "POST" && url.pathname === "/v1/pair") return pairDevice(request, env);
-    if (request.method === "POST" && url.pathname === "/v1/auth/refresh") return refreshDevice(request, env);
-    if (request.method === "POST" && url.pathname === "/v1/device/revoke") return revokeDevice(request, env);
-    if (request.method === "POST" && url.pathname === "/v1/realtime/client-secret") return createRealtimeSecret(request, env);
+    if (url.pathname === "/health") {
+      if (request.method !== "GET") return new Response(null, { status: 405, headers: { ...JSON_HEADERS, allow: "GET" } });
+      return healthCheck(env);
+    }
+    const routes = {
+      "/admin/pairing-code": () => createPairingCode(request, env),
+      "/v1/pair": () => pairDevice(request, env),
+      "/v1/auth/refresh": () => refreshDevice(request, env),
+      "/v1/device/revoke": () => revokeDevice(request, env),
+      "/v1/realtime/client-secret": () => createRealtimeSecret(request, env)
+    };
+    if (routes[url.pathname]) {
+      if (request.method !== "POST") return new Response(null, { status: 405, headers: { ...JSON_HEADERS, allow: "POST" } });
+      return routes[url.pathname]();
+    }
     return fail("not_found", 404, "Ruta no encontrada.");
   }
 };

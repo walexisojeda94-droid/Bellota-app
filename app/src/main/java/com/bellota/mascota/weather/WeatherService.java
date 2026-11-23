@@ -1,9 +1,13 @@
 package com.bellota.mascota.weather;
 
+import android.Manifest;
 import android.content.Context;
-import android.location.Location;
-import android.location.LocationManager;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import org.json.JSONObject;
@@ -11,29 +15,44 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.List;
 import java.util.Locale;
 
-/** Consulta el tiempo actual en Open-Meteo usando la última ubicación conocida del teléfono. */
+/** Consulta Open-Meteo con ubicación reciente o una única actualización bajo demanda. */
 public final class WeatherService {
     public interface Callback { void onResult(String response); }
+    private interface LocationCallback { void onLocation(Location location); }
     private static final String PREFS = "bellota_weather";
     private static final String KEY_CACHE = "last_weather";
     private static final String KEY_CACHE_TIME = "last_weather_time";
     private static final long MAX_LOCATION_AGE_MS = 2L * 60L * 60L * 1000L;
     private static final long MAX_CACHE_AGE_MS = 6L * 60L * 60L * 1000L;
+    private static final long LOCATION_TIMEOUT_MS = 10000L;
+    private static final long MAX_FIX_AGE_MS = 2L * 60L * 1000L;
     private WeatherService() {}
 
     public static void fetch(Context context, Callback callback) {
         Context app = context.getApplicationContext();
-        Location location = lastLocation(app);
-        if (location == null) {
-            SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            String cached = readFreshCache(prefs);
-            deliver(callback, cached == null
-                    ? "No pude obtener una ubicación reciente del teléfono. Activá la ubicación y volvé a preguntarme por el clima."
-                    : cached + " No pude obtener una ubicación reciente; este dato guardado todavía tiene menos de seis horas.");
+        Location known = lastLocation(app);
+        if (known != null) {
+            fetchForLocation(app, known, callback);
             return;
         }
+        // Only request one fix when the user asks for weather. No background or continuous GPS.
+        requestSingleFreshLocation(app, location -> {
+            if (location != null) {
+                fetchForLocation(app, location, callback);
+            } else {
+                SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+                String cached = readFreshCache(prefs);
+                deliver(callback, cached == null
+                        ? "No pude obtener una ubicación reciente del teléfono. Activá la ubicación y volvé a preguntarme por el clima."
+                        : cached + " No pude actualizar la ubicación; este dato guardado todavía tiene menos de seis horas.");
+            }
+        });
+    }
+
+    private static void fetchForLocation(Context app, Location location, Callback callback) {
         new Thread(() -> {
             HttpURLConnection connection = null;
             String answer;
@@ -75,6 +94,68 @@ public final class WeatherService {
         }).start();
     }
 
+    @SuppressWarnings("MissingPermission")
+    private static void requestSingleFreshLocation(Context context, LocationCallback callback) {
+        LocationManager manager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+        if (manager == null || !hasLocationPermission(context)) {
+            callback.onLocation(null);
+            return;
+        }
+        Handler handler = new Handler(Looper.getMainLooper());
+        final boolean[] completed = { false };
+        final LocationListener listener = new LocationListener() {
+            @Override public void onLocationChanged(Location location) {
+                if (location == null) return;
+                long age = System.currentTimeMillis() - location.getTime();
+                if (age < -60000L || age > MAX_FIX_AGE_MS) return;
+                finish(location);
+            }
+            @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
+            @Override public void onProviderEnabled(String provider) { }
+            @Override public void onProviderDisabled(String provider) { }
+            private void finish(Location location) {
+                if (completed[0]) return;
+                completed[0] = true;
+                try { manager.removeUpdates(this); } catch (RuntimeException ignored) { }
+                callback.onLocation(location);
+            }
+        };
+        handler.postDelayed(() -> {
+            if (completed[0]) return;
+            completed[0] = true;
+            try { manager.removeUpdates(listener); } catch (RuntimeException ignored) { }
+            callback.onLocation(null);
+        }, LOCATION_TIMEOUT_MS);
+        try {
+            List<String> providers = manager.getProviders(true);
+            boolean requested = false;
+            for (String provider : providers) {
+                try {
+                    manager.requestSingleUpdate(provider, listener, Looper.getMainLooper());
+                    requested = true;
+                } catch (RuntimeException ignored) {
+                    // A provider may require precise permission or may disappear; try the next one.
+                }
+            }
+            if (!requested && !completed[0]) {
+                handler.removeCallbacksAndMessages(null);
+                completed[0] = true;
+                callback.onLocation(null);
+            }
+        } catch (RuntimeException error) {
+            if (!completed[0]) {
+                completed[0] = true;
+                handler.removeCallbacksAndMessages(null);
+                callback.onLocation(null);
+            }
+        }
+    }
+
+    private static boolean hasLocationPermission(Context context) {
+        return context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                || context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
     private static String readFreshCache(SharedPreferences prefs) {
         String cached = prefs.getString(KEY_CACHE, null);
         long savedAt = prefs.getLong(KEY_CACHE_TIME, 0L);
@@ -85,6 +166,7 @@ public final class WeatherService {
 
     @SuppressWarnings("MissingPermission")
     private static Location lastLocation(Context context) {
+        if (!hasLocationPermission(context)) return null;
         LocationManager manager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
         if (manager == null) return null;
         Location best = null;
@@ -97,11 +179,8 @@ public final class WeatherService {
                     long age = now - candidate.getTime();
                     if (age < -5L * 60L * 1000L || age > MAX_LOCATION_AGE_MS) continue;
                     if (best == null || candidate.getTime() > best.getTime()) best = candidate;
-                } catch (SecurityException ignored) {
-                    // Un proveedor puede no estar permitido con ubicación aproximada.
-                    // Continuar para probar los demás, por ejemplo NETWORK.
                 } catch (RuntimeException ignored) {
-                    // Un proveedor no disponible no debe impedir consultar los restantes.
+                    // Continue with other providers, including NETWORK when GPS is not authorized.
                 }
             }
         } catch (RuntimeException ignored) {
