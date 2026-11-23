@@ -1,7 +1,7 @@
 name: Build Bellota APK
 on:
   push:
-    branches: [main, 'fix/xiaozhi-voice-pipeline']
+    branches: [main, 'fix/xiaozhi-voice-pipeline', 'fix/revision-6-backend-persistence']
   workflow_dispatch:
 concurrency:
   group: bellota-android-${{ github.ref }}
@@ -18,6 +18,7 @@ jobs:
       - name: Validate Worker JavaScript and D1 migration
         run: |
           node --check backend/openai-realtime/src/index.js
+          npm --prefix backend/openai-realtime test
           python3 - <<'PY'
           import pathlib
           import sqlite3
