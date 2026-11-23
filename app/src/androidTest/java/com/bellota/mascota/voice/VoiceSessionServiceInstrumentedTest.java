@@ -28,7 +28,7 @@ public class VoiceSessionServiceInstrumentedTest {
         return condition.evaluate();
     }
 
-    @Test public void foregroundOwnerRestoresAfterUnexpectedServiceTeardown() throws Exception {
+    @Test(timeout = 90000L) public void foregroundOwnerRestoresAfterUnexpectedServiceTeardown() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SecureTokenStore tokenStore = new SecureTokenStore(context);
         VoiceSessionConfigStore configStore = new VoiceSessionConfigStore(context);
