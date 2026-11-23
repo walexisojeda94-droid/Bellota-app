@@ -19,6 +19,21 @@ public class RealtimeSessionBudgetTest {
         assertEquals(0L, budget.getTotalTokens());
     }
 
+    @Test public void counterSaturatesInsteadOfOverflowing() {
+        RealtimeSessionBudget budget = new RealtimeSessionBudget();
+        assertTrue(budget.recordResponseUsage(Long.MAX_VALUE));
+        assertTrue(budget.recordResponseUsage(1L));
+        assertEquals(Long.MAX_VALUE, budget.getTotalTokens());
+    }
+
+    @Test public void invalidUsageAfterLimitKeepsLimitReachedState() {
+        RealtimeSessionBudget budget = new RealtimeSessionBudget();
+        assertTrue(budget.recordResponseUsage(RealtimeSessionBudget.MAX_TOTAL_TOKENS));
+        assertTrue(budget.recordResponseUsage(0L));
+        assertTrue(budget.recordResponseUsage(-1L));
+        assertEquals(RealtimeSessionBudget.MAX_TOTAL_TOKENS, budget.getTotalTokens());
+    }
+
     @Test public void resetStartsANewUserRequestedSessionBudget() {
         RealtimeSessionBudget budget = new RealtimeSessionBudget();
         budget.recordResponseUsage(12000);
