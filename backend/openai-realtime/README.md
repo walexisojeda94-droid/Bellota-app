@@ -9,7 +9,7 @@ Worker privado para vinculación de dispositivos y emisión de credenciales efí
 - `POST /v1/auth/refresh`: rota el refresh token de forma recuperable. Si la respuesta se pierde, el mismo token anterior permite recuperar la misma rotación durante 120 segundos. Body: `{"refresh_token":"..."}`.
 - `POST /v1/device/revoke`: revoca remotamente el dispositivo. Body: `{"refresh_token":"..."}`. Es idempotente para permitir reintentos cuando se pierde la respuesta.
 - `POST /v1/realtime/client-secret`: requiere access token Bearer de 15 minutos. Body opcional: `{"instructions":"...","voice":"marin"}`.
-- `GET /health`: comprueba que D1 responda y que estén presentes las variables de configuración necesarias. Devuelve `503` si falta alguna dependencia, sin exponer secretos ni detalles internos.
+- `GET /health`: comprueba que existan las tablas `devices` y `pairing_codes` en D1 y que estén presentes `ADMIN_TOKEN`, `JWT_SECRET` y `OPENAI_API_KEY`. Devuelve `503` si falta alguna dependencia, sin exponer secretos ni detalles internos.
 
 ## Preparación
 
