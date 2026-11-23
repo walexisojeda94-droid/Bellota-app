@@ -112,7 +112,8 @@ async function cleanupExpiredRecords(env, now) {
   ).bind(now - 7 * 86400, now - 7 * 86400).run();
   // Keep revoked/expired device records for 180 days before physical cleanup.
   await env.DB.prepare(
-    "DELETE FROM devices WHERE (revoked_at IS NOT NULL AND revoked_at < ?) OR refresh_expires_at < ?"
+    "DELETE FROM devices WHERE (revoked_at IS NOT NULL AND revoked_at < ?) OR " +
+    "(revoked_at IS NULL AND refresh_expires_at < ?)"
   ).bind(now - 180 * 86400, now - 180 * 86400).run();
 }
 async function healthCheck(env) {
