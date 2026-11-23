@@ -120,6 +120,11 @@ public final class VoiceSessionService extends Service {
                 .getBoolean(KEY_ACTIVE, false);
     }
 
+    public static boolean isServiceRunning() {
+        VoiceSessionService owner = instance;
+        return owner != null && owner.started;
+    }
+
     public static boolean isToolCallCurrent(Context context, String callId) {
         VoiceSessionService owner = instance;
         return owner != null && owner.manager != null
