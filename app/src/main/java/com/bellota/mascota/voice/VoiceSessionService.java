@@ -79,7 +79,13 @@ public final class VoiceSessionService extends Service {
     private boolean foreground;
 
     private final Runnable retryRunnable = () -> {
-        if (started && hasInternet()) connectFreshManager();
+        if (!started) return;
+        if (hasInternet()) {
+            acquireWakeLock();
+            connectFreshManager();
+        } else {
+            releaseWakeLock();
+        }
     };
 
     public static void start(Context context, String backendUrl, String instructions,
@@ -121,6 +127,8 @@ public final class VoiceSessionService extends Service {
     }
 
     public static void sendToolResult(Context context, String callId, String result, boolean isError) {
+        VoiceSessionService owner = instance;
+        if (owner == null || !owner.started) return;
         Intent intent = new Intent(context, VoiceSessionService.class);
         intent.setAction(ACTION_TOOL_RESULT);
         intent.putExtra(EXTRA_CALL_ID, callId);
@@ -173,6 +181,7 @@ public final class VoiceSessionService extends Service {
                         "No se pudo proteger la configuración de recuperación. La sesión online no se inició.", null);
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
                 new VoiceSessionConfigStore(this).clear();
+                VoiceRecognitionService.resume(this);
                 stopSelf();
                 return START_NOT_STICKY;
             }
@@ -181,13 +190,14 @@ public final class VoiceSessionService extends Service {
         }
         if (!hasConfig()) {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
+            new VoiceSessionConfigStore(this).clear();
+            VoiceRecognitionService.resume(this);
             stopSelf();
             return START_NOT_STICKY;
         }
         started = true;
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, true).apply();
         ensureForeground();
-        acquireWakeLock();
         VoiceRecognitionService.stop(this);
         if (manager == null) connectFreshManager();
         return START_STICKY;
@@ -219,7 +229,12 @@ public final class VoiceSessionService extends Service {
     }
 
     private void connectFreshManager() {
-        if (!started || !hasInternet()) return;
+        if (!started) return;
+        if (!hasInternet()) {
+            releaseWakeLock();
+            return;
+        }
+        acquireWakeLock();
         handler.removeCallbacks(retryRunnable);
         VoiceProviderManager old = manager;
         manager = null;
@@ -316,21 +331,32 @@ public final class VoiceSessionService extends Service {
         if (connectivityManager == null || Build.VERSION.SDK_INT < 24) return;
         networkCallback = new NetworkCallback() {
             @Override public void onAvailable(Network network) {
-                handler.post(() -> {
-                    if (started && (manager == null || (!manager.isConnected() && !connecting))) {
-                        retryIndex = 0;
-                        handler.removeCallbacks(retryRunnable);
-                        handler.postDelayed(retryRunnable, 500L);
-                    }
-                });
+                handler.post(VoiceSessionService.this::handleNetworkAvailable);
+            }
+            @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
+                if (capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
+                    handler.post(VoiceSessionService.this::handleNetworkAvailable);
             }
             @Override public void onLost(Network network) {
-                emit("state", VoiceProvider.State.RECONNECTING.name(),
-                        "Se perdió Internet. Bellota reintentará al recuperar la conexión.", null);
+                handler.post(() -> {
+                    if (!hasInternet()) releaseWakeLock();
+                    emit("state", VoiceProvider.State.RECONNECTING.name(),
+                            "Se perdió Internet. Bellota reintentará al recuperar la conexión.", null);
+                });
             }
         };
         try { connectivityManager.registerDefaultNetworkCallback(networkCallback); }
         catch (RuntimeException ignored) { networkCallback = null; }
+    }
+
+    private void handleNetworkAvailable() {
+        if (!started || !hasInternet()) return;
+        acquireWakeLock();
+        if (manager == null || (!manager.isConnected() && !connecting)) {
+            retryIndex = 0;
+            handler.removeCallbacks(retryRunnable);
+            handler.postDelayed(retryRunnable, 500L);
+        }
     }
 
     private void stopSession(boolean resumeLocal) {
