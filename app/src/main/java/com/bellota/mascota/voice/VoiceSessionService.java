@@ -108,12 +108,9 @@ public final class VoiceSessionService extends Service {
     }
 
     public static boolean isToolCallCurrent(Context context, String callId) {
-        Intent intent = new Intent(context, VoiceSessionService.class);
-        intent.setAction(ACTION_TOOL_RESULT);
-        intent.putExtra(EXTRA_CALL_ID, callId);
-        intent.putExtra("check_only", true);
-        context.startService(intent);
-        return isActive(context);
+        // The Activity may disappear while a tool is running. The service performs the
+        // authoritative call-id and session-generation check when the result is returned.
+        return callId != null && !callId.trim().isEmpty() && isActive(context);
     }
 
     public static void sendToolResult(Context context, String callId, String result, boolean isError) {
@@ -141,8 +138,9 @@ public final class VoiceSessionService extends Service {
         }
         if (ACTION_TOOL_RESULT.equals(action)) {
             String callId = intent == null ? null : intent.getStringExtra(EXTRA_CALL_ID);
-            if (intent != null && intent.getBooleanExtra("check_only", false)) return START_NOT_STICKY;
-            if (callId != null && pendingToolCalls.remove(callId) && manager != null
+            boolean pending;
+            synchronized (pendingToolCalls) { pending = callId != null && pendingToolCalls.remove(callId); }
+            if (pending && manager != null
                     && manager.isToolCallCurrent(callId)) {
                 manager.sendToolResult(callId, intent.getStringExtra(EXTRA_RESULT),
                         intent.getBooleanExtra(EXTRA_IS_ERROR, false));
@@ -166,7 +164,7 @@ public final class VoiceSessionService extends Service {
         started = true;
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, true).apply();
         ensureForeground();
-        VoiceRecognitionService.pause(this);
+        VoiceRecognitionService.stop(this);
         if (manager == null) connectFreshManager();
         return START_STICKY;
     }
@@ -199,7 +197,7 @@ public final class VoiceSessionService extends Service {
         VoiceProviderManager old = manager;
         manager = null;
         if (old != null) old.disconnect();
-        pendingToolCalls.clear();
+        synchronized (pendingToolCalls) { pendingToolCalls.clear(); }
 
         connecting = true;
         OpenAIRealtimeWebRtcProvider provider = new OpenAIRealtimeWebRtcProvider(
@@ -299,7 +297,7 @@ public final class VoiceSessionService extends Service {
         handler.removeCallbacksAndMessages(null);
         if (manager != null) manager.disconnect();
         manager = null;
-        pendingToolCalls.clear();
+        synchronized (pendingToolCalls) { pendingToolCalls.clear(); }
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
         if (resumeLocal) VoiceRecognitionService.resume(this);
         if (foreground) stopForeground(true);
