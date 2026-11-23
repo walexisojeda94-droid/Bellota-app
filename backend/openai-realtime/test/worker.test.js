@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker from "../src/index.js";
 
-function envWithDatabase(database = { prepare: () => ({ first: async () => ({ ok: 1 }) }) }) {
+function envWithDatabase(database = { prepare: () => ({ first: async () => ({ table_count: 2 }) }) }) {
   return {
     DB: database,
     JWT_SECRET: "test-jwt-secret",
