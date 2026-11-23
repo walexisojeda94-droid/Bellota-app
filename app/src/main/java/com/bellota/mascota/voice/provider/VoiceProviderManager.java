@@ -212,8 +212,14 @@ public final class VoiceProviderManager {
     private VoiceProvider.Listener createProviderListener(VoiceProvider provider, long generation) {
         return new VoiceProvider.Listener() {
             @Override public void onStateChanged(VoiceProvider.State state, String detail) {
-                if (isCurrent(provider, generation))
-                    safeNotifyState(state, safeProviderId(provider), detail);
+                if (!isCurrent(provider, generation)) return;
+                if (state == VoiceProvider.State.RECONNECTING) {
+                    synchronized (lock) {
+                        if (sessionGeneration == generation && activeProvider == provider)
+                            retirePendingToolCallsLocked();
+                    }
+                }
+                safeNotifyState(state, safeProviderId(provider), detail);
             }
             @Override public void onUserTranscript(String text, boolean isFinal) {
                 if (isCurrent(provider, generation))
