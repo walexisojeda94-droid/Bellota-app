@@ -4,11 +4,11 @@ Módulo Android nativo de Bellota. Paquete: `com.bellota.mascota`.
 
 ## Plataforma
 
-- Android mínimo: API 27 (Android 8.1).
+- Android mínimo: API 24 (Android 7.0).
 - Target SDK: API 28.
 - Compile SDK: API 35.
-- Lenguaje: Java 8.
-- Compilación CI: Java 17 y Gradle 8.7.
+- Código de aplicación: Java 8.
+- Compilación CI: Java 17, Android Gradle Plugin 8.13.2 y Gradle Wrapper 8.13.
 - Orientación de la experiencia: horizontal, pantalla inmersiva.
 
 ## Componentes
@@ -19,28 +19,37 @@ Módulo Android nativo de Bellota. Paquete: `com.bellota.mascota`.
 | `local/` | Conversación offline, normalización de texto, contexto y memoria conversacional. |
 | `ui/` | Ojos vectoriales, expresiones y animaciones. |
 | `voice/` | TextToSpeech local, reconocimiento de comandos y contrato independiente para proveedores online. |
-| `weather/` | Consulta meteorológica mediante Open-Meteo. |
+| `weather/` | Consulta meteorológica mediante Open-Meteo y ubicación bajo demanda. |
 
 ## Comportamiento actual
 
 - La pantalla mantiene visibles los ojos animados y reacciona a toques.
 - La rutina autónoma puede hacer que Bellota explore, piense, juegue, descanse o inicie una interacción.
 - La edad virtual y las necesidades básicas se guardan localmente.
-- El motor local ofrece respuestas acotadas y conserva algunos datos de conversación.
+- El motor local ofrece respuestas acotadas y conserva datos de conversación.
 - La voz local usa el motor TextToSpeech instalado en Android.
-- El reconocimiento y la síntesis locales permanecen activos como base funcional mientras se integran OpenAI Realtime y Gemini Live.
+- El reconocimiento local se ejecuta en `VoiceRecognitionService`, un Foreground Service con notificación persistente.
+- OpenAI Realtime está implementado con WebRTC y credenciales efímeras obtenidas desde el backend.
+- La sesión OpenAI sigue administrada por `MainActivity`; el servicio foreground actual no mantiene esa sesión online si la Activity se destruye.
+- Gemini Live no tiene todavía una implementación Android. Los tests con proveedores simulados verifican el orquestador, no la conexión real a Gemini.
 - El clima se consulta bajo demanda y requiere permiso de ubicación.
 
-## Compilación
+## Compilación y pruebas
 
 Desde la raíz del repositorio:
 
 ```bash
-gradle --no-daemon :app:assembleDebug
+./gradlew --no-daemon :app:testDebugUnitTest
+./gradlew --no-daemon :app:lintDebug
+./gradlew --no-daemon :app:assembleDebug
+./gradlew --no-daemon :app:assembleRelease
+./gradlew --no-daemon :app:connectedDebugAndroidTest
 ```
 
-Para generar una versión release firmada, configurar los secretos de firma documentados en el workflow de GitHub Actions. Nunca guardar el keystore ni sus contraseñas dentro del repositorio.
+La distribución es privada. El workflow puede generar un APK Release firmado cuando están configurados los secretos de firma. Nunca guardar el keystore ni sus contraseñas dentro del repositorio.
 
-## Validación pendiente
+## Validación conocida
 
-La integración online todavía no está implementada. OpenAI Realtime será el proveedor principal y Gemini Live el secundario; el motor local queda como respaldo. Deben validarse estabilidad, latencia, consumo de batería, memoria y funcionamiento offline en los dispositivos objetivo.
+La Revisión 7 pasó CI en emuladores API 24, API 27 y API 31, junto con pruebas JVM, Lint, Release y verificación de certificado. Esto acredita la compilación y el arranque smoke-test en esas imágenes; no acredita funcionamiento real de audio, sesiones prolongadas ni continuidad online en segundo plano.
+
+Pendientes de certificación funcional: dispositivo físico objetivo, audio bidireccional con credenciales reales, red restrictiva/TURN, interrupciones, recuperación y segundo proveedor Gemini Live.
