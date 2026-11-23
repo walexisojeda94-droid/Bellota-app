@@ -13,7 +13,14 @@ public final class RealtimeSessionBudget {
     /** Adds usage reported by one completed response and returns true at/above the cap. */
     public boolean recordResponseUsage(long responseTokens) {
         if (responseTokens <= 0L) return totalTokens.get() >= MAX_TOTAL_TOKENS;
-        return totalTokens.addAndGet(responseTokens) >= MAX_TOTAL_TOKENS;
+        while (true) {
+            long current = totalTokens.get();
+            long updated = responseTokens > Long.MAX_VALUE - current
+                    ? Long.MAX_VALUE : current + responseTokens;
+            if (totalTokens.compareAndSet(current, updated)) {
+                return updated >= MAX_TOTAL_TOKENS;
+            }
+        }
     }
 
     public long getTotalTokens() { return totalTokens.get(); }
