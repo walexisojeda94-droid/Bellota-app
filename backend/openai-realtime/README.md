@@ -16,7 +16,7 @@ Worker privado para vinculación de dispositivos y emisión de credenciales efí
 1. Crear D1: `npx wrangler d1 create bellota-devices`.
 2. Reemplazar `database_id` en `wrangler.toml` con el ID devuelto.
 3. En una base nueva, aplicar el esquema: `npx wrangler d1 execute bellota-devices --remote --file=./schema.sql`.
-   En una base existente, aplicar una sola vez la migración: `npx wrangler d1 execute bellota-devices --remote --file=./migrations/0001_recoverable_refresh.sql`.
+   En una base existente, aplicar las migraciones en orden: `npx wrangler d1 execute bellota-devices --remote --file=./migrations/0001_recoverable_refresh.sql` y luego `npx wrangler d1 execute bellota-devices --remote --file=./migrations/0002_retention_indexes.sql`.
 4. Cargar secretos sin guardarlos en el repositorio:
    - `npx wrangler secret put OPENAI_API_KEY`
    - `npx wrangler secret put ADMIN_TOKEN`
