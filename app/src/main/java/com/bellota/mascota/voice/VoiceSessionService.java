@@ -76,6 +76,7 @@ public final class VoiceSessionService extends Service {
     private String locale;
     private int retryIndex;
     private boolean started;
+    private boolean connecting;
     private boolean foreground;
 
     private final Runnable retryRunnable = () -> {
@@ -112,7 +113,7 @@ public final class VoiceSessionService extends Service {
         intent.putExtra(EXTRA_CALL_ID, callId);
         intent.putExtra("check_only", true);
         context.startService(intent);
-        return false;
+        return isActive(context);
     }
 
     public static void sendToolResult(Context context, String callId, String result, boolean isError) {
@@ -166,7 +167,7 @@ public final class VoiceSessionService extends Service {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, true).apply();
         ensureForeground();
         VoiceRecognitionService.pause(this);
-        if (manager == null || !manager.isConnected()) connectFreshManager();
+        if (manager == null) connectFreshManager();
         return START_STICKY;
     }
 
@@ -200,16 +201,18 @@ public final class VoiceSessionService extends Service {
         if (old != null) old.disconnect();
         pendingToolCalls.clear();
 
+        connecting = true;
         OpenAIRealtimeWebRtcProvider provider = new OpenAIRealtimeWebRtcProvider(
                 getApplicationContext(), backendUrl, new SecureTokenStore(getApplicationContext()));
+        final VoiceProviderManager[] holder = new VoiceProviderManager[1];
         VoiceProviderManager next = new VoiceProviderManager(provider, null,
                 new VoiceProviderManager.Listener() {
                     @Override public void onStateChanged(VoiceProvider.State state, String providerId, String detail) {
-                        if (manager != nextManager()) return;
+                        if (manager != holder[0]) return;
                         emit("state", state.name(), detail, providerId);
                         updateNotification(detail == null ? state.name() : detail);
-                        if (state == VoiceProvider.State.CONNECTED) retryIndex = 0;
-                        else if (state == VoiceProvider.State.FALLBACK_LOCAL) scheduleRetry();
+                        if (state == VoiceProvider.State.CONNECTED) { retryIndex = 0; connecting = false; }
+                        else if (state == VoiceProvider.State.FALLBACK_LOCAL) connecting = false;
                     }
                     @Override public void onUserTranscript(String text, boolean isFinal) {
                         emitText("user_transcript", text, isFinal);
@@ -222,7 +225,7 @@ public final class VoiceSessionService extends Service {
                         emit("speaking", Boolean.toString(speaking), null, null);
                     }
                     @Override public void onToolCall(String callId, String name, String argumentsJson) {
-                        if (manager != nextManager() || !manager.isToolCallCurrent(callId)) return;
+                        if (manager != holder[0] || !manager.isToolCallCurrent(callId)) return;
                         synchronized (pendingToolCalls) { pendingToolCalls.add(callId); }
                         Intent event = baseEvent("tool_call");
                         event.putExtra(EXTRA_CALL_ID, callId);
@@ -233,17 +236,21 @@ public final class VoiceSessionService extends Service {
                     @Override public void onLocalFallbackRequested(VoiceProvider.Failure reason, String detail) {
                         emit("state", VoiceProvider.State.RECONNECTING.name(),
                                 "Conexión interrumpida. Se reintentará automáticamente.", provider.getProviderId());
-                        scheduleRetry();
+                        if (reason == VoiceProvider.Failure.AUTHENTICATION
+                                || reason == VoiceProvider.Failure.QUOTA
+                                || reason == VoiceProvider.Failure.CONFIGURATION) {
+                            handler.post(() -> { emit("state", VoiceProvider.State.CLOSED.name(),
+                                    "La sesión online requiere revisar la vinculación o el límite de consumo. Se reanudó la voz local.", null);
+                                stopSession(true); stopSelf(); });
+                        } else scheduleRetry();
                     }
                 });
+        holder[0] = next;
         manager = next;
         VoiceProvider.SessionConfig config = new VoiceProvider.SessionConfig(
                 locale, voice, instructions, toolsJson, 48000);
         next.connect(config);
     }
-
-    // The manager identity check is deliberately centralized to reject late callbacks.
-    private VoiceProviderManager nextManager() { return manager; }
 
     private void scheduleRetry() {
         if (!started) return;
@@ -270,7 +277,7 @@ public final class VoiceSessionService extends Service {
         networkCallback = new NetworkCallback() {
             @Override public void onAvailable(Network network) {
                 handler.post(() -> {
-                    if (started && (manager == null || !manager.isConnected())) {
+                    if (started && (manager == null || (!manager.isConnected() && !connecting))) {
                         retryIndex = 0;
                         handler.removeCallbacks(retryRunnable);
                         handler.postDelayed(retryRunnable, 500L);
@@ -288,6 +295,7 @@ public final class VoiceSessionService extends Service {
 
     private void stopSession(boolean resumeLocal) {
         started = false;
+        connecting = false;
         handler.removeCallbacksAndMessages(null);
         if (manager != null) manager.disconnect();
         manager = null;
