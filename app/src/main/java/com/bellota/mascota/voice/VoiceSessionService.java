@@ -174,6 +174,9 @@ public final class VoiceSessionService extends Service {
             }
             return START_STICKY;
         }
+        // Promote immediately: Android 8+ enforces a short startForegroundService deadline.
+        // Keystore I/O and config restoration must happen only after the notification is visible.
+        ensureForeground();
         if (intent != null && ACTION_START.equals(action)) {
             backendUrl = intent.getStringExtra(EXTRA_BACKEND_URL);
             instructions = intent.getStringExtra(EXTRA_INSTRUCTIONS);
@@ -186,7 +189,7 @@ public final class VoiceSessionService extends Service {
                         "No se pudo proteger la configuración de recuperación. La sesión online no se inició.", null);
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
                 new VoiceSessionConfigStore(this).clear();
-                VoiceRecognitionService.resume(this);
+                stopSession(true);
                 stopSelf();
                 return START_NOT_STICKY;
             }
@@ -195,14 +198,12 @@ public final class VoiceSessionService extends Service {
         }
         if (!hasConfig()) {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
-            new VoiceSessionConfigStore(this).clear();
-            VoiceRecognitionService.resume(this);
+            stopSession(true);
             stopSelf();
             return START_NOT_STICKY;
         }
         started = true;
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, true).apply();
-        ensureForeground();
         VoiceRecognitionService.stop(this);
         if (manager == null) connectFreshManager();
         return START_STICKY;
