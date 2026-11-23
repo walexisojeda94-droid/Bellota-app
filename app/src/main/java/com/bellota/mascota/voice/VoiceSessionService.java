@@ -96,6 +96,14 @@ public final class VoiceSessionService extends Service {
         else context.startService(intent);
     }
 
+    public static void restoreIfActive(Context context) {
+        if (!isActive(context)) return;
+        Intent intent = new Intent(context, VoiceSessionService.class);
+        intent.setAction("com.bellota.mascota.voice.session.RESTORE");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent);
+        else context.startService(intent);
+    }
+
     public static void stop(Context context) {
         Intent intent = new Intent(context, VoiceSessionService.class);
         intent.setAction(ACTION_STOP);
@@ -230,6 +238,14 @@ public final class VoiceSessionService extends Service {
                         event.putExtra(EXTRA_TOOL_NAME, name);
                         event.putExtra(EXTRA_ARGUMENTS, argumentsJson);
                         sendBroadcast(event);
+                        handler.postDelayed(() -> {
+                            boolean stillPending;
+                            synchronized (pendingToolCalls) { stillPending = pendingToolCalls.remove(callId); }
+                            VoiceProviderManager current = manager;
+                            if (stillPending && current != null && current.isToolCallCurrent(callId))
+                                current.sendToolResult(callId,
+                                        "La interfaz de Bellota no está disponible para ejecutar esta acción en este momento.", true);
+                        }, 10000L);
                     }
                     @Override public void onLocalFallbackRequested(VoiceProvider.Failure reason, String detail) {
                         emit("state", VoiceProvider.State.RECONNECTING.name(),
