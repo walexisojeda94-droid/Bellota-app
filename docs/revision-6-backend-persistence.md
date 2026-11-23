@@ -13,7 +13,7 @@ Esta revisión agrupa BEL-020, BEL-024, BEL-025 y BEL-026. Los cambios se prepar
 
 ## BEL-024: health check real
 
-`GET /health` comprueba la configuración requerida y ejecuta `SELECT 1` en D1. Responde `200` sólo cuando ambos controles pasan y `503` en caso contrario. La respuesta sólo informa estados booleanos; no revela secretos ni errores internos.
+`GET /health` comprueba la presencia de `ADMIN_TOKEN`, `JWT_SECRET` y `OPENAI_API_KEY`, y verifica en D1 que existan las tablas `devices` y `pairing_codes`. Responde `200` sólo cuando ambos controles pasan y `503` en caso contrario. La respuesta sólo informa estados booleanos; no revela secretos ni errores internos.
 
 ## BEL-025: validación de solicitudes
 
