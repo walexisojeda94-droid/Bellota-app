@@ -771,11 +771,38 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         // Close a few seconds before the server-enforced expiry to avoid an abrupt provider disconnect.
         long delayMs = Math.max(1000L, remainingMs - 5000L);
         Runnable timeout = () -> {
-            if (!closed.get()) fail(Failure.SESSION_EXPIRED, false,
-                    "La sesión alcanzó su duración máxima y se cerrará para controlar el consumo.");
+            if (!closed.get()) renewSession();
         };
         sessionTimeout = timeout;
         mainHandler.postDelayed(timeout, delayMs);
+    }
+
+    /**
+     * Opens a fresh ephemeral Realtime session before the current server session expires.
+     * The foreground owner remains alive; only WebRTC transport resources are replaced.
+     */
+    private void renewSession() {
+        if (closed.get()) return;
+        connected = false;
+        sessionTimeout = null;
+        activeAttemptId = attemptSequence.incrementAndGet();
+        cancelIceDisconnectTimeout();
+        mainHandler.removeCallbacks(negotiationTimeout);
+        HttpURLConnection connection = activeHttpConnection;
+        if (connection != null) connection.disconnect();
+        clearPendingToolResponses();
+        sessionBudget.reset();
+        notifyState(State.RECONNECTING, "Renovando la sesión segura de voz antes de su vencimiento.");
+        releaseResourcesAsync(() -> {
+            if (closed.get()) return;
+            ensureWorker();
+            mainHandler.post(() -> {
+                if (closed.get()) return;
+                mainHandler.removeCallbacks(negotiationTimeout);
+                mainHandler.postDelayed(negotiationTimeout, 60000L);
+                executeWorker(() -> establishSession(sessionConfig));
+            });
+        });
     }
 
     private void cancelPendingCallbacks() {
