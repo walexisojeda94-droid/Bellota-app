@@ -99,6 +99,8 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private boolean previousSpeakerphone;
     private boolean audioModeChanged;
     private final LinkedHashSet<String> completedUserTranscriptItems = new LinkedHashSet<>();
+    private final Object conversationLock = new Object();
+    private final StringBuilder recentConversation = new StringBuilder();
     private final Object toolResponseLock = new Object();
     private final Map<String, PendingToolResponse> pendingToolResponses = new HashMap<>();
     private final Map<String, String> responseIdByToolCall = new HashMap<>();
@@ -155,7 +157,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         try {
             BellotaBackendClient backend = new BellotaBackendClient(backendUrl, tokenStore);
             BellotaBackendClient.RealtimeCredential credential =
-                    backend.createRealtimeClientSecret(config.instructions, config.voice);
+                    backend.createRealtimeClientSecret(instructionsForCurrentSession(config), config.voice);
             if (closed.get() || attempt != activeAttemptId) return;
             configuredIceServers = credential.iceServers == null ? Collections.emptyList() : credential.iceServers;
             maxOutputTokens = Math.max(1, Math.min(4096, credential.maxOutputTokens));
@@ -393,13 +395,37 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         }
     }
 
+    private String instructionsForCurrentSession(SessionConfig config) {
+        String base = config == null || config.instructions == null || config.instructions.isEmpty()
+                ? "Sos Bellota, una compañera virtual conversacional. Hablá en español rioplatense natural."
+                : config.instructions;
+        synchronized (conversationLock) {
+            if (recentConversation.length() == 0) return base;
+            return base + "\n\nContinuidad de la conversación reciente (usala como contexto, no la repitas):\n"
+                    + recentConversation;
+        }
+    }
+
+    private void rememberConversationTurn(String speaker, String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        synchronized (conversationLock) {
+            recentConversation.append(speaker).append(": ").append(text.trim()).append('\n');
+            int maxChars = 7000;
+            if (recentConversation.length() > maxChars) {
+                int trimAt = recentConversation.length() - maxChars;
+                int nextLine = recentConversation.indexOf("\n", trimAt);
+                if (nextLine >= 0 && nextLine + 1 < recentConversation.length())
+                    recentConversation.delete(0, nextLine + 1);
+                else recentConversation.delete(0, trimAt);
+            }
+        }
+    }
+
     private void sendSessionUpdate() {
         try {
             JSONObject session = new JSONObject();
             session.put("type", "realtime");
-            session.put("instructions", sessionConfig.instructions.isEmpty()
-                    ? "Sos Bellota, una compañera virtual conversacional. Hablá en español rioplatense natural."
-                    : sessionConfig.instructions);
+            session.put("instructions", instructionsForCurrentSession(sessionConfig));
             session.put("output_modalities", new JSONArray().put("audio"));
             session.put("max_output_tokens", maxOutputTokens);
             JSONObject audio = new JSONObject();
@@ -457,8 +483,11 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                 case "input_audio_transcription.completed":
                 case "conversation.item.input_audio_transcription.completed":
                     String itemId = event.optString("item_id", "");
-                    if (markUserTranscriptCompleted(itemId))
-                        notifyUserTranscript(event.optString("transcript", ""), true);
+                    if (markUserTranscriptCompleted(itemId)) {
+                        String transcript = event.optString("transcript", "");
+                        rememberConversationTurn("Usuario", transcript);
+                        notifyUserTranscript(transcript, true);
+                    }
                     break;
                 case "response.output_audio_transcript.delta":
                 case "response.output_text.delta":
@@ -466,8 +495,9 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                     break;
                 case "response.output_audio_transcript.done":
                 case "response.output_text.done":
-                    notifyAssistantTranscript(event.optString("transcript",
-                            event.optString("text", "")), true);
+                    String assistantText = event.optString("transcript", event.optString("text", ""));
+                    rememberConversationTurn("Bellota", assistantText);
+                    notifyAssistantTranscript(assistantText, true);
                     break;
                 case "response.created":
                     notifySpeaking(true);
