@@ -2,98 +2,62 @@
 
 ## Decisión de producto
 
-- OpenAI Realtime será el proveedor conversacional principal.
-- Gemini Live será el segundo proveedor, incorporado después de validar OpenAI.
-- El alta del dispositivo se realizará mediante un código de un solo uso.
-- Gemini Live será el segundo proveedor, incorporado después de validar OpenAI.
-- No se incorporan otros motores en esta etapa.
-- La conversación local existente permanece como respaldo cuando no haya Internet o los proveedores online no estén disponibles.
-- La memoria, personalidad, estado emocional, autonomía, comandos y funciones propias de Bellota no pertenecen a ningún proveedor. Deben seguir siendo responsabilidad de la aplicación.
+- OpenAI Realtime es el proveedor online principal.
+- Gemini Live es el segundo proveedor acordado, pero aún no está implementado.
+- La voz y conversación local permanecen como respaldo operativo.
+- La memoria, personalidad, estado emocional, autonomía, comandos y funciones propias de Bellota pertenecen a la aplicación, no a los proveedores.
+- No se incorporan otros motores en esta etapa. XiaoZhi fue retirado.
 
-## Reglas que no se negocian
+## Reglas de seguridad y continuidad
 
 1. Ninguna clave API permanente de OpenAI o Google se almacena en el APK, recursos, preferencias ni código fuente.
-2. Las credenciales temporales se solicitan a un backend controlado por Bellota y se mantienen solo el tiempo necesario en memoria.
-3. La app no solicita al usuario renovar tokens manualmente.
-4. Los errores de autenticación se distinguen de falta de red, límites, saldo, errores del proveedor y fallos de audio.
-5. La reconexión usa backoff con límites, evita bucles infinitos y no duplica mensajes ni acciones.
-6. La aplicación conserva el contexto de Bellota y reconstruye el contexto conversacional cuando una sesión debe reiniciarse.
-7. Un cambio de proveedor nunca se considera exitoso hasta que el segundo proveedor confirma que la sesión está lista.
-8. El modo local sigue disponible aunque fallen ambos proveedores.
+2. Las credenciales temporales se solicitan al backend controlado por Bellota y se mantienen el tiempo mínimo necesario en memoria.
+3. La app no solicita renovaciones manuales de tokens al usuario.
+4. Los errores de autenticación, red, cuota, proveedor y audio se distinguen.
+5. La reconexión debe tener límites, evitar bucles y no duplicar mensajes ni acciones.
+6. El contexto se reconstruye desde la memoria local y un conjunto acotado de turnos.
+7. Un cambio de proveedor no se considera exitoso hasta que el proveedor destino confirma que la sesión está lista.
+8. El modo local debe permanecer disponible aunque fallen los proveedores online.
 
-## Arquitectura objetivo
+## Estado implementado
 
-- conversation/core: personalidad, memoria, contexto, estado emocional, reglas y herramientas propias de Bellota.
-- voice/provider: contrato común de proveedor, eventos, estados y errores independientes del fabricante.
-- voice/openai: implementación Android de OpenAI Realtime mediante WebRTC.
-- voice/gemini: implementación futura de Gemini Live.
-- voice/orchestrator: selección del proveedor, ciclo de vida, reconexión, fallback y prevención de respuestas duplicadas.
-- Backend de Bellota: Worker y D1 para emparejamiento, autenticación y credenciales temporales, con claves permanentes fuera del dispositivo.
-- local: motor de conversación y voz local existentes, usados como fallback.
+- Contrato común `VoiceProvider` y coordinador `VoiceProviderManager`, con pruebas JVM.
+- Adaptador `OpenAIRealtimeWebRtcProvider` integrado y registrado en `MainActivity`.
+- Worker Cloudflare para pairing, refresh token rotatorio, revocación y credenciales efímeras de OpenAI.
+- D1 y secretos principales configurados; migraciones de retención aplicadas.
+- Memoria, personalidad y herramientas propias de Bellota separadas de la implementación del proveedor.
+- Reconocimiento local en un Foreground Service.
+- La sesión OpenAI online aún depende de `MainActivity`; no hay garantía de continuidad al destruir la Activity o pasar a segundo plano.
 
-La separación es lógica. El cliente XiaoZhi se elimina por completo; se conservan solo las funciones propias de Bellota que no dependen de ese protocolo.
+## Gemini Live: diseño de integración pendiente
 
-## Autenticación OpenAI
+La documentación vigente de Gemini Live describe un transporte WebSocket bidireccional. Para clientes móviles, el diseño de Bellota debe usar un token efímero de un solo uso emitido por el backend, nunca una API key de Google dentro del APK. El cliente enviaría audio PCM16 mono a 16 kHz y procesaría audio PCM16 de salida a 24 kHz; la configuración inicial debe fijar el modelo, la modalidad de audio y las instrucciones de Bellota.
 
-El Worker inicial se encuentra en `backend/openai-realtime/`. Implementa generación y consumo de código de un solo uso, registro de dispositivos, refresh token rotatorio y emisión de client secrets GA. Aún no está desplegado ni conectado a Android.
+La API de tokens efímeros y el endpoint WebSocket restringido deben tratarse como una sola pareja de versiones/protocolo. Antes de producción hay que fijar y probar una versión exacta del endpoint, el modelo Live disponible para la cuenta y el formato de sesión. No mezclar ejemplos de SDK o versiones alpha/beta.
 
-La aplicación solicitará al backend una credencial temporal para crear una sesión Realtime. El backend usará la clave permanente de OpenAI y nunca la enviará al dispositivo. La app utilizará la credencial temporal para establecer WebRTC.
+La integración requiere:
+- secreto `GEMINI_API_KEY` solo en Cloudflare Worker;
+- endpoint autenticado del Worker para emitir token efímero de un solo uso y acotado al modelo/configuración;
+- adaptador Android `GeminiLiveProvider` que implemente `VoiceProvider`;
+- captura y reproducción de audio, interrupciones, fin de turno, transcripciones y errores;
+- asociación de herramientas con proveedor y generación de sesión;
+- expiración, renovación y reconexión sin bucles;
+- pruebas de contrato, protocolo, audio y cambio OpenAI ↔ Gemini.
 
-La credencial temporal autoriza la creación de sesiones hasta su vencimiento. Su vencimiento no corta una sesión ya establecida. Antes de crear una sesión nueva, la app debe pedir una credencial nueva. Ante un rechazo de autenticación, puede solicitar una credencial nueva y reintentar una sola vez de forma controlada; no debe repetir indefinidamente.
+Firebase AI Logic ofrece una ruta Android, pero su integración Live figura en developer preview y tiene limitaciones de interrupción; no se adopta como base de certificación estable.
 
-El backend debe aplicar autenticación/autorización propia, limitación de frecuencia, límites de consumo y protección contra abuso. La clave de OpenAI se guarda como secreto del entorno del backend. No se considera suficiente ocultar una URL del backend dentro del APK.
+## Segundo plano
 
-## Transporte y compatibilidad Android
+El reconocimiento local funciona como Foreground Service. El transporte online no está alojado allí: hoy su ciclo de vida depende de `MainActivity`. Para cumplir el requisito de conversación online en segundo plano, el gestor y el proveedor activo deben trasladarse a un servicio foreground de larga duración, con notificación persistente, gestión de foco de audio, permisos y cierre explícito. No declarar ese requisito cumplido hasta probarlo con la pantalla apagada, Activity recreada y tarea en segundo plano.
 
-La integración principal prevista es WebRTC nativo para Android. Antes de añadir dependencias se verificará:
-- compatibilidad real de la biblioteca WebRTC elegida con minSdk 27 y el toolchain actual;
-- tamaño del APK, ABI, consumo de memoria y CPU;
-- captura y reproducción de audio, permisos y ciclo de vida;
-- negociación SDP, ICE, cambios de red y reconexión;
-- interrupciones de audio y cancelación de respuestas;
-- compatibilidad con el dispositivo de prueba moto g52 Android 13 y el objetivo histórico Galaxy J7 Android 8.1.
+## Criterios de aceptación del conjunto
 
-No se incorporará una dependencia solo porque funcione en un ejemplo web.
-
-## Estados de conexión
-
-El orquestador debe distinguir al menos:
-IDLE, REQUESTING_CREDENTIAL, CONNECTING, CONNECTED, RECONNECTING, AUTH_ERROR, QUOTA_ERROR, NETWORK_ERROR, PROVIDER_ERROR, FALLBACK_LOCAL y STOPPED.
-
-Los errores de cuota, facturación o cuenta no se solucionan renovando tokens. Deben mostrarse como tales y activar el respaldo local. La aplicación no debe alternar proveedores en bucle cuando el error sea permanente o compartido por la cuenta.
-
-## Continuidad conversacional
-
-El proveedor recibe un contexto acotado construido por Bellota. La memoria persistente continúa residiendo localmente. Al reiniciar una sesión se reconstruye el contexto a partir de la memoria y de los últimos turnos relevantes, sin enviar indiscriminadamente todo el historial privado.
-
-Cada turno tendrá un identificador interno para evitar duplicados al reconectar. Las herramientas y comandos sensibles se validan y ejecutan en Bellota, no por confianza ciega en el texto generado por el modelo.
-
-## Estado de implementación
-
-- Contrato `VoiceProvider` y `VoiceProviderManager`: implementados y con pruebas JVM.
-- Worker inicial de pairing y client secrets: creado en el repositorio.
-- D1, secretos y despliegue: pendientes.
-- Pantalla Android de vinculación, almacenamiento Keystore y renovación automática: pendientes.
-- Adaptador OpenAI WebRTC e integración con MainActivity: pendientes.
-
-## Orden de implementación
-
-1. Retirar por completo el cliente XiaoZhi y desacoplar el flujo de voz local de su ciclo de vida.
-2. Definir el contrato común de proveedores sin alterar el comportamiento actual.
-3. Implementar backend de credenciales temporales OpenAI y configuración de sesión.
-4. Integrar WebRTC Android y conectar el nuevo proveedor al orquestador.
-5. Ejecutar pruebas automatizadas y pruebas reales de audio, interrupciones, sesiones largas, reconexión y errores de cuenta.
-6. Incorporar Gemini Live detrás del mismo contrato.
-7. Probar el cambio controlado OpenAI ↔ Gemini y el fallback local.
-8. Mantener únicamente OpenAI, Gemini y el respaldo local; no conservar compatibilidad con XiaoZhi.
-
-## Criterios de aceptación
-
-- Ninguna clave permanente aparece en el APK, repositorio, logs o preferencias.
-- La app obtiene credenciales nuevas sin intervención del usuario.
-- Una credencial vencida no provoca que una sesión activa se corte.
-- Los fallos de autenticación, red, cuota y proveedor se clasifican correctamente.
-- No hay bucles de reconexión ni mensajes duplicados.
-- La memoria, personalidad y funciones de Bellota sobreviven a reinicios y cambios de proveedor.
-- OpenAI, Gemini y el modo local se pueden seleccionar sin reescribir el núcleo conversacional.
-- Compila y supera pruebas JVM/Lint; luego se valida en dispositivos reales. Compilar no equivale a validar el funcionamiento de voz.
+- No hay claves permanentes en APK, repositorio, logs ni preferencias.
+- El backend emite credenciales temporales y el cliente las renueva sin intervención manual.
+- Los errores permanentes no se reintentan indefinidamente.
+- No hay respuestas ni herramientas duplicadas al reconectar o cambiar de proveedor.
+- La memoria y personalidad sobreviven a sesiones y cambios de proveedor.
+- OpenAI, Gemini y el modo local se pueden seleccionar mediante el mismo contrato.
+- Android 7/API 24 y Android 12/API 31 son plataformas obligatorias; API 27 también forma parte de la matriz de regresión.
+- La distribución privada usa APK firmado y verificación de identidad del certificado.
+- Compilar y pasar emuladores no sustituye las pruebas reales de audio, segundo plano y red.
