@@ -57,7 +57,7 @@ public class SecureStorageInstrumentedTest {
             journal = output.toByteArray();
         }
         assertTrue(journal.length > 16);
-        assertArrayEquals(new byte[] { 'B', 'M', 'E', '1' },
+        assertArrayEquals(new byte[] { 'B', 'M', 'E', '2' },
                 new byte[] { journal[0], journal[1], journal[2], journal[3] });
         assertFalse(new String(journal, StandardCharsets.UTF_8).contains(marker));
 
