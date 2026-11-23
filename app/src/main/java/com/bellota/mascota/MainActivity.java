@@ -1101,7 +1101,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     private boolean isCurrentToolCall(VoiceProviderManager manager, String callId) {
         return manager != null ? manager.isToolCallCurrent(callId)
-                : VoiceSessionService.isActive(this);
+                : VoiceSessionService.isToolCallCurrent(this, callId);
     }
 
     private String executeBellotaTool(String name, JSONObject arguments,
