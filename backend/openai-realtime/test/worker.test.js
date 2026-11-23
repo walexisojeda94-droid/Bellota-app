@@ -5,6 +5,7 @@ import worker from "../src/index.js";
 function envWithDatabase(database = { prepare: () => ({ first: async () => ({ table_count: 2 }) }) }) {
   return {
     DB: database,
+    ADMIN_TOKEN: "test-admin-token",
     JWT_SECRET: "test-jwt-secret",
     OPENAI_API_KEY: "test-openai-key"
   };
