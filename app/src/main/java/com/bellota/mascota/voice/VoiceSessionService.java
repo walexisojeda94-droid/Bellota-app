@@ -1,0 +1,382 @@
+package com.bellota.mascota.voice;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.Context;
+import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.ConnectivityManager.NetworkCallback;
+import android.os.Build;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+
+import com.bellota.mascota.R;
+import com.bellota.mascota.voice.auth.SecureTokenStore;
+import com.bellota.mascota.voice.provider.OpenAIRealtimeWebRtcProvider;
+import com.bellota.mascota.voice.provider.VoiceProvider;
+import com.bellota.mascota.voice.provider.VoiceProviderManager;
+
+import org.json.JSONObject;
+
+import java.util.HashSet;
+import java.util.Set;
+
+/**
+ * Owns the online voice session independently of MainActivity.
+ * The foreground notification makes microphone use visible and provides an explicit stop action.
+ */
+public final class VoiceSessionService extends Service {
+    public static final String ACTION_START = "com.bellota.mascota.voice.session.START";
+    public static final String ACTION_STOP = "com.bellota.mascota.voice.session.STOP";
+    public static final String ACTION_TOOL_RESULT = "com.bellota.mascota.voice.session.TOOL_RESULT";
+    public static final String ACTION_EVENT = "com.bellota.mascota.voice.session.EVENT";
+    public static final String EXTRA_BACKEND_URL = "backend_url";
+    public static final String EXTRA_INSTRUCTIONS = "instructions";
+    public static final String EXTRA_TOOLS = "tools";
+    public static final String EXTRA_VOICE = "voice";
+    public static final String EXTRA_LOCALE = "locale";
+    public static final String EXTRA_EVENT = "event";
+    public static final String EXTRA_STATE = "state";
+    public static final String EXTRA_DETAIL = "detail";
+    public static final String EXTRA_PROVIDER = "provider";
+    public static final String EXTRA_TEXT = "text";
+    public static final String EXTRA_FINAL = "final";
+    public static final String EXTRA_CALL_ID = "call_id";
+    public static final String EXTRA_TOOL_NAME = "tool_name";
+    public static final String EXTRA_ARGUMENTS = "arguments";
+    public static final String EXTRA_RESULT = "result";
+    public static final String EXTRA_IS_ERROR = "is_error";
+
+    private static final String CHANNEL_ID = "bellota_online_voice";
+    private static final int NOTIFICATION_ID = 2402;
+    private static final String PREFS = "bellota_voice_session";
+    private static final String KEY_ACTIVE = "active";
+    private static final String KEY_BACKEND = "backend";
+    private static final String KEY_INSTRUCTIONS = "instructions";
+    private static final String KEY_TOOLS = "tools";
+    private static final String KEY_VOICE = "voice";
+    private static final String KEY_LOCALE = "locale";
+    private static final long[] RETRY_DELAYS_MS = {1500L, 3000L, 6000L, 12000L, 20000L, 30000L, 60000L};
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Set<String> pendingToolCalls = new HashSet<>();
+    private VoiceProviderManager manager;
+    private ConnectivityManager connectivityManager;
+    private NetworkCallback networkCallback;
+    private String backendUrl;
+    private String instructions;
+    private String toolsJson;
+    private String voice;
+    private String locale;
+    private int retryIndex;
+    private boolean started;
+    private boolean foreground;
+
+    private final Runnable retryRunnable = () -> {
+        if (started && hasInternet()) connectFreshManager();
+    };
+
+    public static void start(Context context, String backendUrl, String instructions,
+                             String toolsJson, String voice, String locale) {
+        Intent intent = new Intent(context, VoiceSessionService.class);
+        intent.setAction(ACTION_START);
+        intent.putExtra(EXTRA_BACKEND_URL, backendUrl);
+        intent.putExtra(EXTRA_INSTRUCTIONS, instructions);
+        intent.putExtra(EXTRA_TOOLS, toolsJson);
+        intent.putExtra(EXTRA_VOICE, voice);
+        intent.putExtra(EXTRA_LOCALE, locale);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent);
+        else context.startService(intent);
+    }
+
+    public static void stop(Context context) {
+        Intent intent = new Intent(context, VoiceSessionService.class);
+        intent.setAction(ACTION_STOP);
+        context.startService(intent);
+    }
+
+    public static boolean isActive(Context context) {
+        return context.getApplicationContext().getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean(KEY_ACTIVE, false);
+    }
+
+    public static boolean isToolCallCurrent(Context context, String callId) {
+        Intent intent = new Intent(context, VoiceSessionService.class);
+        intent.setAction(ACTION_TOOL_RESULT);
+        intent.putExtra(EXTRA_CALL_ID, callId);
+        intent.putExtra("check_only", true);
+        context.startService(intent);
+        return false;
+    }
+
+    public static void sendToolResult(Context context, String callId, String result, boolean isError) {
+        Intent intent = new Intent(context, VoiceSessionService.class);
+        intent.setAction(ACTION_TOOL_RESULT);
+        intent.putExtra(EXTRA_CALL_ID, callId);
+        intent.putExtra(EXTRA_RESULT, result);
+        intent.putExtra(EXTRA_IS_ERROR, isError);
+        context.startService(intent);
+    }
+
+    @Override public void onCreate() {
+        super.onCreate();
+        createNotificationChannel();
+        connectivityManager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        registerNetworkCallback();
+    }
+
+    @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        String action = intent == null ? ACTION_START : intent.getAction();
+        if (ACTION_STOP.equals(action)) {
+            stopSession(true);
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        if (ACTION_TOOL_RESULT.equals(action)) {
+            String callId = intent == null ? null : intent.getStringExtra(EXTRA_CALL_ID);
+            if (intent != null && intent.getBooleanExtra("check_only", false)) return START_NOT_STICKY;
+            if (callId != null && pendingToolCalls.remove(callId) && manager != null
+                    && manager.isToolCallCurrent(callId)) {
+                manager.sendToolResult(callId, intent.getStringExtra(EXTRA_RESULT),
+                        intent.getBooleanExtra(EXTRA_IS_ERROR, false));
+            }
+            return START_STICKY;
+        }
+        if (intent != null && ACTION_START.equals(action)) {
+            backendUrl = intent.getStringExtra(EXTRA_BACKEND_URL);
+            instructions = intent.getStringExtra(EXTRA_INSTRUCTIONS);
+            toolsJson = intent.getStringExtra(EXTRA_TOOLS);
+            voice = intent.getStringExtra(EXTRA_VOICE);
+            locale = intent.getStringExtra(EXTRA_LOCALE);
+            persistConfig();
+        } else if (backendUrl == null) {
+            restoreConfig();
+        }
+        if (!hasConfig()) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        started = true;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, true).apply();
+        ensureForeground();
+        VoiceRecognitionService.pause(this);
+        if (manager == null || !manager.isConnected()) connectFreshManager();
+        return START_STICKY;
+    }
+
+    private boolean hasConfig() {
+        return backendUrl != null && backendUrl.startsWith("https://")
+                && instructions != null && toolsJson != null && voice != null && locale != null;
+    }
+
+    private void persistConfig() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putBoolean(KEY_ACTIVE, true).putString(KEY_BACKEND, backendUrl)
+                .putString(KEY_INSTRUCTIONS, instructions).putString(KEY_TOOLS, toolsJson)
+                .putString(KEY_VOICE, voice).putString(KEY_LOCALE, locale).apply();
+    }
+
+    private void restoreConfig() {
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (!prefs.getBoolean(KEY_ACTIVE, false)) return;
+        backendUrl = prefs.getString(KEY_BACKEND, null);
+        instructions = prefs.getString(KEY_INSTRUCTIONS, null);
+        toolsJson = prefs.getString(KEY_TOOLS, null);
+        voice = prefs.getString(KEY_VOICE, "marin");
+        locale = prefs.getString(KEY_LOCALE, "es-AR");
+    }
+
+    private void connectFreshManager() {
+        if (!started || !hasInternet()) return;
+        handler.removeCallbacks(retryRunnable);
+        VoiceProviderManager old = manager;
+        manager = null;
+        if (old != null) old.disconnect();
+        pendingToolCalls.clear();
+
+        OpenAIRealtimeWebRtcProvider provider = new OpenAIRealtimeWebRtcProvider(
+                getApplicationContext(), backendUrl, new SecureTokenStore(getApplicationContext()));
+        VoiceProviderManager next = new VoiceProviderManager(provider, null,
+                new VoiceProviderManager.Listener() {
+                    @Override public void onStateChanged(VoiceProvider.State state, String providerId, String detail) {
+                        if (manager != nextManager()) return;
+                        emit("state", state.name(), detail, providerId);
+                        updateNotification(detail == null ? state.name() : detail);
+                        if (state == VoiceProvider.State.CONNECTED) retryIndex = 0;
+                        else if (state == VoiceProvider.State.FALLBACK_LOCAL) scheduleRetry();
+                    }
+                    @Override public void onUserTranscript(String text, boolean isFinal) {
+                        emitText("user_transcript", text, isFinal);
+                    }
+                    @Override public void onAssistantTranscript(String text, boolean isFinal) {
+                        emitText("assistant_transcript", text, isFinal);
+                    }
+                    @Override public void onAudioOutput(byte[] audio, int sampleRateHz, int channels) { }
+                    @Override public void onAssistantSpeaking(boolean speaking) {
+                        emit("speaking", Boolean.toString(speaking), null, null);
+                    }
+                    @Override public void onToolCall(String callId, String name, String argumentsJson) {
+                        if (manager != nextManager() || !manager.isToolCallCurrent(callId)) return;
+                        synchronized (pendingToolCalls) { pendingToolCalls.add(callId); }
+                        Intent event = baseEvent("tool_call");
+                        event.putExtra(EXTRA_CALL_ID, callId);
+                        event.putExtra(EXTRA_TOOL_NAME, name);
+                        event.putExtra(EXTRA_ARGUMENTS, argumentsJson);
+                        sendBroadcast(event);
+                    }
+                    @Override public void onLocalFallbackRequested(VoiceProvider.Failure reason, String detail) {
+                        emit("state", VoiceProvider.State.RECONNECTING.name(),
+                                "Conexión interrumpida. Se reintentará automáticamente.", provider.getProviderId());
+                        scheduleRetry();
+                    }
+                });
+        manager = next;
+        VoiceProvider.SessionConfig config = new VoiceProvider.SessionConfig(
+                locale, voice, instructions, toolsJson, 48000);
+        next.connect(config);
+    }
+
+    // The manager identity check is deliberately centralized to reject late callbacks.
+    private VoiceProviderManager nextManager() { return manager; }
+
+    private void scheduleRetry() {
+        if (!started) return;
+        handler.removeCallbacks(retryRunnable);
+        long delay = RETRY_DELAYS_MS[Math.min(retryIndex, RETRY_DELAYS_MS.length - 1)];
+        retryIndex = Math.min(retryIndex + 1, RETRY_DELAYS_MS.length - 1);
+        handler.postDelayed(retryRunnable, delay);
+    }
+
+    private boolean hasInternet() {
+        if (connectivityManager == null) return true;
+        if (Build.VERSION.SDK_INT >= 23) {
+            Network network = connectivityManager.getActiveNetwork();
+            NetworkCapabilities capabilities = network == null ? null
+                    : connectivityManager.getNetworkCapabilities(network);
+            return capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        }
+        android.net.NetworkInfo info = connectivityManager.getActiveNetworkInfo();
+        return info != null && info.isConnected();
+    }
+
+    private void registerNetworkCallback() {
+        if (connectivityManager == null || Build.VERSION.SDK_INT < 24) return;
+        networkCallback = new NetworkCallback() {
+            @Override public void onAvailable(Network network) {
+                handler.post(() -> {
+                    if (started && (manager == null || !manager.isConnected())) {
+                        retryIndex = 0;
+                        handler.removeCallbacks(retryRunnable);
+                        handler.postDelayed(retryRunnable, 500L);
+                    }
+                });
+            }
+            @Override public void onLost(Network network) {
+                emit("state", VoiceProvider.State.RECONNECTING.name(),
+                        "Se perdió Internet. Bellota reintentará al recuperar la conexión.", null);
+            }
+        };
+        try { connectivityManager.registerDefaultNetworkCallback(networkCallback); }
+        catch (RuntimeException ignored) { networkCallback = null; }
+    }
+
+    private void stopSession(boolean resumeLocal) {
+        started = false;
+        handler.removeCallbacksAndMessages(null);
+        if (manager != null) manager.disconnect();
+        manager = null;
+        pendingToolCalls.clear();
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
+        if (resumeLocal) VoiceRecognitionService.resume(this);
+        if (foreground) stopForeground(true);
+        foreground = false;
+    }
+
+    private void ensureForeground() {
+        if (foreground) return;
+        Intent stop = new Intent(this, VoiceSessionService.class);
+        stop.setAction(ACTION_STOP);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+        PendingIntent pending = PendingIntent.getService(this, 1, stop, flags);
+        Notification.Builder builder = Build.VERSION.SDK_INT >= 26
+                ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
+        Notification notification = builder.setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentTitle("Bellota mantiene la voz online")
+                .setContentText("Micrófono activo. Usá Detener para cerrar la sesión.")
+                .setCategory(Notification.CATEGORY_SERVICE).setOngoing(true)
+                .setPriority(Notification.PRIORITY_LOW)
+                .addAction(android.R.drawable.ic_media_pause, "Detener", pending).build();
+        startForeground(NOTIFICATION_ID, notification);
+        foreground = true;
+    }
+
+    private void updateNotification(String detail) {
+        if (!foreground) return;
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager == null) return;
+        Notification.Builder builder = Build.VERSION.SDK_INT >= 26
+                ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
+        Intent stop = new Intent(this, VoiceSessionService.class);
+        stop.setAction(ACTION_STOP);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+        PendingIntent pending = PendingIntent.getService(this, 1, stop, flags);
+        manager.notify(NOTIFICATION_ID, builder.setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentTitle("Bellota mantiene la voz online")
+                .setContentText(detail == null ? "Micrófono activo." : detail)
+                .setCategory(Notification.CATEGORY_SERVICE).setOngoing(true)
+                .addAction(android.R.drawable.ic_media_pause, "Detener", pending).build());
+    }
+
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT < 26) return;
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager == null) return;
+        NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
+                "Voz online de Bellota", NotificationManager.IMPORTANCE_LOW);
+        channel.setDescription("Indica cuándo Bellota mantiene activa una conversación online.");
+        channel.setShowBadge(false);
+        manager.createNotificationChannel(channel);
+    }
+
+    private Intent baseEvent(String event) {
+        Intent intent = new Intent(ACTION_EVENT);
+        intent.setPackage(getPackageName());
+        intent.putExtra(EXTRA_EVENT, event);
+        return intent;
+    }
+
+    private void emit(String event, String state, String detail, String provider) {
+        Intent intent = baseEvent(event);
+        if (state != null) intent.putExtra(EXTRA_STATE, state);
+        if (detail != null) intent.putExtra(EXTRA_DETAIL, detail);
+        if (provider != null) intent.putExtra(EXTRA_PROVIDER, provider);
+        sendBroadcast(intent);
+    }
+
+    private void emitText(String event, String text, boolean isFinal) {
+        if (text == null || text.trim().isEmpty()) return;
+        Intent intent = baseEvent(event);
+        intent.putExtra(EXTRA_TEXT, text);
+        intent.putExtra(EXTRA_FINAL, isFinal);
+        sendBroadcast(intent);
+    }
+
+    @Override public void onDestroy() {
+        stopSession(false);
+        if (connectivityManager != null && networkCallback != null) {
+            try { connectivityManager.unregisterNetworkCallback(networkCallback); }
+            catch (RuntimeException ignored) { }
+        }
+        super.onDestroy();
+    }
+
+    @Override public IBinder onBind(Intent intent) { return null; }
+}
