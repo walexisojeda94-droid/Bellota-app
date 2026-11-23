@@ -121,6 +121,12 @@ public final class SecureTokenStore {
         }
     }
 
+    public void clearRefreshToken() {
+        synchronized (lock) {
+            preferences.edit().remove(TOKEN_KEY).commit();
+        }
+    }
+
     private void resetKeyAndToken() {
         preferences.edit().remove(TOKEN_KEY).commit();
         try {
