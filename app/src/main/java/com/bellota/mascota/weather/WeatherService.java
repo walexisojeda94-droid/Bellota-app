@@ -94,6 +94,7 @@ public final class WeatherService {
         }).start();
     }
 
+    @SuppressWarnings("MissingPermission")
     private static void requestSingleFreshLocation(Context context, LocationCallback callback) {
         LocationManager manager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
         if (manager == null || !hasLocationPermission(context)) {
