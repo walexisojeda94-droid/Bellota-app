@@ -29,7 +29,8 @@ Esta revisión agrupa BEL-020, BEL-024, BEL-025 y BEL-026. Los cambios se prepar
 - Los registros de dispositivos revocados o con refresh vencido se conservan 180 días antes de su eliminación.
 - El diario local migra automáticamente el formato anterior (JSONL plano o BME1) al formato BME2.
 - BME2 cifra cada entrada de forma independiente con AES-GCM y una IV aleatoria; un alta normal agrega sólo el registro cifrado nuevo en vez de descifrar y volver a cifrar todo el archivo.
-- La compactación aplica la retención de 180 días y el límite de 512 KiB como máximo una vez por día o antes si el archivo se acerca al límite.
+- Cada entrada individual se limita a 256 KiB para dejar margen al sobrecosto de cifrado dentro del archivo total de 512 KiB.
+- La compactación aplica la retención de 180 días y el límite real de 512 KiB incluyendo cabeceras e IV como máximo una vez por día o antes si el archivo se acerca al límite.
 - Se conserva Android Keystore, AES-GCM, AtomicFile para compactaciones y cuarentena del diario cuando falla la autenticación de un registro. Una escritura incompleta al final del archivo se descarta sin borrar registros anteriores.
 
 ## Validación automatizada
