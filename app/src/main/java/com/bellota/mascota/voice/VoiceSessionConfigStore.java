@@ -47,9 +47,19 @@ final class VoiceSessionConfigStore {
         json.put("voice", config.voice);
         json.put("locale", config.locale);
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
-        byte[] encrypted = cipher.doFinal(json.toString().getBytes(StandardCharsets.UTF_8));
-        byte[] iv = cipher.getIV();
+        byte[] encrypted;
+        byte[] iv;
+        try {
+            cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
+            encrypted = cipher.doFinal(json.toString().getBytes(StandardCharsets.UTF_8));
+            iv = cipher.getIV();
+        } catch (Exception invalidatedKey) {
+            deleteKey();
+            cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
+            encrypted = cipher.doFinal(json.toString().getBytes(StandardCharsets.UTF_8));
+            iv = cipher.getIV();
+        }
         if (iv == null || iv.length != IV_BYTES) throw new IllegalStateException("IV de sesión inválido.");
         byte[] payload = new byte[iv.length + encrypted.length];
         System.arraycopy(iv, 0, payload, 0, iv.length);
@@ -75,12 +85,21 @@ final class VoiceSessionConfigStore {
                     json.getString("tools"), json.getString("voice"), json.getString("locale"));
         } catch (Exception invalid) {
             clear();
+            deleteKey();
             return null;
         }
     }
 
     synchronized void clear() {
         preferences.edit().remove(DATA).commit();
+    }
+
+    private void deleteKey() {
+        try {
+            KeyStore keyStore = KeyStore.getInstance(KEYSTORE);
+            keyStore.load(null);
+            if (keyStore.containsAlias(KEY_ALIAS)) keyStore.deleteEntry(KEY_ALIAS);
+        } catch (Exception ignored) { }
     }
 
     private SecretKey getOrCreateKey() throws Exception {
