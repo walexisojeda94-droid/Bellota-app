@@ -62,6 +62,7 @@ public final class VoiceSessionService extends Service {
     private static final String KEY_TOOLS = "tools";
     private static final String KEY_VOICE = "voice";
     private static final String KEY_LOCALE = "locale";
+    private static final String KEY_PENDING_CALLS = "pending_tool_calls";
     private static final long[] RETRY_DELAYS_MS = {1500L, 3000L, 6000L, 12000L, 20000L, 30000L, 60000L};
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -116,9 +117,10 @@ public final class VoiceSessionService extends Service {
     }
 
     public static boolean isToolCallCurrent(Context context, String callId) {
-        // The Activity may disappear while a tool is running. The service performs the
-        // authoritative call-id and session-generation check when the result is returned.
-        return callId != null && !callId.trim().isEmpty() && isActive(context);
+        if (callId == null || callId.trim().isEmpty() || !isActive(context)) return false;
+        Set<String> pending = context.getApplicationContext()
+                .getSharedPreferences(PREFS, MODE_PRIVATE).getStringSet(KEY_PENDING_CALLS, null);
+        return pending != null && pending.contains(callId);
     }
 
     public static void sendToolResult(Context context, String callId, String result, boolean isError) {
@@ -148,6 +150,7 @@ public final class VoiceSessionService extends Service {
             String callId = intent == null ? null : intent.getStringExtra(EXTRA_CALL_ID);
             boolean pending;
             synchronized (pendingToolCalls) { pending = callId != null && pendingToolCalls.remove(callId); }
+            removePersistedPendingCall(callId);
             if (pending && manager != null
                     && manager.isToolCallCurrent(callId)) {
                 manager.sendToolResult(callId, intent.getStringExtra(EXTRA_RESULT),
@@ -206,6 +209,7 @@ public final class VoiceSessionService extends Service {
         manager = null;
         if (old != null) old.disconnect();
         synchronized (pendingToolCalls) { pendingToolCalls.clear(); }
+        clearPersistedPendingCalls();
 
         connecting = true;
         OpenAIRealtimeWebRtcProvider provider = new OpenAIRealtimeWebRtcProvider(
@@ -233,6 +237,7 @@ public final class VoiceSessionService extends Service {
                     @Override public void onToolCall(String callId, String name, String argumentsJson) {
                         if (manager != holder[0] || !manager.isToolCallCurrent(callId)) return;
                         synchronized (pendingToolCalls) { pendingToolCalls.add(callId); }
+                        persistPendingCall(callId);
                         Intent event = baseEvent("tool_call");
                         event.putExtra(EXTRA_CALL_ID, callId);
                         event.putExtra(EXTRA_TOOL_NAME, name);
@@ -241,6 +246,7 @@ public final class VoiceSessionService extends Service {
                         handler.postDelayed(() -> {
                             boolean stillPending;
                             synchronized (pendingToolCalls) { stillPending = pendingToolCalls.remove(callId); }
+                            removePersistedPendingCall(callId);
                             VoiceProviderManager current = manager;
                             if (stillPending && current != null && current.isToolCallCurrent(callId))
                                 current.sendToolResult(callId,
@@ -318,6 +324,26 @@ public final class VoiceSessionService extends Service {
         if (resumeLocal) VoiceRecognitionService.resume(this);
         if (foreground) stopForeground(true);
         foreground = false;
+    }
+
+    private void persistPendingCall(String callId) {
+        if (callId == null || callId.isEmpty()) return;
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        Set<String> copy = new HashSet<>(prefs.getStringSet(KEY_PENDING_CALLS, new HashSet<>()));
+        copy.add(callId);
+        prefs.edit().putStringSet(KEY_PENDING_CALLS, copy).apply();
+    }
+
+    private void removePersistedPendingCall(String callId) {
+        if (callId == null || callId.isEmpty()) return;
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        Set<String> copy = new HashSet<>(prefs.getStringSet(KEY_PENDING_CALLS, new HashSet<>()));
+        copy.remove(callId);
+        prefs.edit().putStringSet(KEY_PENDING_CALLS, copy).apply();
+    }
+
+    private void clearPersistedPendingCalls() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(KEY_PENDING_CALLS).apply();
     }
 
     private void ensureForeground() {
