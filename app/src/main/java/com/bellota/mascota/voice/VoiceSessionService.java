@@ -15,6 +15,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 
 import com.bellota.mascota.R;
 import com.bellota.mascota.voice.auth.SecureTokenStore;
@@ -53,6 +54,7 @@ public final class VoiceSessionService extends Service {
     public static final String EXTRA_RESULT = "result";
     public static final String EXTRA_IS_ERROR = "is_error";
 
+    private static volatile VoiceSessionService instance;
     private static final String CHANNEL_ID = "bellota_online_voice";
     private static final int NOTIFICATION_ID = 2402;
     private static final String PREFS = "bellota_voice_session";
@@ -64,6 +66,7 @@ public final class VoiceSessionService extends Service {
     private final Set<String> pendingToolCalls = new HashSet<>();
     private volatile VoiceProviderManager manager;
     private ConnectivityManager connectivityManager;
+    private PowerManager.WakeLock wakeLock;
     private NetworkCallback networkCallback;
     private String backendUrl;
     private String instructions;
@@ -112,10 +115,9 @@ public final class VoiceSessionService extends Service {
     }
 
     public static boolean isToolCallCurrent(Context context, String callId) {
-        if (callId == null || callId.trim().isEmpty() || !isActive(context)) return false;
-        Set<String> pending = context.getApplicationContext()
-                .getSharedPreferences(PREFS, MODE_PRIVATE).getStringSet(KEY_PENDING_CALLS, null);
-        return pending != null && pending.contains(callId);
+        VoiceSessionService owner = instance;
+        return owner != null && owner.manager != null
+                && owner.manager.isToolCallCurrent(callId);
     }
 
     public static void sendToolResult(Context context, String callId, String result, boolean isError) {
@@ -129,7 +131,13 @@ public final class VoiceSessionService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        instance = this;
         createNotificationChannel();
+        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        if (powerManager != null) {
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Bellota:VoiceSession");
+            wakeLock.setReferenceCounted(false);
+        }
         connectivityManager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
         registerNetworkCallback();
     }
@@ -163,6 +171,8 @@ public final class VoiceSessionService extends Service {
             catch (Exception storageError) {
                 emit("state", VoiceProvider.State.CLOSED.name(),
                         "No se pudo proteger la configuración de recuperación. La sesión online no se inició.", null);
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
+                new VoiceSessionConfigStore(this).clear();
                 stopSelf();
                 return START_NOT_STICKY;
             }
@@ -177,6 +187,7 @@ public final class VoiceSessionService extends Service {
         started = true;
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, true).apply();
         ensureForeground();
+        acquireWakeLock();
         VoiceRecognitionService.stop(this);
         if (manager == null) connectFreshManager();
         return START_STICKY;
@@ -230,7 +241,7 @@ public final class VoiceSessionService extends Service {
                             clearPersistedPendingCalls();
                         }
                         updateNotification(detail == null ? state.name() : detail);
-                        if (state == VoiceProvider.State.CONNECTED) { retryIndex = 0; connecting = false; }
+                        if (state == VoiceProvider.State.CONNECTED) { retryIndex = 0; connecting = false; acquireWakeLock(); }
                         else if (state == VoiceProvider.State.FALLBACK_LOCAL) connecting = false;
                     }
                     @Override public void onUserTranscript(String text, boolean isFinal) {
@@ -326,6 +337,7 @@ public final class VoiceSessionService extends Service {
         started = false;
         connecting = false;
         handler.removeCallbacksAndMessages(null);
+        releaseWakeLock();
         if (manager != null) manager.disconnect();
         manager = null;
         synchronized (pendingToolCalls) { pendingToolCalls.clear(); }
@@ -357,6 +369,16 @@ public final class VoiceSessionService extends Service {
 
     private void clearPersistedPendingCalls() {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(KEY_PENDING_CALLS).apply();
+    }
+
+    private void acquireWakeLock() {
+        try { if (wakeLock != null && !wakeLock.isHeld()) wakeLock.acquire(); }
+        catch (RuntimeException ignored) { }
+    }
+
+    private void releaseWakeLock() {
+        try { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); }
+        catch (RuntimeException ignored) { }
     }
 
     private void ensureForeground() {
@@ -442,6 +464,8 @@ public final class VoiceSessionService extends Service {
             synchronized (pendingToolCalls) { pendingToolCalls.clear(); }
             clearPersistedPendingCalls();
         }
+        releaseWakeLock();
+        if (instance == this) instance = null;
         if (connectivityManager != null && networkCallback != null) {
             try { connectivityManager.unregisterNetworkCallback(networkCallback); }
             catch (RuntimeException ignored) { }
