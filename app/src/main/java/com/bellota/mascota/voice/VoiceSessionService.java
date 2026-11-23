@@ -320,6 +320,7 @@ public final class VoiceSessionService extends Service {
         if (manager != null) manager.disconnect();
         manager = null;
         synchronized (pendingToolCalls) { pendingToolCalls.clear(); }
+        clearPersistedPendingCalls();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
         if (resumeLocal) VoiceRecognitionService.resume(this);
         if (foreground) stopForeground(true);
