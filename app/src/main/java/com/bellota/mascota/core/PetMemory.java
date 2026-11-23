@@ -104,7 +104,7 @@ public final class PetMemory {
     }
 
     private boolean isV2Journal() {
-        if (!journal.exists() || journal.length() < V2_HEADER_BYTES) return false;
+        if (!journal.exists() || journal.length() < MAGIC_V2.length) return false;
         try (FileInputStream input = new FileInputStream(journal)) {
             byte[] header = new byte[4];
             return input.read(header) == 4 && Arrays.equals(header, MAGIC_V2);
