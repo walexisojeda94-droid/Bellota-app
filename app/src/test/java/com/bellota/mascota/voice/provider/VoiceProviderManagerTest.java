@@ -103,6 +103,18 @@ public class VoiceProviderManagerTest {
         assertEquals(0, primary.toolResultCount);
     }
 
+    @Test public void pendingToolCallIsInvalidatedWhenProviderReconnects() {
+        FakeProvider primary = new FakeProvider("openai");
+        VoiceProviderManager manager = new VoiceProviderManager(primary, null, new RecordingListener());
+        manager.connect(config());
+        primary.requestToolCall("tool-reconnect");
+        assertTrue(manager.isToolCallCurrent("tool-reconnect"));
+        primary.emitState(VoiceProvider.State.RECONNECTING);
+        assertFalse(manager.isToolCallCurrent("tool-reconnect"));
+        manager.sendToolResult("tool-reconnect", "late result", false);
+        assertEquals(0, primary.toolResultCount);
+    }
+
     @Test public void invalidPcmRangeIsRejectedBeforeSending() {
         FakeProvider primary = new FakeProvider("openai");
         VoiceProviderManager manager = new VoiceProviderManager(primary, null, new RecordingListener());
@@ -187,6 +199,9 @@ public class VoiceProviderManagerTest {
         @Override public void sendText(String text) { }
         void requestToolCall(String callId) {
             if (listener != null) listener.onToolCall(callId, "test_tool", "{}");
+        }
+        void emitState(State state) {
+            if (listener != null) listener.onStateChanged(state, "simulated state");
         }
         @Override public void sendToolResult(String callId, String result, boolean isError) {
             toolResultCount++;
