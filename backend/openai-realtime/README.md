@@ -1,66 +1,64 @@
 # Bellota OpenAI Realtime backend
 
-Worker privado para vinculación de dispositivos y emisión de credenciales efímeras de OpenAI Realtime.
+Worker de Cloudflare para vinculación de dispositivos, renovación/revocación y emisión de credenciales efímeras de OpenAI Realtime.
+
+## Estado desplegado
+
+- Worker: `bellota-openai-realtime`.
+- Base D1: `bellota-devices`, enlazada mediante `DB`.
+- Migraciones `0001_recoverable_refresh.sql` y `0002_retention_indexes.sql` aplicadas.
+- Secretos principales comprobados en Cloudflare: `OPENAI_API_KEY`, `ADMIN_TOKEN` y `JWT_SECRET`.
+- Logs y traces habilitados.
+
+No se documentan aquí valores de secretos ni identificadores internos de cuenta. No se da por probado el endpoint HTTP `/health` ni el relay TURN real sin una comprobación externa específica. La disponibilidad de TURN depende de los secretos `TURN_KEY_ID` y `TURN_KEY_API_TOKEN`; no asumir que están configurados.
 
 ## Endpoints
 
 - `POST /admin/pairing-code`: genera un código de un solo uso (10 minutos). Requiere `Authorization: Bearer <ADMIN_TOKEN>`.
 - `POST /v1/pair`: consume el código y crea una instalación. Body: `{"code":"...","device_name":"Bellota Android"}`.
-- `POST /v1/auth/refresh`: rota el refresh token de forma recuperable. Si la respuesta se pierde, el mismo token anterior permite recuperar la misma rotación durante 120 segundos. Body: `{"refresh_token":"..."}`.
-- `POST /v1/device/revoke`: revoca remotamente el dispositivo. Body: `{"refresh_token":"..."}`. Es idempotente para permitir reintentos cuando se pierde la respuesta.
+- `POST /v1/auth/refresh`: rota el refresh token de forma recuperable. Si la respuesta se pierde, el token anterior permite recuperar la misma rotación durante 120 segundos.
+- `POST /v1/device/revoke`: revoca remotamente el dispositivo. Es idempotente para permitir reintentos.
 - `POST /v1/realtime/client-secret`: requiere access token Bearer de 15 minutos. Body opcional: `{"instructions":"...","voice":"marin"}`.
-- `GET /health`: comprueba que existan las tablas `devices` y `pairing_codes` en D1 y que estén presentes `ADMIN_TOKEN`, `JWT_SECRET` y `OPENAI_API_KEY`. Devuelve `503` si falta alguna dependencia, sin exponer secretos ni detalles internos.
+- `GET /health`: comprueba las tablas/columnas requeridas de D1 y la presencia de los secretos principales. Devuelve `503` si falta una dependencia, sin exponer secretos.
 
-## Preparación
+## Configuración de un entorno nuevo
 
-1. Crear D1: `npx wrangler d1 create bellota-devices`.
-2. Reemplazar `database_id` en `wrangler.toml` con el ID devuelto.
-3. En una base nueva, aplicar el esquema: `npx wrangler d1 execute bellota-devices --remote --file=./schema.sql`.
-   En una base existente, aplicar las migraciones en orden: `npx wrangler d1 execute bellota-devices --remote --file=./migrations/0001_recoverable_refresh.sql` y luego `npx wrangler d1 execute bellota-devices --remote --file=./migrations/0002_retention_indexes.sql`.
-4. Cargar secretos sin guardarlos en el repositorio:
-   - `npx wrangler secret put OPENAI_API_KEY`
-   - `npx wrangler secret put ADMIN_TOKEN`
-   - `npx wrangler secret put JWT_SECRET`
-   - `npx wrangler secret put TURN_KEY_ID` (ID de la clave TURN de Cloudflare)
-   - `npx wrangler secret put TURN_KEY_API_TOKEN` (token API asociado a esa clave TURN)
-5. Desplegar: `npx wrangler deploy`.
+1. Crear una base D1 y configurar su ID en `wrangler.toml`.
+2. En una base nueva, aplicar `schema.sql`. En una base existente, aplicar en orden `migrations/0001_recoverable_refresh.sql` y `migrations/0002_retention_indexes.sql`.
+3. Cargar los secretos en Cloudflare, nunca en el repositorio:
+   - `OPENAI_API_KEY`
+   - `ADMIN_TOKEN`
+   - `JWT_SECRET`
+   - Opcional para TURN: `TURN_KEY_ID` y `TURN_KEY_API_TOKEN`
+4. Desplegar con `npx wrangler deploy`.
 
-Generá ADMIN_TOKEN y JWT_SECRET con al menos 32 bytes aleatorios. Nunca uses el código de emparejamiento como secreto administrativo.
+Generar `ADMIN_TOKEN` y `JWT_SECRET` con al menos 32 bytes aleatorios. Nunca usar el código de emparejamiento como secreto administrativo.
 
-## Flujo de emparejamiento
+## Seguridad y retención
 
-El administrador genera un código desde un entorno confiable:
+- El código de emparejamiento vence a los 10 minutos y se consume en una operación D1 transaccional.
+- D1 guarda el hash del refresh token, nunca su valor en claro.
+- El access token dura 15 minutos; el refresh token se rota y la rotación anterior puede recuperarse durante 120 segundos.
+- Los dispositivos revocados y refresh vencidos se conservan 180 días antes de su eliminación física.
+- Los códigos vencidos se conservan durante una ventana de siete días.
+- Las solicitudes JSON se validan en tipo, estructura, longitud y tamaño; las rutas conocidas rechazan métodos incorrectos con `405`.
+- El Worker no registra tokens, audio ni transcripciones.
 
-```sh
-curl -X POST "https://<worker>.<subdomain>.workers.dev/admin/pairing-code" \
-  -H "Authorization: Bearer $BELLOTA_ADMIN_TOKEN"
+## TURN
+
+Cuando se configuran ambas credenciales TURN, el Worker solicita credenciales temporales Cloudflare TURN con TTL de 3.600 segundos y devuelve únicamente esas credenciales al cliente. Si no están configuradas, el cliente conserva STUN y no dispone de relay TURN. No considerar una red restrictiva certificada hasta observar un candidato relay y completar audio bidireccional.
+
+## Pruebas
+
+Desde este directorio:
+
+```bash
+npm test
+node --check src/index.js
 ```
 
-La app intercambia ese código una sola vez por un refresh token aleatorio. Android debe guardarlo exclusivamente mediante Android Keystore, excluirlo de backups y no escribirlo en logs. El backend guarda únicamente su hash. El refresh token se rota al renovarse; el access token firmado dura 15 minutos. La rotación deriva el siguiente token con HMAC del secreto del Worker y conserva el hash anterior por 120 segundos, sin guardar tokens en claro en D1. La vinculación consume el código y crea el dispositivo en un único lote transaccional D1.
+La CI ejecuta Node.js 22, pruebas del Worker y validación SQLite de migraciones, pairing atómico y retención.
 
-## Validación y retención
+## Estado de Gemini Live
 
-Las rutas JSON rechazan tipos de contenido incorrectos, JSON malformado, cuerpos superiores al límite y campos con tipos o longitudes inválidos. Las rutas conocidas responden `405` cuando se usa un método incorrecto. El endpoint de salud ejecuta `SELECT 1` contra D1 y no informa valores de secretos. Al generar códigos de vinculación se ejecuta una limpieza acotada: los códigos vencidos se conservan durante siete días y los dispositivos revocados o con refresh vencido durante 180 días antes de eliminarse.
-
-Ejecutar las pruebas del Worker desde esta carpeta con `npm test` (Node.js 20 o superior).
-
-## Seguridad pendiente antes de producción
-
-- Configurar rate limiting de Cloudflare para /admin/pairing-code, /v1/pair, /v1/auth/refresh y /v1/realtime/client-secret.
-- Configurar alertas y límites de consumo en OpenAI.
-- Añadir pruebas automatizadas de integración para revocación, concurrencia y recuperación de refresh tokens.
-- Agregar pruebas de integración con D1 y pruebas de abuso/rate-limit.
-- Restringir la emisión de códigos administrativos a un canal de administración seguro.
-- No desplegar hasta reemplazar el ID D1 y cargar los tres secretos.
-
-El Worker no registra tokens, audio ni transcripciones. El cliente secret de OpenAI dura 10 minutos y su vencimiento impide crear nuevas sesiones, no corta una sesión ya iniciada. Cada sesión se configura con un máximo de 1.024 tokens de salida por respuesta, truncamiento automático y `expires_at` fijado a 45 minutos desde la emisión de la credencial. OpenAI aplica el vencimiento del lado servidor y Android programa el cierre unos segundos antes. También se aplica un tope acumulado local de 24.000 tokens de uso informado por Realtime. El límite acumulado es una protección del cliente, no un límite de facturación impuesto por OpenAI; configurar también límites y alertas de gasto en la plataforma.
-
-## TURN para redes restrictivas
-
-La app obtiene los servidores ICE desde este Worker. Si `TURN_KEY_ID` y `TURN_KEY_API_TOKEN` están configurados, el Worker solicita credenciales Cloudflare TURN efímeras con TTL de 3.600 segundos y las devuelve al cliente. La clave TURN y el token API nunca salen del Worker. Si no están configurados, la app conserva STUN como compatibilidad, pero no tendrá relay TURN y algunas redes pueden impedir la conexión.
-
-Crear primero una TURN key en Cloudflare Realtime y guardar su ID y API token como secretos del Worker. La credencial efímera dura una hora, por encima del límite de sesión de 45 minutos. Cloudflare factura el tráfico TURN saliente cuando se usa fuera de su Realtime SFU; revisar la tarifa vigente antes de habilitarlo. Una falla al generar credenciales cuando TURN está configurado devuelve `503 turn_unavailable` y no degrada silenciosamente a STUN.
-
-## Recuperación y cierre WebRTC
-
-La app aplica un timeout global de negociación, espera 10 segundos ante `ICE DISCONNECTED`, realiza un único reintento automático ante fallos transitorios (con espera mayor para HTTP 429), y luego entrega el control al fallback del gestor de proveedores. Las sesiones terminadas cancelan timers, abortan la negociación HTTP activa, liberan DataChannel, PeerConnection, pistas, fuentes, fábrica y módulo de audio, y apagan el ejecutor. La desconexión es idempotente. `MainActivity` tiene OpenAI como único proveedor online registrado; si el reintento falla, el gestor pasa al motor local. Gemini Live todavía no está implementado como proveedor secundario. Ver el detalle en `docs/revision-4-realtime-webrtc.md`.
+Este Worker todavía no emite tokens efímeros de Gemini y no tiene endpoint Gemini. No colocar una clave Google en el APK. La emisión de token Gemini y el adaptador Android son trabajo pendiente de BEL-036.
