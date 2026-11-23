@@ -6,6 +6,7 @@ import android.security.keystore.KeyProperties;
 import android.util.AtomicFile;
 import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -104,15 +105,14 @@ public final class PetMemory {
 
     private boolean isV2Journal() {
         if (!journal.exists() || journal.length() < MAGIC_V2.length) return false;
-        try (FileInputStream input = new FileInputStream(journal)) {
+        try (FileInputStream input = atomicJournal.openRead()) {
             byte[] header = new byte[4];
             return input.read(header) == 4 && Arrays.equals(header, MAGIC_V2);
         } catch (Exception ignored) { return false; }
     }
 
     private long readCompactionTime() {
-        try (RandomAccessFile input = new RandomAccessFile(journal, "r")) {
-            if (input.length() < V2_HEADER_BYTES) return 0L;
+        try (DataInputStream input = new DataInputStream(atomicJournal.openRead())) {
             byte[] magic = new byte[4];
             input.readFully(magic);
             if (!Arrays.equals(magic, MAGIC_V2)) return 0L;
@@ -152,15 +152,15 @@ public final class PetMemory {
 
     private byte[] readV2Plaintext() {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        try (RandomAccessFile input = new RandomAccessFile(journal, "r")) {
+        try (DataInputStream input = new DataInputStream(atomicJournal.openRead())) {
             byte[] magic = new byte[4];
             input.readFully(magic);
             if (!Arrays.equals(magic, MAGIC_V2)) return new byte[0];
             input.readLong(); // compaction timestamp
-            while (input.getFilePointer() + 4 <= input.length()) {
+            while (input.available() >= 4) {
                 int recordLength = input.readInt();
                 if (recordLength < GCM_IV_BYTES + 16 || recordLength > MAX_ENTRY_BYTES + 64
-                        || input.getFilePointer() + recordLength > input.length()) break;
+                        || input.available() < recordLength) break;
                 byte[] record = new byte[recordLength];
                 input.readFully(record);
                 byte[] iv = Arrays.copyOfRange(record, 0, GCM_IV_BYTES);
