@@ -26,7 +26,7 @@ Esta revisión agrupa BEL-020, BEL-024, BEL-025 y BEL-026. Los cambios se prepar
 ## BEL-026: retención y eficiencia
 
 - Los códigos de vinculación vencidos se limpian conservando una ventana de siete días.
-- Los registros de dispositivos revocados o con refresh vencido se conservan 180 días antes de su eliminación.
+- Los registros de dispositivos revocados o con refresh vencido se conservan 180 días antes de su eliminación. Se agregan índices separados para que la limpieza no dependa de un escaneo completo de la tabla.
 - El diario local migra automáticamente el formato anterior (JSONL plano o BME1) al formato BME2.
 - BME2 cifra cada entrada de forma independiente con AES-GCM y una IV aleatoria; un alta normal agrega sólo el registro cifrado nuevo en vez de descifrar y volver a cifrar todo el archivo.
 - Cada entrada individual se limita a 256 KiB para dejar margen al sobrecosto de cifrado dentro del archivo total de 512 KiB.
