@@ -225,6 +225,10 @@ public final class VoiceSessionService extends Service {
                     @Override public void onStateChanged(VoiceProvider.State state, String providerId, String detail) {
                         if (manager != holder[0]) return;
                         emit("state", state.name(), detail, providerId);
+                        if (state == VoiceProvider.State.RECONNECTING) {
+                            synchronized (pendingToolCalls) { pendingToolCalls.clear(); }
+                            clearPersistedPendingCalls();
+                        }
                         updateNotification(detail == null ? state.name() : detail);
                         if (state == VoiceProvider.State.CONNECTED) { retryIndex = 0; connecting = false; }
                         else if (state == VoiceProvider.State.FALLBACK_LOCAL) connecting = false;
