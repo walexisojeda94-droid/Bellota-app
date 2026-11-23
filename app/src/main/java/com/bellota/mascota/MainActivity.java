@@ -969,7 +969,8 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void resumeLocalRecognition() {
-        if (onlineVoiceConnecting || (onlineVoiceManager != null && onlineVoiceManager.isConnected())
+        if (onlineVoiceConnecting || VoiceSessionService.isActive(this)
+                || (onlineVoiceManager != null && onlineVoiceManager.isConnected())
                 || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         if (!localRecognitionPaused) return;
         localRecognitionPaused = false;
@@ -977,12 +978,13 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void startVoiceCommands() {
-        if (onlineVoiceConnecting || (onlineVoiceManager != null && onlineVoiceManager.isConnected())) return;
+        if (onlineVoiceConnecting || VoiceSessionService.isActive(this)
+                || (onlineVoiceManager != null && onlineVoiceManager.isConnected())) return;
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startLocalRecognizer();
     }
 
     private void startLocalRecognizer() {
-        if (isFinishing() || onlineVoiceConnecting
+        if (isFinishing() || onlineVoiceConnecting || VoiceSessionService.isActive(this)
                 || (onlineVoiceManager != null && onlineVoiceManager.isConnected())
                 || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         localRecognitionPaused = false;
