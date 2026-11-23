@@ -330,7 +330,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                     + (conversationEngine == null ? "" : conversationEngine.memoryContextForOnline());
             onlineVoiceManager = null;
             onlineVoiceConnecting = true;
-            VoiceRecognitionService.pause(this);
+            VoiceRecognitionService.stop(this);
             VoiceSessionService.start(getApplicationContext(), backendUrl, instructions,
                     tools.toString(), "marin", "es-AR");
             status.setText("Iniciando OpenAI Realtime en el servicio persistente...");
@@ -348,7 +348,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         onlineVoiceConnecting = false;
         onlineVoiceManager = null;
         VoiceSessionService.stop(getApplicationContext());
-        if (resumeLocal && !paused && !isFinishing()) startLocalRecognizer();
+        // VoiceSessionService resumes the local recognizer after releasing WebRTC audio.
     }
 
     private void handleOnlineVoiceEvent(Intent intent) {
@@ -1231,6 +1231,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         enterImmersiveMode();
         applySleepVisuals();
         if(sensorManager!=null&&lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL);
+        VoiceSessionService.restoreIfActive(this);
         startVoiceCommands();
         if (eyes != null) eyes.resumeAnimation();
     }
