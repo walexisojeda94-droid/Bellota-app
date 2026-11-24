@@ -72,6 +72,7 @@ public class SecureStorageInstrumentedTest {
         String marker = "BELL0TA_PRIVATE_SENTINEL_" + UUID.randomUUID();
         PetMemory memory = new PetMemory(context());
         memory.remember("security_test", marker);
+        assertTrue(PetMemory.awaitPendingWrites(10000L));
 
         byte[] journal;
         try (FileInputStream input = new FileInputStream(memory.getJournalFile());
