@@ -28,8 +28,8 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 
 /**
- * AES-GCM encrypted private diary. BME2 stores independently authenticated records,
- * so a normal append encrypts only the new entry instead of rewriting the full diary.
+ * AES-GCM encrypted private diary. BME3 stores independently authenticated records
+ * and a key version, so appends encrypt only the new entry and rotation is atomic.
  */
 public final class PetMemory {
     private static final long MAX_JOURNAL_BYTES = 512L * 1024L;
@@ -106,7 +106,8 @@ public final class PetMemory {
                     if (journal.length() + line.length + 64L > MAX_JOURNAL_BYTES
                             || lastCompacted <= 0L || now - lastCompacted >= COMPACT_INTERVAL_MS) {
                         byte[] current = pruneExpired(readV3Plaintext(), now);
-                        writeEncryptedV3(trimToLimit(appendLine(current, line)), now, version);
+                        int writeVersion = journal.exists() ? version : Math.max(CURRENT_KEY_VERSION, version + 1);
+                        writeEncryptedV3(trimToLimit(appendLine(current, line)), now, writeVersion);
                     } else {
                         appendEncryptedRecord(line, version);
                     }
@@ -333,7 +334,7 @@ public final class PetMemory {
         } catch (Exception missingOrInvalidatedKey) {
             if (!quarantineUnreadableJournal())
                 throw new GeneralSecurityException("No se pudo preservar el diario cuya clave falta.", missingOrInvalidatedKey);
-            writeEncryptedV3(plaintext, System.currentTimeMillis(), CURRENT_KEY_VERSION);
+            writeEncryptedV3(plaintext, System.currentTimeMillis(), Math.max(CURRENT_KEY_VERSION, version + 1));
             return;
         }
         byte[] record = encryptRecord(plaintext, version, false);
