@@ -20,9 +20,9 @@ Esta revisión cubre BEL-081 a BEL-087. No se declara certificada hasta que la n
 
 - Pull Requests hacia `main` ejecutan la misma workflow de compilación y pruebas.
 - Dependency Review rechaza cambios que incorporen vulnerabilidades de severidad moderada o superior, cuando GitHub Dependency Graph puede resolver el diff.
-- OSV-Scanner ejecuta un escaneo recursivo del repositorio en los eventos configurados y un escaneo programado semanal. La detección de dependencias transitivas de Gradle depende de que existan lockfiles reconocibles; el SBOM CycloneDX complementa el inventario resuelto por Gradle.
+- Gradle activa dependency locking para todas las configuraciones. CI resuelve el grafo y genera `app/gradle.lockfile` antes de ejecutar OSV-Scanner, de modo que el escaneo incluya dependencias transitivas del build de esa ejecución. El lockfile generado y el SBOM se conservan como artefactos por ejecución; todavía no se versiona un lockfile estable en Git.
 - Dependabot revisa semanalmente dependencias Gradle y GitHub Actions.
-- CycloneDX genera el SBOM agregado desde las dependencias resueltas por Gradle y CI lo conserva como artefacto.
+- CycloneDX genera el SBOM agregado desde las dependencias resueltas por Gradle; CI conserva el SBOM, su SHA-256 y el lockfile generado como artefactos.
 - CI compila la variante Release con minificación y reducción de recursos para detectar fallos de configuración R8.
 
 ## Protección obligatoria de main
