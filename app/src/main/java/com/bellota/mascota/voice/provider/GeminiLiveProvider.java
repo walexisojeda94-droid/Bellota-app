@@ -67,6 +67,8 @@ public final class GeminiLiveProvider implements VoiceProvider {
     private volatile boolean previousSpeakerphone;
     private volatile boolean audioModeChanged;
     private volatile long credentialExpiresAt;
+    private volatile String ephemeralToken;
+    private volatile String sessionResumeHandle;
     private volatile int recoveryCount;
     private final StringBuilder userTranscript = new StringBuilder();
     private final StringBuilder assistantTranscript = new StringBuilder();
@@ -108,14 +110,21 @@ public final class GeminiLiveProvider implements VoiceProvider {
                 try {
                     BellotaBackendClient backend = new BellotaBackendClient(backendUrl, tokenStore);
                     SessionConfig config = sessionConfig;
-                    String instructions = currentInstructions();
-                    BellotaBackendClient.GeminiCredential credential =
-                            backend.createGeminiLiveToken(instructions, config.voice, config.toolDefinitionsJson);
-                    if (closed.get()) return;
-                    credentialExpiresAt = credential.expiresAtEpochSeconds;
+                    String tokenValue = ephemeralToken;
+                    boolean resumeExisting = recovery && sessionResumeHandle != null
+                            && !sessionResumeHandle.isEmpty() && tokenValue != null
+                            && credentialExpiresAt > System.currentTimeMillis() / 1000L + 15L;
+                    if (!resumeExisting) {
+                        BellotaBackendClient.GeminiCredential credential =
+                                backend.createGeminiLiveToken(currentInstructions(), config.voice, config.toolDefinitionsJson);
+                        if (closed.get()) return;
+                        tokenValue = credential.value;
+                        ephemeralToken = credential.value;
+                        credentialExpiresAt = credential.expiresAtEpochSeconds;
+                    }
                     Request request = new Request.Builder()
                             .url(credential.websocketUrl + "?access_token=" +
-                                    java.net.URLEncoder.encode(credential.value, "UTF-8").replace("+", "%20"))
+                                    java.net.URLEncoder.encode(tokenValue, "UTF-8").replace("+", "%20"))
                             .build();
                     notifyState(State.CONNECTING, "Abriendo WebSocket de Gemini Live.");
                     WebSocket next = http.newWebSocket(request, new LiveSocketListener());
@@ -183,6 +192,11 @@ public final class GeminiLiveProvider implements VoiceProvider {
                     return;
                 }
                 if (event.has("serverContent")) handleServerContent(event.optJSONObject("serverContent"));
+                if (event.has("sessionResumptionUpdate")) {
+                    JSONObject update = event.optJSONObject("sessionResumptionUpdate");
+                    String handle = update == null ? "" : update.optString("newHandle", "");
+                    if (!handle.isEmpty()) sessionResumeHandle = handle;
+                }
                 if (event.has("toolCall")) handleToolCall(event.optJSONObject("toolCall"));
                 if (event.has("toolCallCancellation")) {
                     JSONObject cancellation = event.optJSONObject("toolCallCancellation");
@@ -241,7 +255,13 @@ public final class GeminiLiveProvider implements VoiceProvider {
                 new JSONArray().put(new JSONObject().put("text", currentInstructions()))));
         setup.put("inputAudioTranscription", new JSONObject());
         setup.put("outputAudioTranscription", new JSONObject());
-        setup.put("sessionResumption", new JSONObject());
+        JSONObject resume = new JSONObject();
+        String handle = sessionResumeHandle;
+        if (handle != null && !handle.isEmpty()) {
+            resume.put("handle", handle);
+            resume.put("transparent", true);
+        }
+        setup.put("sessionResumption", resume);
         JSONArray declarations = convertTools(config.toolDefinitionsJson);
         if (declarations.length() > 0)
             setup.put("tools", new JSONArray().put(new JSONObject().put("functionDeclarations", declarations)));
@@ -550,6 +570,8 @@ public final class GeminiLiveProvider implements VoiceProvider {
         synchronized (socketLock) { old = socket; socket = null; }
         if (old != null) old.close(1000, "Bellota session closed");
         toolNamesByCallId.clear();
+        ephemeralToken = null;
+        sessionResumeHandle = null;
         worker.shutdownNow();
     }
 }
