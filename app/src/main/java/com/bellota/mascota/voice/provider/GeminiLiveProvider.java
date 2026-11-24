@@ -1,6 +1,9 @@
 package com.bellota.mascota.voice.provider;
 
+import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioManager;
@@ -377,9 +380,12 @@ public final class GeminiLiveProvider implements VoiceProvider {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private void startAudio() {
         if (closed.get() || !connected.get()) return;
         try {
+            if (appContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
+                throw new SecurityException("Bellota no tiene permiso para usar el micrófono.");
             AudioManager manager = (AudioManager) appContext.getSystemService(Context.AUDIO_SERVICE);
             audioManager = manager;
             if (manager != null) {
