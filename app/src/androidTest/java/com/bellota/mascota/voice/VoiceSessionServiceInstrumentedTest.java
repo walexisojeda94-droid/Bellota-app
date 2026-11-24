@@ -67,29 +67,36 @@ public class VoiceSessionServiceInstrumentedTest {
         }
     }
     @Test(timeout = 90000L)
-    public void test99LeavesRecoverableSessionForProcessRestart() throws Exception {
+    public void test99CanRecoverPersistedSessionAfterServiceTeardown() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SecureTokenStore tokenStore = new SecureTokenStore(context);
         VoiceSessionConfigStore configStore = new VoiceSessionConfigStore(context);
-        boolean prepared = false;
         try {
             VoiceRecognitionService.stop(context);
             tokenStore.saveRefreshToken("instrumented-recovery-token-01234567890123456789");
             VoiceSessionService.start(context, "https://127.0.0.1:1",
                     "Sos Bellota. Prueba de recuperación del proceso.", "[]", "marin", "es-AR");
-            assertTrue("El servicio foreground no llegó a iniciarse para la prueba de proceso.",
+            assertTrue("El servicio foreground no llegó a iniciarse para la prueba de recuperación.",
                     waitFor(VoiceSessionService::isServiceRunning, 10000L));
-            assertTrue("La sesión no quedó persistida para recuperación tras force-stop.",
+            assertTrue("La sesión no quedó persistida para recuperación tras reiniciar el servicio.",
                     VoiceSessionService.isActive(context));
-            prepared = true;
+
+            // Simulate OS teardown without the user's STOP action.
+            context.stopService(new Intent(context, VoiceSessionService.class));
+            assertTrue("El servicio no terminó durante la simulación de cierre del proceso.",
+                    waitFor(() -> !VoiceSessionService.isServiceRunning(), 10000L));
+            assertTrue("El estado recuperable se perdió durante el cierre inesperado.",
+                    VoiceSessionService.isActive(context));
+
+            VoiceSessionService.restoreIfActive(context);
+            assertTrue("No se pudo recuperar la sesión persistida después del cierre.",
+                    waitFor(VoiceSessionService::isServiceRunning, 10000L));
         } finally {
-            if (!prepared) {
-                VoiceSessionService.stop(context);
-                waitFor(() -> !VoiceSessionService.isActive(context), 5000L);
-                VoiceRecognitionService.stop(context);
-                tokenStore.clearRefreshToken();
-                configStore.clear();
-            }
+            VoiceSessionService.stop(context);
+            waitFor(() -> !VoiceSessionService.isActive(context), 5000L);
+            VoiceRecognitionService.stop(context);
+            tokenStore.clearRefreshToken();
+            configStore.clear();
         }
     }
 
