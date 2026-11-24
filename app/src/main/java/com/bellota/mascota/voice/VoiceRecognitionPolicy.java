@@ -32,7 +32,7 @@ public final class VoiceRecognitionPolicy {
     }
 
     public static boolean shouldPreferOffline(int apiLevel) {
-        return apiLevel >= API24_MIN;
+        return apiLevel >= 24;
     }
 
     public static String descriptionForApi(int apiLevel) {
