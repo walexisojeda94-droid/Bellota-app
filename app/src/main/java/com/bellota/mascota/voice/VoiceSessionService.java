@@ -77,7 +77,7 @@ public final class VoiceSessionService extends Service {
     private int retryIndex;
     private volatile boolean started;
     private boolean connecting;
-    private boolean foreground;
+    private volatile boolean foreground;
 
     private final Runnable retryRunnable = () -> {
         if (!started) return;
@@ -126,6 +126,11 @@ public final class VoiceSessionService extends Service {
         return owner != null && owner.started;
     }
 
+    public static boolean isForegroundService() {
+        VoiceSessionService owner = instance;
+        return owner != null && owner.foreground;
+    }
+
     public static boolean isToolCallCurrent(Context context, String callId) {
         VoiceSessionService owner = instance;
         return owner != null && owner.manager != null
@@ -147,6 +152,10 @@ public final class VoiceSessionService extends Service {
         super.onCreate();
         instance = this;
         createNotificationChannel();
+        // Promote during creation, not after command dispatch. Android 8+ starts this
+        // service through startForegroundService(); a queued/replaced command must not
+        // leave the five-second foreground-promotion deadline dependent on onStartCommand.
+        ensureForeground();
         PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         if (powerManager != null) {
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Bellota:VoiceSession");
