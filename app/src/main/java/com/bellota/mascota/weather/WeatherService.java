@@ -15,8 +15,11 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** Consulta Open-Meteo con ubicación reciente o una única actualización bajo demanda. */
 public final class WeatherService {
@@ -29,31 +32,45 @@ public final class WeatherService {
     private static final long MAX_CACHE_AGE_MS = 6L * 60L * 60L * 1000L;
     private static final long LOCATION_TIMEOUT_MS = 10000L;
     private static final long MAX_FIX_AGE_MS = 2L * 60L * 1000L;
+    private static final Object REQUEST_LOCK = new Object();
+    private static final ArrayList<Callback> PENDING_CALLBACKS = new ArrayList<>();
+    private static boolean requestInFlight;
+    private static final ExecutorService WEATHER_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "Bellota-Weather");
+        thread.setDaemon(true);
+        return thread;
+    });
     private WeatherService() {}
 
     public static void fetch(Context context, Callback callback) {
+        if (context == null || callback == null) return;
+        synchronized (REQUEST_LOCK) {
+            PENDING_CALLBACKS.add(callback);
+            if (requestInFlight) return;
+            requestInFlight = true;
+        }
         Context app = context.getApplicationContext();
         Location known = lastLocation(app);
         if (known != null) {
-            fetchForLocation(app, known, callback);
+            fetchForLocation(app, known);
             return;
         }
-        // Only request one fix when the user asks for weather. No background or continuous GPS.
+        // Coalesce simultaneous requests into one fresh location fix and one HTTP call.
         requestSingleFreshLocation(app, location -> {
             if (location != null) {
-                fetchForLocation(app, location, callback);
+                fetchForLocation(app, location);
             } else {
                 SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
                 String cached = readFreshCache(prefs);
-                deliver(callback, cached == null
+                completeRequest(cached == null
                         ? "No pude obtener una ubicación reciente del teléfono. Activá la ubicación y volvé a preguntarme por el clima."
                         : cached + " No pude actualizar la ubicación; este dato guardado todavía tiene menos de seis horas.");
             }
         });
     }
 
-    private static void fetchForLocation(Context app, Location location, Callback callback) {
-        new Thread(() -> {
+    private static void fetchForLocation(Context app, Location location) {
+        WEATHER_EXECUTOR.execute(() -> {
             HttpURLConnection connection = null;
             String answer;
             try {
@@ -90,8 +107,8 @@ public final class WeatherService {
             } finally {
                 if (connection != null) connection.disconnect();
             }
-            deliver(callback, answer);
-        }).start();
+            completeRequest(answer);
+        });
     }
 
     @SuppressWarnings("MissingPermission")
@@ -103,6 +120,7 @@ public final class WeatherService {
         }
         Handler handler = new Handler(Looper.getMainLooper());
         final boolean[] completed = { false };
+        final Runnable[] timeoutTask = { null };
         final LocationListener listener = new LocationListener() {
             @Override public void onLocationChanged(Location location) {
                 if (location == null) return;
@@ -116,16 +134,18 @@ public final class WeatherService {
             private void finish(Location location) {
                 if (completed[0]) return;
                 completed[0] = true;
+                if (timeoutTask[0] != null) handler.removeCallbacks(timeoutTask[0]);
                 try { manager.removeUpdates(this); } catch (RuntimeException ignored) { }
                 callback.onLocation(location);
             }
         };
-        handler.postDelayed(() -> {
+        timeoutTask[0] = () -> {
             if (completed[0]) return;
             completed[0] = true;
             try { manager.removeUpdates(listener); } catch (RuntimeException ignored) { }
             callback.onLocation(null);
-        }, LOCATION_TIMEOUT_MS);
+        };
+        handler.postDelayed(timeoutTask[0], LOCATION_TIMEOUT_MS);
         try {
             List<String> providers = manager.getProviders(true);
             boolean requested = false;
@@ -202,7 +222,16 @@ public final class WeatherService {
         return "con condiciones variables";
     }
 
-    private static void deliver(Callback callback, String value) {
-        new Handler(Looper.getMainLooper()).post(() -> { if (callback != null) callback.onResult(value); });
+    private static void completeRequest(String value) {
+        ArrayList<Callback> callbacks;
+        synchronized (REQUEST_LOCK) {
+            callbacks = new ArrayList<>(PENDING_CALLBACKS);
+            PENDING_CALLBACKS.clear();
+            requestInFlight = false;
+        }
+        Handler main = new Handler(Looper.getMainLooper());
+        for (Callback callback : callbacks) {
+            if (callback != null) main.post(() -> callback.onResult(value));
+        }
     }
 }
