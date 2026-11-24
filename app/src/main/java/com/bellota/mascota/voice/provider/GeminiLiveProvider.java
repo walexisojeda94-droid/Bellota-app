@@ -73,6 +73,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
     private volatile long credentialExpiresAt;
     private volatile String ephemeralToken;
     private volatile String sessionResumeHandle;
+    private volatile String activeInstructions;
     private volatile int recoveryCount;
     private final StringBuilder userTranscript = new StringBuilder();
     private final StringBuilder assistantTranscript = new StringBuilder();
@@ -99,6 +100,9 @@ public final class GeminiLiveProvider implements VoiceProvider {
         if (!closed.compareAndSet(true, false)) return;
         sessionConfig = config;
         recoveryCount = 0;
+        activeInstructions = null;
+        ephemeralToken = null;
+        sessionResumeHandle = null;
         synchronized (userTranscript) { userTranscript.setLength(0); assistantTranscript.setLength(0); recentContext.setLength(0); }
         notifyState(State.REQUESTING_CREDENTIAL, "Solicitando token efímero de Gemini Live.");
         openSession(false);
@@ -119,8 +123,10 @@ public final class GeminiLiveProvider implements VoiceProvider {
                             && !sessionResumeHandle.isEmpty() && tokenValue != null
                             && credentialExpiresAt > System.currentTimeMillis() / 1000L + 15L;
                     if (!resumeExisting) {
+                        String instructions = currentInstructions();
                         BellotaBackendClient.GeminiCredential credential =
-                                backend.createGeminiLiveToken(currentInstructions(), config.voice, config.toolDefinitionsJson);
+                                backend.createGeminiLiveToken(instructions, config.voice, config.toolDefinitionsJson);
+                        activeInstructions = instructions;
                         if (closed.get()) return;
                         tokenValue = credential.value;
                         ephemeralToken = credential.value;
@@ -255,8 +261,9 @@ public final class GeminiLiveProvider implements VoiceProvider {
                         .put("languageCode", "es-AR")
                         .put("voiceConfig", new JSONObject()
                                 .put("prebuiltVoiceConfig", new JSONObject().put("voiceName", "Puck")))));
+        String instructions = activeInstructions == null ? currentInstructions() : activeInstructions;
         setup.put("systemInstruction", new JSONObject().put("parts",
-                new JSONArray().put(new JSONObject().put("text", currentInstructions()))));
+                new JSONArray().put(new JSONObject().put("text", instructions))));
         setup.put("inputAudioTranscription", new JSONObject());
         setup.put("outputAudioTranscription", new JSONObject());
         JSONObject resume = new JSONObject();
@@ -579,6 +586,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
         toolNamesByCallId.clear();
         ephemeralToken = null;
         sessionResumeHandle = null;
+        activeInstructions = null;
         worker.shutdownNow();
     }
 }
