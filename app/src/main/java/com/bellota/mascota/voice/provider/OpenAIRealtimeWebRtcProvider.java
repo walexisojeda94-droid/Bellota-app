@@ -813,7 +813,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         }
         // Fetch the next ephemeral credential two minutes early. The current audio
         // session remains live while the backend issues it, reducing the handover gap.
-        long delayMs = Math.max(1000L, remainingMs - SESSION_RENEWAL_LEAD_TIME_MS);
+        long delayMs = RealtimeSessionRenewalPolicy.delayBeforeExpiry(remainingMs);
         Runnable timeout = () -> {
             sessionTimeout = null;
             if (!closed.get()) renewSession();
