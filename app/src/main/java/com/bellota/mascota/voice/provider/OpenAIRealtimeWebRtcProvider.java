@@ -59,6 +59,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private static final int MAX_RECOVERY_ATTEMPTS = 1;
     private static final int MAX_SDP_BYTES = 262144;
     private static final long OFFER_GATHER_TIMEOUT_MS = 10000L;
+    private static final long SESSION_RENEWAL_LEAD_TIME_MS = 120000L;
     private static final Object FACTORY_LOCK = new Object();
     private static boolean factoryInitialized;
 
@@ -74,6 +75,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private final AtomicLong attemptSequence = new AtomicLong(0L);
     private volatile long activeAttemptId;
     private final AtomicBoolean retryScheduled = new AtomicBoolean(false);
+    private final AtomicBoolean renewalInProgress = new AtomicBoolean(false);
     private final RealtimeSessionBudget sessionBudget = new RealtimeSessionBudget();
     private volatile int maxOutputTokens = RealtimeSessionBudget.MAX_OUTPUT_TOKENS_PER_RESPONSE;
     private volatile List<BellotaBackendClient.IceServerConfig> configuredIceServers = Collections.emptyList();
@@ -142,6 +144,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         offerSubmitted.set(false);
         retryCount.set(0);
         retryScheduled.set(false);
+        renewalInProgress.set(false);
         synchronized (completedUserTranscriptItems) { completedUserTranscriptItems.clear(); }
         clearPendingToolResponses();
         sessionBudget.reset();
@@ -159,23 +162,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             BellotaBackendClient.RealtimeCredential credential =
                     backend.createRealtimeClientSecret(instructionsForCurrentSession(config), config.voice);
             if (closed.get() || attempt != activeAttemptId) return;
-            configuredIceServers = credential.iceServers == null ? Collections.emptyList() : credential.iceServers;
-            maxOutputTokens = Math.max(1, Math.min(4096, credential.maxOutputTokens));
-            sessionMaxDurationMs = Math.max(60000L, Math.min(RealtimeSessionBudget.MAX_DURATION_SECONDS * 1000L, credential.sessionMaxDurationSeconds * 1000L));
-            sessionExpiresAtEpochSeconds = credential.sessionExpiresAtEpochSeconds;
-            notifyState(State.CONNECTING, "Preparando conexión WebRTC.");
-            synchronized (resourceLock) {
-                if (closed.get() || attempt != activeAttemptId) return;
-                initializeWebRtc();
-                if (closed.get() || attempt != activeAttemptId) return;
-                createPeerConnection(attempt);
-                if (closed.get() || attempt != activeAttemptId) return;
-                createAudioAndDataTracks(attempt);
-            }
-            if (closed.get() || attempt != activeAttemptId) return;
-            // Set the ephemeral secret before SDP gathering can complete asynchronously.
-            exchangeSecret = credential.value;
-            createOffer(attempt);
+            establishTransport(config, credential, attempt);
         } catch (BellotaBackendClient.BackendException error) {
             if (attempt == activeAttemptId) {
                 boolean permanentBackendFailure = "provider_authentication".equals(error.code)
@@ -190,6 +177,31 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                 fail(error instanceof IOException ? Failure.NETWORK : Failure.AUDIO, true,
                         safeMessage(error));
         }
+    }
+
+    /** Applies an already-issued credential to a new transport attempt. */
+    private void establishTransport(SessionConfig config,
+                                    BellotaBackendClient.RealtimeCredential credential,
+                                    long attempt) throws Exception {
+        if (closed.get() || attempt != activeAttemptId) return;
+        configuredIceServers = credential.iceServers == null ? Collections.emptyList() : credential.iceServers;
+        maxOutputTokens = Math.max(1, Math.min(4096, credential.maxOutputTokens));
+        sessionMaxDurationMs = Math.max(60000L, Math.min(RealtimeSessionBudget.MAX_DURATION_SECONDS * 1000L,
+                credential.sessionMaxDurationSeconds * 1000L));
+        sessionExpiresAtEpochSeconds = credential.sessionExpiresAtEpochSeconds;
+        notifyState(State.CONNECTING, "Preparando conexión WebRTC.");
+        synchronized (resourceLock) {
+            if (closed.get() || attempt != activeAttemptId) return;
+            initializeWebRtc();
+            if (closed.get() || attempt != activeAttemptId) return;
+            createPeerConnection(attempt);
+            if (closed.get() || attempt != activeAttemptId) return;
+            createAudioAndDataTracks(attempt);
+        }
+        if (closed.get() || attempt != activeAttemptId) return;
+        // Set the ephemeral secret before SDP gathering can complete asynchronously.
+        exchangeSecret = credential.value;
+        createOffer(attempt);
     }
 
     private volatile String exchangeSecret;
@@ -701,6 +713,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     }
 
     private synchronized void fail(Failure failure, boolean recoverable, String detail) {
+        renewalInProgress.set(false);
         if (closed.get() || retryScheduled.get()) return;
         if (recoverable && retryCount.getAndIncrement() < MAX_RECOVERY_ATTEMPTS) {
             retryScheduled.set(true);
@@ -789,7 +802,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     }
 
     private void scheduleSessionTimeout() {
-        if (sessionTimeout != null) return;
+        if (sessionTimeout != null || renewalInProgress.get()) return;
         long remainingMs = sessionMaxDurationMs;
         if (sessionExpiresAtEpochSeconds > 0L) {
             remainingMs = (sessionExpiresAtEpochSeconds - System.currentTimeMillis() / 1000L) * 1000L;
@@ -798,9 +811,11 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
             fail(Failure.SESSION_EXPIRED, false, "La sesión ya alcanzó su vencimiento en el servidor.");
             return;
         }
-        // Close a few seconds before the server-enforced expiry to avoid an abrupt provider disconnect.
-        long delayMs = Math.max(1000L, remainingMs - 5000L);
+        // Fetch the next ephemeral credential two minutes early. The current audio
+        // session remains live while the backend issues it, reducing the handover gap.
+        long delayMs = Math.max(1000L, remainingMs - SESSION_RENEWAL_LEAD_TIME_MS);
         Runnable timeout = () -> {
+            sessionTimeout = null;
             if (!closed.get()) renewSession();
         };
         sessionTimeout = timeout;
@@ -808,30 +823,79 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     }
 
     /**
-     * Opens a fresh ephemeral Realtime session before the current server session expires.
-     * The foreground owner remains alive; only WebRTC transport resources are replaced.
+     * Prefetches a fresh credential while the current WebRTC session is still usable.
+     * Only after the credential is ready does the provider replace the media transport.
      */
     private void renewSession() {
-        if (closed.get()) return;
-        connected = false;
-        sessionTimeout = null;
-        activeAttemptId = attemptSequence.incrementAndGet();
-        cancelIceDisconnectTimeout();
-        mainHandler.removeCallbacks(negotiationTimeout);
-        HttpURLConnection connection = activeHttpConnection;
-        if (connection != null) connection.disconnect();
-        clearPendingToolResponses();
-        sessionBudget.reset();
-        notifyState(State.RECONNECTING, "Renovando la sesión segura de voz antes de su vencimiento.");
-        releaseResourcesAsync(() -> {
-            if (closed.get()) return;
-            ensureWorker();
-            mainHandler.post(() -> {
-                if (closed.get()) return;
-                mainHandler.removeCallbacks(negotiationTimeout);
-                mainHandler.postDelayed(negotiationTimeout, 60000L);
-                executeWorker(() -> establishSession(sessionConfig));
-            });
+        if (closed.get() || !renewalInProgress.compareAndSet(false, true)) return;
+        final long previousAttempt = activeAttemptId;
+        final SessionConfig config = sessionConfig;
+        executeWorker(() -> {
+            try {
+                BellotaBackendClient backend = new BellotaBackendClient(backendUrl, tokenStore);
+                BellotaBackendClient.RealtimeCredential credential =
+                        backend.createRealtimeClientSecret(instructionsForCurrentSession(config), config.voice);
+                if (closed.get() || previousAttempt != activeAttemptId) {
+                    renewalInProgress.set(false);
+                    return;
+                }
+                mainHandler.post(() -> {
+                    if (closed.get() || previousAttempt != activeAttemptId) {
+                        renewalInProgress.set(false);
+                        return;
+                    }
+                    final long nextAttempt = attemptSequence.incrementAndGet();
+                    activeAttemptId = nextAttempt;
+                    connected = false;
+                    cancelIceDisconnectTimeout();
+                    mainHandler.removeCallbacks(negotiationTimeout);
+                    clearPendingToolResponses();
+                    notifyState(State.RECONNECTING,
+                            "Credencial renovada. Cambiando la conexión antes del vencimiento.");
+                    HttpURLConnection connection = activeHttpConnection;
+                    if (connection != null) connection.disconnect();
+                    releaseResourcesAsync(() -> {
+                        if (closed.get() || nextAttempt != activeAttemptId) return;
+                        mainHandler.post(() -> {
+                            if (closed.get() || nextAttempt != activeAttemptId) return;
+                            mainHandler.removeCallbacks(negotiationTimeout);
+                            mainHandler.postDelayed(negotiationTimeout, 60000L);
+                            executeWorker(() -> {
+                                try {
+                                    sessionBudget.reset();
+                                    establishTransport(config, credential, nextAttempt);
+                                    renewalInProgress.set(false);
+                                } catch (Exception error) {
+                                    renewalInProgress.set(false);
+                                    if (nextAttempt == activeAttemptId)
+                                        fail(error instanceof IOException ? Failure.NETWORK : Failure.AUDIO,
+                                                true, safeMessage(error));
+                                }
+                            });
+                        });
+                    });
+                });
+            } catch (BellotaBackendClient.BackendException error) {
+                if (previousAttempt != activeAttemptId || closed.get()) {
+                    renewalInProgress.set(false);
+                    return;
+                }
+                boolean permanentBackendFailure = "provider_authentication".equals(error.code)
+                        || "provider_quota".equals(error.code)
+                        || "server_not_configured".equals(error.code);
+                boolean recoverable = !permanentBackendFailure
+                        && (error.httpStatus == 429 || error.httpStatus >= 500);
+                renewalInProgress.set(false);
+                fail(mapBackendFailure(error), recoverable, error.getMessage());
+            } catch (Exception error) {
+                if (previousAttempt != activeAttemptId || closed.get()) {
+                    renewalInProgress.set(false);
+                    return;
+                }
+                renewalInProgress.set(false);
+                fail(error instanceof IOException ? Failure.NETWORK : Failure.AUDIO,
+                        true, safeMessage(error));
+            }
         });
     }
 
@@ -848,6 +912,7 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
         clearPendingToolResponses();
         retryTimeout = null;
         retryScheduled.set(false);
+        renewalInProgress.set(false);
         sessionTimeout = null;
     }
 
