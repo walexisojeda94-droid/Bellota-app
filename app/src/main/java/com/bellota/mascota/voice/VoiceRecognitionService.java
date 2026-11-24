@@ -73,6 +73,9 @@ public class VoiceRecognitionService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         createNotificationChannel();
+        // startForegroundService() must be promoted immediately on Android 8+.
+        // Doing this in onCreate also covers start/stop command races during recovery.
+        ensureForeground();
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
