@@ -300,7 +300,7 @@ public final class VoiceSessionService extends Service {
                             if (stillPending && current != null && current.isToolCallCurrent(callId))
                                 current.sendToolResult(callId,
                                         "La interfaz de Bellota no está disponible para ejecutar esta acción en este momento.", true);
-                        }, 10000L);
+                        }, 25000L);
                     }
                     @Override public void onLocalFallbackRequested(VoiceProvider.Failure reason, String detail) {
                         emit("state", VoiceProvider.State.RECONNECTING.name(),

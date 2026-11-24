@@ -41,6 +41,7 @@ import com.bellota.mascota.voice.provider.VoiceProviderManager;
 import com.bellota.mascota.voice.provider.OpenAIRealtimeWebRtcProvider;
 import com.bellota.mascota.voice.auth.SecureTokenStore;
 import com.bellota.mascota.weather.WeatherService;
+import com.bellota.mascota.voice.tools.BellotaToolCatalog;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import com.bellota.mascota.local.ConversationMemory;
@@ -1039,6 +1040,19 @@ public class MainActivity extends Activity implements SensorEventListener {
                     + ". Hoy es " + new SimpleDateFormat("EEEE d 'de' MMMM", new Locale("es", "AR")).format(now) + ".");
             return;
         }
+        if (VoiceCommandIntent.isVolumeChangeRequest(utterance)) {
+            AudioManager audio = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (audio == null) { speakIfEnabled("No pude acceder al volumen del teléfono."); return; }
+            int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            int current = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
+            int requested = VoiceCommandIntent.requestedVolumePercent(utterance);
+            int target = requested >= 0 ? Math.round(max * requested / 100f)
+                    : Math.max(0, Math.min(max, current + (VoiceCommandIntent.volumeChangeDelta(utterance) * max / 100)));
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0);
+            int actual = max <= 0 ? 0 : Math.round(audio.getStreamVolume(AudioManager.STREAM_MUSIC) * 100f / max);
+            speakIfEnabled("Ajusté el volumen multimedia al " + actual + " por ciento.");
+            return;
+        }
         if (VoiceCommandIntent.isVolumeQuery(utterance)) {
             AudioManager audio = (AudioManager) getSystemService(AUDIO_SERVICE);
             speakIfEnabled("El volumen multimedia está al "
@@ -1062,44 +1076,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private JSONArray buildBellotaTools() throws org.json.JSONException {
-        JSONArray definitions = new JSONArray();
-        definitions.put(new JSONObject()
-                .put("name", "get_bellota_status")
-                .put("description", "Consulta el estado actual de Bellota: ánimo, energía, diversión y si está despierta.")
-                .put("inputSchema", new JSONObject().put("type", "object").put("properties", new JSONObject())));
-        definitions.put(new JSONObject()
-                .put("name", "set_bellota_emotion")
-                .put("description", "Cambia la expresión emocional visible de Bellota. No la despierta si está dormida.")
-                .put("inputSchema", new JSONObject().put("type", "object")
-                        .put("properties", new JSONObject().put("emotion", new JSONObject()
-                                .put("type", "string").put("enum", new JSONArray()
-                                        .put("neutral").put("happy").put("thinking").put("surprised")
-                                        .put("sleepy").put("calm").put("curious").put("angry").put("bored").put("offended"))))
-                        .put("required", new JSONArray().put("emotion"))));
-        definitions.put(new JSONObject()
-                .put("name", "speak_as_bellota")
-                .put("description", "Hace que Bellota diga una frase breve en voz alta.")
-                .put("inputSchema", new JSONObject().put("type", "object")
-                        .put("properties", new JSONObject().put("text", new JSONObject()
-                                .put("type", "string").put("description", "Frase de hasta 240 caracteres.")))
-                        .put("required", new JSONArray().put("text"))));
-        definitions.put(new JSONObject()
-                .put("name", "interact_with_bellota")
-                .put("description", "Registra una interacción del usuario para actualizar el vínculo y el estado de Bellota.")
-                .put("inputSchema", new JSONObject().put("type", "object")
-                        .put("properties", new JSONObject().put("kind", new JSONObject()
-                                .put("type", "string").put("enum", new JSONArray()
-                                        .put("attention").put("caress").put("affectionate").put("apology"))))
-                        .put("required", new JSONArray().put("kind"))));
-        definitions.put(new JSONObject()
-                .put("name", "play_with_bellota")
-                .put("description", "Inicia un minijuego visual con Bellota.")
-                .put("inputSchema", new JSONObject().put("type", "object")
-                        .put("properties", new JSONObject().put("game", new JSONObject()
-                                .put("type", "string").put("enum", new JSONArray()
-                                        .put("ball").put("bubbles").put("fly").put("stars"))))
-                        .put("required", new JSONArray().put("game"))));
-        return definitions;
+        return BellotaToolCatalog.definitions();
     }
 
     private boolean isCurrentToolCall(VoiceProviderManager manager, String callId) {
@@ -1111,6 +1088,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                                       VoiceProviderManager manager, String callId) throws Exception {
         if (!isCurrentToolCall(manager, callId))
             throw new Exception("La solicitud pertenece a una sesión que ya terminó.");
+        if ("get_weather".equals(name)) return executeWeatherTool(manager, callId);
         if (Looper.myLooper() == Looper.getMainLooper())
             return executeBellotaToolOnMainThread(name, arguments);
         AtomicReference<String> result = new AtomicReference<>();
@@ -1129,7 +1107,53 @@ public class MainActivity extends Activity implements SensorEventListener {
         return result.get();
     }
 
+    private String executeWeatherTool(VoiceProviderManager manager, String callId) throws Exception {
+        if (!isCurrentToolCall(manager, callId))
+            throw new Exception("La solicitud pertenece a una sesión que ya terminó.");
+        CountDownLatch completed = new CountDownLatch(1);
+        AtomicReference<String> response = new AtomicReference<>();
+        WeatherService.fetch(getApplicationContext(), value -> {
+            response.set(value);
+            completed.countDown();
+        });
+        if (!completed.await(22000L, TimeUnit.MILLISECONDS))
+            throw new Exception("La consulta del clima tardó demasiado. Podés volver a intentarlo.");
+        if (!isCurrentToolCall(manager, callId))
+            throw new Exception("La sesión terminó antes de completar la consulta del clima.");
+        return response.get() == null ? "No pude obtener el clima en este momento." : response.get();
+    }
+
     private String executeBellotaToolOnMainThread(String name, JSONObject args) throws Exception {
+        if ("get_battery_status".equals(name)) {
+            BatteryManager battery = (BatteryManager) getSystemService(BATTERY_SERVICE);
+            int level = battery == null ? -1 : battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+            return level >= 0 ? "La batería del dispositivo está al " + level + " por ciento."
+                    : "Android no informó el nivel de batería.";
+        }
+        if ("get_device_volume".equals(name)) {
+            AudioManager audio = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (audio == null) throw new Exception("El control de audio no está disponible.");
+            int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            int current = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
+            return "El volumen multimedia está al " + (max <= 0 ? 0 : Math.round(current * 100f / max)) + " por ciento.";
+        }
+        if ("set_device_volume".equals(name)) {
+            AudioManager audio = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (audio == null) throw new Exception("El control de audio no está disponible.");
+            if (!args.has("percent") || args.isNull("percent")) throw new Exception("Falta el porcentaje de volumen.");
+            int percent = args.getInt("percent");
+            if (percent < 0 || percent > 100) throw new Exception("El volumen debe estar entre 0 y 100 por ciento.");
+            int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            int target = Math.round(max * percent / 100f);
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0);
+            int actual = max <= 0 ? 0 : Math.round(audio.getStreamVolume(AudioManager.STREAM_MUSIC) * 100f / max);
+            return "Volumen multimedia ajustado al " + actual + " por ciento.";
+        }
+        if ("get_current_datetime".equals(name)) {
+            Date now = new Date();
+            return "Son las " + new SimpleDateFormat("HH:mm", new Locale("es", "AR")).format(now)
+                    + ". Hoy es " + new SimpleDateFormat("EEEE d 'de' MMMM 'de' yyyy", new Locale("es", "AR")).format(now) + ".";
+        }
         if ("get_bellota_status".equals(name)) {
             String mood = eyes == null ? "unknown" : eyes.getMood().name().toLowerCase(Locale.ROOT);
             return "Estado: " + (isAsleep() ? "durmiendo" : "despierta")

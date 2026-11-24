@@ -1,5 +1,8 @@
 package com.bellota.mascota.local;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 /** Interpreta órdenes explícitas de voz sin activar acciones por una palabra incidental. */
 public final class VoiceCommandIntent {
     private VoiceCommandIntent() { }
@@ -58,6 +61,35 @@ public final class VoiceCommandIntent {
                 || utterance.startsWith("que volumen tiene")
                 || utterance.startsWith("a cuanto esta el volumen")
                 || utterance.startsWith("cuanto volumen tiene el telefono");
+    }
+
+    public static boolean isVolumeChangeRequest(Utterance utterance) {
+        if (utterance == null || utterance.isEmpty()) return false;
+        return utterance.startsWith("subi el volumen") || utterance.startsWith("subi volumen")
+                || utterance.startsWith("sube el volumen") || utterance.startsWith("sube volumen")
+                || utterance.startsWith("baja el volumen") || utterance.startsWith("baja volumen")
+                || utterance.startsWith("bajame el volumen") || utterance.startsWith("subime el volumen")
+                || utterance.startsWith("pone el volumen") || utterance.startsWith("pon el volumen")
+                || utterance.startsWith("ajusta el volumen") || utterance.startsWith("ajustame el volumen")
+                || utterance.startsWith("volumen al") || utterance.startsWith("volumen en");
+    }
+
+    /** Porcentaje explícito, o -1 cuando la orden es relativa. */
+    public static int requestedVolumePercent(Utterance utterance) {
+        if (utterance == null) return -1;
+        Matcher matcher = Pattern.compile("(?:volumen|sonido).*?(\\d{1,3})").matcher(utterance.text);
+        if (!matcher.find()) return -1;
+        try {
+            int value = Integer.parseInt(matcher.group(1));
+            return value >= 0 && value <= 100 ? value : -1;
+        } catch (NumberFormatException ignored) { return -1; }
+    }
+
+    /** Incremento porcentual cuando no se indicó un valor exacto. */
+    public static int volumeChangeDelta(Utterance utterance) {
+        if (utterance == null) return 0;
+        return utterance.startsWith("subi") || utterance.startsWith("sube")
+                || utterance.startsWith("subime") ? 10 : -10;
     }
 
     private static boolean matches(Utterance utterance, String command) {
