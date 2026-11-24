@@ -15,7 +15,6 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -32,9 +31,7 @@ public final class WeatherService {
     private static final long MAX_CACHE_AGE_MS = 6L * 60L * 60L * 1000L;
     private static final long LOCATION_TIMEOUT_MS = 10000L;
     private static final long MAX_FIX_AGE_MS = 2L * 60L * 1000L;
-    private static final Object REQUEST_LOCK = new Object();
-    private static final ArrayList<Callback> PENDING_CALLBACKS = new ArrayList<>();
-    private static boolean requestInFlight;
+    private static final SingleFlightCallbacks<Callback> REQUESTS = new SingleFlightCallbacks<>();
     private static final ExecutorService WEATHER_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "Bellota-Weather");
         thread.setDaemon(true);
@@ -44,11 +41,7 @@ public final class WeatherService {
 
     public static void fetch(Context context, Callback callback) {
         if (context == null || callback == null) return;
-        synchronized (REQUEST_LOCK) {
-            PENDING_CALLBACKS.add(callback);
-            if (requestInFlight) return;
-            requestInFlight = true;
-        }
+        if (!REQUESTS.register(callback)) return;
         Context app = context.getApplicationContext();
         Location known = lastLocation(app);
         if (known != null) {
@@ -223,12 +216,7 @@ public final class WeatherService {
     }
 
     private static void completeRequest(String value) {
-        ArrayList<Callback> callbacks;
-        synchronized (REQUEST_LOCK) {
-            callbacks = new ArrayList<>(PENDING_CALLBACKS);
-            PENDING_CALLBACKS.clear();
-            requestInFlight = false;
-        }
+        List<Callback> callbacks = REQUESTS.complete();
         Handler main = new Handler(Looper.getMainLooper());
         for (Callback callback : callbacks) {
             if (callback != null) main.post(() -> callback.onResult(value));
