@@ -16,7 +16,7 @@ public final class ConversationMemory {
     public interface Store {
         String get(String key);
         void put(String key, String value);
-        void clear();
+        boolean clear();
     }
 
     public static final long LONG_SILENCE_MS = 6L * 60 * 60 * 1000;
@@ -38,7 +38,7 @@ public final class ConversationMemory {
         return new ConversationMemory(new Store() {
             @Override public String get(String key) { return map.get(key); }
             @Override public void put(String key, String value) { map.put(key, value); }
-            @Override public void clear() { map.clear(); }
+            @Override public boolean clear() { map.clear(); return true; }
         });
     }
 
