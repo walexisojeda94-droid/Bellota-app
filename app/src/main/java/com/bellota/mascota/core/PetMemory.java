@@ -49,6 +49,7 @@ public final class PetMemory {
     private static final AtomicInteger FAILED_WRITES = new AtomicInteger();
     private static final AtomicInteger REJECTED_WRITES = new AtomicInteger();
     private static final AtomicBoolean CLEARING = new AtomicBoolean(false);
+    private static final AtomicBoolean LAST_CLEAR_SUCCESS = new AtomicBoolean(false);
     private static final String ANDROID_KEY_STORE = "AndroidKeyStore";
     private static final int GCM_TAG_BITS = 128;
     private static final int GCM_IV_BYTES = 12;
@@ -158,10 +159,12 @@ public final class PetMemory {
     public static int getPendingWriteCount() { return PENDING_WRITES.get(); }
     public static int getFailedWriteCount() { return FAILED_WRITES.get(); }
     public static int getRejectedWriteCount() { return REJECTED_WRITES.get(); }
+    public static boolean wasLastClearSuccessful() { return LAST_CLEAR_SUCCESS.get(); }
 
     /** Deletes active and quarantined diary files before removing its encryption keys. */
     public void clear() {
         if (!CLEARING.compareAndSet(false, true)) return;
+        LAST_CLEAR_SUCCESS.set(false);
         boolean queued = enqueue(() -> {
             try {
                 synchronized (JOURNAL_LOCK) {
@@ -178,7 +181,11 @@ public final class PetMemory {
                             return;
                         }
                     }
-                    deleteAllKeys();
+                    if (!deleteAllKeys()) {
+                        FAILED_WRITES.incrementAndGet();
+                        return;
+                    }
+                    LAST_CLEAR_SUCCESS.set(true);
                 }
             } finally {
                 CLEARING.set(false);
@@ -209,7 +216,7 @@ public final class PetMemory {
         });
     }
 
-    private static void deleteAllKeys() {
+    private static boolean deleteAllKeys() {
         try {
             KeyStore keyStore = KeyStore.getInstance(ANDROID_KEY_STORE);
             keyStore.load(null);
@@ -217,7 +224,8 @@ public final class PetMemory {
                 String alias = KEY_ALIAS_PREFIX + version;
                 if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias);
             }
-        } catch (Exception ignored) { }
+            return true;
+        } catch (Exception ignored) { return false; }
     }
 
     private static byte[] appendLine(byte[] previous, byte[] line) {
