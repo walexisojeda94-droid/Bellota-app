@@ -128,7 +128,14 @@ public class MainActivity extends Activity implements SensorEventListener {
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         buildPetScreen();
         applySleepVisuals();
-        localVoice = new LocalVoice(this, (ready, detail) -> { });
+        localVoice = new LocalVoice(this, (ready, detail) -> {
+            if (detail != null) DebugLog.i("BellotaTTS", detail);
+            if (!ready && !isFinishing()) {
+                Toast.makeText(MainActivity.this, detail == null
+                        ? "No hay una voz española disponible en el dispositivo." : detail,
+                        Toast.LENGTH_LONG).show();
+            }
+        });
         localVoice.setOnSpeechFinished(() -> {
             if (!isFinishing()) resumeLocalRecognition();
         });
