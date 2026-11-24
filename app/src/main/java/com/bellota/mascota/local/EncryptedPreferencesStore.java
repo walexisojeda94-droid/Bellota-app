@@ -39,7 +39,6 @@ public final class EncryptedPreferencesStore implements ConversationMemory.Store
             if (stored == null) return null;
             if (!stored.startsWith(PREFIX)) {
                 if (!writeEncryptedLocked(key, stored)) {
-                    resetAllMemory();
                     return null;
                 }
                 return stored;
@@ -55,7 +54,6 @@ public final class EncryptedPreferencesStore implements ConversationMemory.Store
                 cipher.init(Cipher.DECRYPT_MODE, getExistingKey(), new GCMParameterSpec(TAG_BITS, iv));
                 return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
             } catch (Exception invalidatedOrDamaged) {
-                resetAllMemory();
                 return null;
             }
         }
@@ -78,7 +76,6 @@ public final class EncryptedPreferencesStore implements ConversationMemory.Store
                 if (entry.getValue() instanceof String) {
                     String value = (String) entry.getValue();
                     if (!value.startsWith(PREFIX) && !writeEncryptedLocked(entry.getKey(), value)) {
-                        resetAllMemory();
                         return;
                     }
                 }
@@ -87,29 +84,22 @@ public final class EncryptedPreferencesStore implements ConversationMemory.Store
     }
 
     private boolean writeEncryptedLocked(String key, String value) {
-        for (int attempt = 0; attempt < 2; attempt++) {
-            try {
-                Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-                cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
-                byte[] encrypted = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
-                byte[] iv = cipher.getIV();
-                if (iv == null || iv.length != IV_BYTES)
-                    throw new GeneralSecurityException("IV AES-GCM inválido.");
-                byte[] payload = new byte[iv.length + encrypted.length];
-                System.arraycopy(iv, 0, payload, 0, iv.length);
-                System.arraycopy(encrypted, 0, payload, iv.length, encrypted.length);
-                preferences.edit()
-                        .putString(key, PREFIX + Base64.encodeToString(payload, Base64.NO_WRAP))
-                        .apply();
-                return true;
-            } catch (GeneralSecurityException invalidatedKey) {
-                resetAllMemory();
-                if (attempt == 1) return false;
-            } catch (Exception storageFailure) {
-                return false;
-            }
+        try {
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
+            byte[] encrypted = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
+            byte[] iv = cipher.getIV();
+            if (iv == null || iv.length != IV_BYTES)
+                throw new GeneralSecurityException("IV AES-GCM inválido.");
+            byte[] payload = new byte[iv.length + encrypted.length];
+            System.arraycopy(iv, 0, payload, 0, iv.length);
+            System.arraycopy(encrypted, 0, payload, iv.length, encrypted.length);
+            return preferences.edit()
+                    .putString(key, PREFIX + Base64.encodeToString(payload, Base64.NO_WRAP))
+                    .commit();
+        } catch (Exception storageFailure) {
+            return false;
         }
-        return false;
     }
 
     private SecretKey getOrCreateKey() throws Exception {
@@ -119,7 +109,12 @@ public final class EncryptedPreferencesStore implements ConversationMemory.Store
             java.security.Key existing = keyStore.getKey(KEY_ALIAS, null);
             if (existing instanceof SecretKey) return (SecretKey) existing;
         } catch (Exception invalidated) {
-            if (keyStore.containsAlias(KEY_ALIAS)) keyStore.deleteEntry(KEY_ALIAS);
+            throw new GeneralSecurityException("La clave de memoria fue invalidada; los datos cifrados se conservaron.", invalidated);
+        }
+        for (Map.Entry<String, ?> entry : preferences.getAll().entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof String && ((String) value).startsWith(PREFIX))
+                throw new GeneralSecurityException("Falta la clave de memoria; no se reemplazará una clave perdida.");
         }
         KeyGenerator generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEY_STORE);
         generator.init(new KeyGenParameterSpec.Builder(KEY_ALIAS,
@@ -139,12 +134,16 @@ public final class EncryptedPreferencesStore implements ConversationMemory.Store
         return (SecretKey) key;
     }
 
-    private void resetAllMemory() {
-        preferences.edit().clear().apply();
-        try {
-            KeyStore keyStore = KeyStore.getInstance(ANDROID_KEY_STORE);
-            keyStore.load(null);
-            if (keyStore.containsAlias(KEY_ALIAS)) keyStore.deleteEntry(KEY_ALIAS);
-        } catch (Exception ignored) { }
+    /** Explicit user-requested deletion; never called as an automatic key-recovery strategy. */
+    public boolean clear() {
+        synchronized (lock) {
+            if (!preferences.edit().clear().commit()) return false;
+            try {
+                KeyStore keyStore = KeyStore.getInstance(ANDROID_KEY_STORE);
+                keyStore.load(null);
+                if (keyStore.containsAlias(KEY_ALIAS)) keyStore.deleteEntry(KEY_ALIAS);
+            } catch (Exception ignored) { }
+            return true;
+        }
     }
 }
