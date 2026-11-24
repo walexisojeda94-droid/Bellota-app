@@ -200,7 +200,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                     VoiceRecognitionService.stop(MainActivity.this);
                     new Thread(() -> {
                         boolean semanticCleared = conversationEngine == null
-                                || conversationEngine.memory().clearPersistentMemory();
+                                || conversationEngine.clearMemory();
                         if (petMemory != null) petMemory.clear();
                         boolean journalCleared = petMemory == null
                                 || (PetMemory.awaitPendingWrites(10000L) && PetMemory.wasLastClearSuccessful());
