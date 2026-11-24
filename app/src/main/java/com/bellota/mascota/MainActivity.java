@@ -33,6 +33,7 @@ import com.bellota.mascota.local.Utterance;
 import com.bellota.mascota.local.VoiceCommandIntent;
 import com.bellota.mascota.ui.EyePetView;
 import com.bellota.mascota.voice.VoiceRecognitionService;
+import com.bellota.mascota.voice.VoiceEventsReceiver;
 import com.bellota.mascota.voice.VoiceSessionService;
 import com.bellota.mascota.voice.LocalVoice;
 import com.bellota.mascota.voice.provider.VoiceProvider;
