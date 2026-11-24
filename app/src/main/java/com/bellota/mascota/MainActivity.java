@@ -1050,6 +1050,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                     : Math.max(0, Math.min(max, current + (VoiceCommandIntent.volumeChangeDelta(utterance) * max / 100)));
             audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0);
             int actual = max <= 0 ? 0 : Math.round(audio.getStreamVolume(AudioManager.STREAM_MUSIC) * 100f / max);
+            if (petMemory != null) petMemory.remember("volumen_dispositivo", actual + "%");
             speakIfEnabled("Ajusté el volumen multimedia al " + actual + " por ciento.");
             return;
         }
@@ -1112,12 +1113,17 @@ public class MainActivity extends Activity implements SensorEventListener {
             throw new Exception("La solicitud pertenece a una sesión que ya terminó.");
         CountDownLatch completed = new CountDownLatch(1);
         AtomicReference<String> response = new AtomicReference<>();
+        handler.post(() -> { if (eyes != null) eyes.setMood(EyePetView.Mood.THINKING); });
         WeatherService.fetch(getApplicationContext(), value -> {
+            if (eyes != null) eyes.setMood(EyePetView.Mood.HAPPY);
+            if (petMemory != null) petMemory.remember("consulta_clima", value);
             response.set(value);
             completed.countDown();
         });
-        if (!completed.await(22000L, TimeUnit.MILLISECONDS))
+        if (!completed.await(22000L, TimeUnit.MILLISECONDS)) {
+            handler.post(() -> { if (eyes != null) eyes.setMood(EyePetView.Mood.CALM); });
             throw new Exception("La consulta del clima tardó demasiado. Podés volver a intentarlo.");
+        }
         if (!isCurrentToolCall(manager, callId))
             throw new Exception("La sesión terminó antes de completar la consulta del clima.");
         return response.get() == null ? "No pude obtener el clima en este momento." : response.get();
@@ -1229,6 +1235,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (eyes != null) eyes.setMood(EyePetView.Mood.THINKING);
         WeatherService.fetch(this, response -> {
             if (eyes != null) eyes.setMood(EyePetView.Mood.HAPPY);
+            if (petMemory != null) petMemory.remember("consulta_clima", response);
             speakIfEnabled(response);
         });
     }
