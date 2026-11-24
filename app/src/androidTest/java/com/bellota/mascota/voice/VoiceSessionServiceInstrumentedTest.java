@@ -31,6 +31,26 @@ public class VoiceSessionServiceInstrumentedTest {
         return condition.evaluate();
     }
 
+    @Test(timeout = 30000L)
+    public void test00LocalVoiceServiceCanRestartImmediatelyAfterStop() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        try {
+            VoiceRecognitionService.pause(context);
+            assertTrue("El servicio local no llegó a foreground antes de detenerlo.",
+                    waitFor(VoiceRecognitionService::isForegroundService, 10000L));
+
+            // Reissue a foreground start immediately after stopService(). Android may
+            // deliver it to the same Service instance before onDestroy has completed.
+            VoiceRecognitionService.stop(context);
+            VoiceRecognitionService.pause(context);
+            assertTrue("El servicio local reutilizado no volvió a foreground.",
+                    waitFor(VoiceRecognitionService::isForegroundService, 10000L));
+        } finally {
+            VoiceRecognitionService.stop(context);
+            waitFor(() -> !VoiceRecognitionService.isForegroundService(), 5000L);
+        }
+    }
+
     @Test(timeout = 90000L) public void test01ForegroundOwnerRestoresAfterUnexpectedServiceTeardown() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SecureTokenStore tokenStore = new SecureTokenStore(context);
