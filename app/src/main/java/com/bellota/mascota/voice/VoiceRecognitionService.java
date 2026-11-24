@@ -201,6 +201,7 @@ public class VoiceRecognitionService extends Service {
                             sendStatus(status);
                             if (status != null && (status.startsWith("No hay un servicio de reconocimiento")
                                     || status.startsWith("No hay un reconocedor de voz local")
+                                    || status.startsWith("No hay un motor de reconocimiento on-device")
                                     || status.startsWith("Reconocimiento detenido: Android no concedió permiso"))) {
                                 stopRecognition();
                                 stopForeground(true);
