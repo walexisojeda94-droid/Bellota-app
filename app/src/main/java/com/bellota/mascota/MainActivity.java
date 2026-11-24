@@ -118,6 +118,14 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
     };
 
+    private final Runnable performanceSampler = new Runnable() {
+        @Override public void run() {
+            if (paused || isFinishing() || isDestroyed()) return;
+            DebugLog.i("BellotaPerformance", com.bellota.mascota.core.PerformanceSnapshot.capture(MainActivity.this));
+            handler.postDelayed(this, 60000L);
+        }
+    };
+
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         petLife = new PetLife(this);
@@ -1339,6 +1347,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         paused = false;
         handler.removeCallbacks(autonomousRoutine);
         handler.postDelayed(autonomousRoutine, 1800L);
+        handler.removeCallbacks(performanceSampler);
+        handler.post(performanceSampler);
         enterImmersiveMode();
         applySleepVisuals();
         if(sensorManager!=null&&lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL);
@@ -1350,6 +1360,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     @Override protected void onPause() {
         paused = true;
         handler.removeCallbacks(autonomousRoutine);
+        handler.removeCallbacks(performanceSampler);
 
         if (localVoice != null) localVoice.stop();
 
