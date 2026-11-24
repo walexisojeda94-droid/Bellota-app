@@ -153,7 +153,7 @@ public class ConversationMemoryTest {
         memory.setName("Alexis");
         LocalConversationEngine engine = new LocalConversationEngine(memory);
         memory.setOnlineMemorySharingEnabled(true);
-        assertTrue(engine.memoryContextForOnline().contains("nombre: Alexis"));
+        assertTrue(engine.memoryContextForOnline().contains("nombre: \"Alexis\""));
         memory.setOnlineMemorySharingEnabled(false);
         assertEquals("", engine.memoryContextForOnline());
     }
