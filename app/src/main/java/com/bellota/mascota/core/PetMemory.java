@@ -119,11 +119,16 @@ public final class PetMemory {
                     }
                 } else if (isV2Journal()) {
                     byte[] current = pruneExpired(readV2Plaintext(), now);
+                    boolean legacyKeyWasUsable = journal.exists();
                     writeEncryptedV3(trimToLimit(appendLine(current, line)), now, CURRENT_KEY_VERSION);
+                    if (legacyKeyWasUsable) deleteKey(1);
                 } else {
                     // One-time migration from plaintext JSONL or the original BME1 envelope.
+                    boolean encryptedLegacy = hasMagicAtStart(MAGIC_V1);
                     byte[] previous = pruneExpired(readLegacyPlaintext(), now);
+                    boolean legacyKeyWasUsable = encryptedLegacy && journal.exists();
                     writeEncryptedV3(trimToLimit(appendLine(previous, line)), now, CURRENT_KEY_VERSION);
+                    if (legacyKeyWasUsable) deleteKey(1);
                 }
             }
         } catch (Exception error) {
