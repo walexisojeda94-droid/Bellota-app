@@ -435,8 +435,7 @@ async function createGeminiLiveToken(request, env) {
     liveConnectConstraints: {
       model: "models/" + GEMINI_LIVE_MODEL,
       config
-    },
-    httpOptions: { apiVersion: "v1beta" }
+    }
   };
   let response;
   try {
