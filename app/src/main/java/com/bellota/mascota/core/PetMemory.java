@@ -328,6 +328,14 @@ public final class PetMemory {
     }
 
     private void appendEncryptedRecord(byte[] plaintext, int version) throws Exception {
+        try {
+            getExistingKey(version);
+        } catch (Exception missingOrInvalidatedKey) {
+            if (!quarantineUnreadableJournal())
+                throw new GeneralSecurityException("No se pudo preservar el diario cuya clave falta.", missingOrInvalidatedKey);
+            writeEncryptedV3(plaintext, System.currentTimeMillis(), CURRENT_KEY_VERSION);
+            return;
+        }
         byte[] record = encryptRecord(plaintext, version, false);
         try (RandomAccessFile output = new RandomAccessFile(journal, "rw")) {
             if (output.length() == 0) throw new GeneralSecurityException("No existe un diario BME3 para anexar.");
