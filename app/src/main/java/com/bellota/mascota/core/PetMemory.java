@@ -22,6 +22,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -47,6 +48,7 @@ public final class PetMemory {
     private static final AtomicInteger PENDING_WRITES = new AtomicInteger();
     private static final AtomicInteger FAILED_WRITES = new AtomicInteger();
     private static final AtomicInteger REJECTED_WRITES = new AtomicInteger();
+    private static final AtomicBoolean CLEARING = new AtomicBoolean(false);
     private static final String ANDROID_KEY_STORE = "AndroidKeyStore";
     private static final int GCM_TAG_BITS = 128;
     private static final int GCM_IV_BYTES = 12;
@@ -71,7 +73,10 @@ public final class PetMemory {
      * A single bounded writer preserves ordering and never falls back to the UI thread.
      */
     public void remember(String type, String detail) {
-        enqueue(() -> rememberNow(type, detail));
+        if (CLEARING.get()) return;
+        enqueue(() -> {
+            if (!CLEARING.get()) rememberNow(type, detail);
+        });
     }
 
     private synchronized void rememberNow(String type, String detail) {
@@ -126,7 +131,7 @@ public final class PetMemory {
         }
     }
 
-    private static void enqueue(Runnable operation) {
+    private static boolean enqueue(Runnable operation) {
         PENDING_WRITES.incrementAndGet();
         try {
             WRITER.execute(() -> {
@@ -134,9 +139,11 @@ public final class PetMemory {
                 catch (RuntimeException ignored) { FAILED_WRITES.incrementAndGet(); }
                 finally { PENDING_WRITES.decrementAndGet(); }
             });
+            return true;
         } catch (java.util.concurrent.RejectedExecutionException full) {
             PENDING_WRITES.decrementAndGet();
             REJECTED_WRITES.incrementAndGet();
+            return false;
         }
     }
 
@@ -154,22 +161,30 @@ public final class PetMemory {
 
     /** Deletes active and quarantined diary files before removing its encryption keys. */
     public void clear() {
-        enqueue(() -> {
-            synchronized (JOURNAL_LOCK) {
-                File[] files = journal.getParentFile().listFiles((dir, name) ->
-                        name.equals(journal.getName()) || name.equals(journal.getName() + ".bak")
-                                || name.startsWith(journal.getName() + ".locked."));
-                if (files != null) {
+        if (!CLEARING.compareAndSet(false, true)) return;
+        boolean queued = enqueue(() -> {
+            try {
+                synchronized (JOURNAL_LOCK) {
+                    File[] files = journal.getParentFile().listFiles((dir, name) ->
+                            name.equals(journal.getName()) || name.equals(journal.getName() + ".bak")
+                                    || name.startsWith(journal.getName() + ".locked."));
+                    if (files == null) {
+                        FAILED_WRITES.incrementAndGet();
+                        return;
+                    }
                     for (File file : files) {
                         if (file.exists() && !file.delete()) {
                             FAILED_WRITES.incrementAndGet();
                             return;
                         }
                     }
+                    deleteAllKeys();
                 }
-                deleteAllKeys();
+            } finally {
+                CLEARING.set(false);
             }
         });
+        if (!queued) CLEARING.set(false);
     }
 
     /** Re-encrypts the complete diary with a fresh versioned Keystore key. */
@@ -182,6 +197,7 @@ public final class PetMemory {
                     byte[] plaintext = isV3Journal() ? readV3Plaintext()
                             : isV2Journal() ? readV2Plaintext() : readLegacyPlaintext();
                     if (!journal.exists()) return; // key loss/corruption was quarantined; preserve its ciphertext
+                    if (oldVersion >= 16) return;
                     int nextVersion = Math.max(CURRENT_KEY_VERSION, oldVersion + 1);
                     getOrCreateKey(nextVersion);
                     writeEncryptedV3(plaintext, System.currentTimeMillis(), nextVersion);
@@ -282,8 +298,9 @@ public final class PetMemory {
             while (input.available() > 0) {
                 if (input.available() < 4) break; // incomplete trailing length from an interrupted append
                 int recordLength = input.readInt();
-                if (recordLength < GCM_IV_BYTES + 16 || recordLength > MAX_ENTRY_BYTES + 64
-                        || input.available() < recordLength) break;
+                if (recordLength < GCM_IV_BYTES + 16 || recordLength > MAX_ENTRY_BYTES + 64)
+                    throw new GeneralSecurityException("Longitud de registro BME2 inválida.");
+                if (input.available() < recordLength) break;
                 byte[] record = new byte[recordLength];
                 input.readFully(record);
                 byte[] iv = Arrays.copyOfRange(record, 0, GCM_IV_BYTES);
@@ -311,8 +328,9 @@ public final class PetMemory {
             while (input.available() > 0) {
                 if (input.available() < 4) break;
                 int recordLength = input.readInt();
-                if (recordLength < GCM_IV_BYTES + 16 || recordLength > MAX_ENTRY_BYTES + 64
-                        || input.available() < recordLength) break;
+                if (recordLength < GCM_IV_BYTES + 16 || recordLength > MAX_ENTRY_BYTES + 64)
+                    throw new GeneralSecurityException("Longitud de registro BME3 inválida.");
+                if (input.available() < recordLength) break;
                 byte[] record = new byte[recordLength];
                 input.readFully(record);
                 byte[] iv = Arrays.copyOfRange(record, 0, GCM_IV_BYTES);
@@ -350,8 +368,9 @@ public final class PetMemory {
             output.seek(V3_HEADER_BYTES);
             while (output.getFilePointer() + 4 <= output.length()) {
                 int length = output.readInt();
-                if (length < GCM_IV_BYTES + 16 || length > MAX_ENTRY_BYTES + 64
-                        || output.getFilePointer() + length > output.length()) break;
+                if (length < GCM_IV_BYTES + 16 || length > MAX_ENTRY_BYTES + 64)
+                    throw new GeneralSecurityException("Longitud de registro BME3 inválida.");
+                if (output.getFilePointer() + length > output.length()) break;
                 output.seek(output.getFilePointer() + length);
                 validEnd = output.getFilePointer();
             }
