@@ -161,11 +161,15 @@ public class ConversationMemoryTest {
     @Test public void sensitiveMemoryIsNeverIncludedInOnlineContext() {
         ConversationMemory memory = ConversationMemory.inMemory();
         memory.addLike("un medicamento para la presión");
+        memory.addLike("un partido político");
+        memory.addLike("mi correo alex@example.com");
         memory.addLike("el mate");
         memory.setOnlineMemorySharingEnabled(true);
         LocalConversationEngine engine = new LocalConversationEngine(memory);
         String context = engine.memoryContextForOnline();
         assertFalse(context.contains("medicamento"));
+        assertFalse(context.contains("partido político"));
+        assertFalse(context.contains("alex@example.com"));
         assertTrue(context.contains("el mate"));
     }
 
