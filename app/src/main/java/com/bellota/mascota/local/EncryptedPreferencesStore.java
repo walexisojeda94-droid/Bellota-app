@@ -96,7 +96,8 @@ public final class EncryptedPreferencesStore implements ConversationMemory.Store
             System.arraycopy(encrypted, 0, payload, iv.length, encrypted.length);
             return preferences.edit()
                     .putString(key, PREFIX + Base64.encodeToString(payload, Base64.NO_WRAP))
-                    .commit();
+                    .apply();
+            return true;
         } catch (Exception storageFailure) {
             return false;
         }
