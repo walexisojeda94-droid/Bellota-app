@@ -3,6 +3,8 @@ on:
   push:
     branches: [main, 'fix/xiaozhi-voice-pipeline', 'fix/revision-6-backend-persistence', 'fix/revision-7-build-dependencies-tests']
   workflow_dispatch:
+  schedule:
+    - cron: '23 8 * * 1'
   pull_request:
     branches: [main]
 concurrency:
@@ -12,6 +14,13 @@ concurrency:
 env:
   ANDROID_HOME: /usr/local/lib/android/sdk
 jobs:
+  osv-vulnerability-scan:
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.1
+    with:
+      scan-args: |-
+        --recursive
+        ./
+
   dependency-review:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -171,7 +180,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bellota-sbom-cyclonedx
-          path: app/build/reports/bom.json
+          path: build/reports/cyclonedx/bom.json
           if-no-files-found: error
           retention-days: 90
       - name: Upload QA reports
