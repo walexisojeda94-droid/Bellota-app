@@ -8,6 +8,10 @@ def signingKeyAlias = System.getenv('BELLOTA_KEY_ALIAS')
 def signingKeyPassword = System.getenv('BELLOTA_KEY_PASSWORD')
 def hasReleaseSigning = signingStoreFile && signingStorePassword && signingKeyAlias && signingKeyPassword
 
+dependencyLocking {
+    lockAllConfigurations()
+}
+
 android {
     buildFeatures {
         buildConfig true
