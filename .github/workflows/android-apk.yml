@@ -151,7 +151,7 @@ jobs:
       - name: Set up Go for OSV-Scanner
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.26.2'
       - name: Audit resolved dependencies with OSV-Scanner
         run: go run github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.7.1 scan source --recursive ./
       - name: Check permanent signing secrets
