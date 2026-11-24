@@ -221,7 +221,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
         String instructions = sessionConfig == null ? "" : sessionConfig.instructions;
         synchronized (recentContext) {
             if (recentContext.length() > 0)
-                instructions += "\\n\\nContexto reciente de continuidad (no repetir literalmente):\\n" + recentContext;
+                instructions += "\n\nContexto reciente de continuidad (no repetir literalmente):\n" + recentContext;
         }
         return instructions;
     }
