@@ -93,6 +93,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     };
     private boolean soundEnabled = true;
     private boolean waitingForWeatherPermission;
+    private boolean weatherRequestPending;
     private PlayfieldView playfield;
     private final PetVoiceLines lines = new PetVoiceLines();
     private final java.util.Random rnd = new java.util.Random();
@@ -1291,14 +1292,18 @@ public class MainActivity extends Activity implements SensorEventListener {
     @Override public void onAccuracyChanged(Sensor sensor,int accuracy){}
 
     private void requestWeather() {
+        if (weatherRequestPending) return;
         if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
                 checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             waitingForWeatherPermission = true;
             requestPermissions(new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION);
             return;
         }
+        weatherRequestPending = true;
         if (eyes != null) eyes.setMood(EyePetView.Mood.THINKING);
         WeatherService.fetch(this, response -> {
+            weatherRequestPending = false;
+            if (isFinishing() || isDestroyed()) return;
             if (eyes != null) eyes.setMood(EyePetView.Mood.HAPPY);
             if (petMemory != null) petMemory.remember("consulta_clima", response);
             speakIfEnabled(response);
