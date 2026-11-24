@@ -2,10 +2,10 @@ package com.bellota.mascota.local;
 
 /**
  * Resultado de una consulta. Distingue lo que se resolvió localmente de lo que
- * hay que delegar (clima, o modelo de lenguaje como XiaoZhi).
+ * hay que delegar a un servicio especializado (por ejemplo, el clima).
  */
 public final class Reply {
-    public enum Type { TEXT, NEEDS_WEATHER, NEEDS_AI }
+    public enum Type { TEXT, NEEDS_WEATHER }
 
     public final Type type;
     public final String text;
@@ -19,7 +19,6 @@ public final class Reply {
 
     public static Reply text(String text) { return new Reply(Type.TEXT, text, null); }
     public static Reply weather() { return new Reply(Type.NEEDS_WEATHER, null, null); }
-    public static Reply needsAi() { return new Reply(Type.NEEDS_AI, null, null); }
 
     public boolean isText() { return type == Type.TEXT; }
 
