@@ -137,6 +137,7 @@ public final class LocalConversationEngine {
      * Los valores son datos recordados del usuario, nunca instrucciones para el modelo.
      */
     public synchronized String memoryContextForOnline() {
+        if (!memory.isOnlineMemorySharingEnabled()) return "";
         StringBuilder summary = new StringBuilder();
         String name = memory.name();
         if (name != null) appendMemoryField(summary, "nombre", name);
@@ -155,8 +156,18 @@ public final class LocalConversationEngine {
     }
 
     private static void appendMemoryField(StringBuilder target, String key, String value) {
+        String safe = sanitizeMemoryValue(value);
+        if (safe.isEmpty() || containsSensitiveContent(safe) || target.length() + safe.length() > 600) return;
         if (target.length() > 0) target.append("; ");
-        target.append(key).append(": ").append(sanitizeMemoryValue(value));
+        target.append(key).append(": ").append(safe);
+    }
+
+    private static boolean containsSensitiveContent(String value) {
+        String lower = value.toLowerCase(Locale.ROOT);
+        return lower.matches("(?s).*\\b(salud|medicamento|medicación|diagnóstico|enfermedad|tratamiento|terapia|síntoma|síntomas|contraseña|password|dni|documento|domicilio|dirección|teléfono|tarjeta|cuenta bancaria|religión|política|partido político|orientación sexual|vida sexual)\\b.*")
+                || lower.matches("(?s).*\\b[\\w.%+-]+@[\\w.-]+\\.[a-z]{2,}\\b.*")
+                || lower.matches("(?s).*https?://\\S+.*")
+                || lower.matches("(?s).*\\b(?:\\+?\\d[\\d .()/-]{7,}\\d)\\b.*");
     }
 
     private static String joinLimited(java.util.List<String> values, int limit) {
@@ -174,6 +185,8 @@ public final class LocalConversationEngine {
         String clean = value.replaceAll("[\\p{Cntrl}]", " ").replaceAll("\\s+", " ").trim();
         return clean.length() > 120 ? clean.substring(0, 120) : clean;
     }
+
+    public synchronized void clearMemory() { memory.clearPersistentMemory(); }
 
     public ConversationMemory memory() { return memory; }
 
