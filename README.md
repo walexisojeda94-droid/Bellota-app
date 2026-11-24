@@ -56,7 +56,7 @@ Comandos locales:
 - El reintento de OpenAI es acotado. Tras el fallo se usa la voz local; no existe todavía failover OpenAI → Gemini.
 - La prueba de emuladores no sustituye la prueba física de audio, interrupciones, funcionamiento prolongado, cambios de red y segundo plano en los dispositivos objetivo.
 - La continuidad de voz online en segundo plano sigue pendiente.
-- Gemini Live y el cambio real OpenAI ↔ Gemini siguen pendientes.
+- La prueba real de audio y failover OpenAI → Gemini → local requiere un secreto Gemini válido y dispositivos físicos.
 - La certificación de BEL-001 a BEL-035 requiere disponer de los criterios formales originales de cada ticket. El estado trazable conocido se registra en `docs/revision-8-certificacion.md`.
 
 ## Documentación

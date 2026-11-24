@@ -37,8 +37,8 @@ La API de tokens efímeros y el endpoint WebSocket restringido deben tratarse co
 
 La integración implementada incluye:
 - secreto `GEMINI_API_KEY` solo en Cloudflare Worker (pendiente de cargar en el entorno de producción);
-- endpoint autenticado del Worker para emitir token efímero de un solo uso y acotado al modelo/configuración;
-- adaptador Android `GeminiLiveProvider` que implemente `VoiceProvider`;
+- endpoint autenticado `/v1/gemini/live-token` del Worker para emitir token efímero de un solo uso y acotado al modelo/configuración;
+- adaptador Android `GeminiLiveProvider` que implementa `VoiceProvider`;
 - captura y reproducción de audio, interrupciones, fin de turno, transcripciones y errores;
 - asociación de herramientas con proveedor y generación de sesión;
 - expiración, renovación y reconexión sin bucles;

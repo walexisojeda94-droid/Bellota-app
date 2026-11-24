@@ -30,6 +30,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 
 /**
  * Gemini Live native-audio transport. The API key never leaves the Cloudflare Worker:
@@ -70,6 +72,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
     private final StringBuilder userTranscript = new StringBuilder();
     private final StringBuilder assistantTranscript = new StringBuilder();
     private final StringBuilder recentContext = new StringBuilder();
+    private final Map<String, String> toolNamesByCallId = new ConcurrentHashMap<>();
     private volatile Runnable renewalTask;
 
     public GeminiLiveProvider(Context context, String backendUrl, SecureTokenStore tokenStore) {
@@ -173,7 +176,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
         }
 
         @Override public void onMessage(WebSocket webSocket, String text) {
-            if (closed.get()) return;
+            if (closed.get() || !isCurrentSocket(webSocket)) return;
             try {
                 JSONObject event = new JSONObject(text);
                 if (event.has("setupComplete")) {
@@ -203,17 +206,28 @@ public final class GeminiLiveProvider implements VoiceProvider {
         }
 
         @Override public void onFailure(WebSocket webSocket, Throwable error, Response response) {
-            if (closed.get()) return;
+            if (closed.get() || !isCurrentSocket(webSocket)) return;
             if (connected.get() && recoveryCount < MAX_RECOVERIES) recover("Se interrumpió el WebSocket de Gemini Live.");
             else fail(Failure.NETWORK, true, safeMessage(error));
         }
 
         @Override public void onClosed(WebSocket webSocket, int code, String reason) {
-            if (closed.get()) return;
+            if (closed.get() || !isCurrentSocket(webSocket)) return;
             if (connected.get() && recoveryCount < MAX_RECOVERIES)
                 recover("Gemini cerró la conexión (" + code + ").");
             else fail(Failure.NETWORK, true, "Gemini cerró la conexión: " + reason);
         }
+    }
+
+    private boolean isCurrentSocket(WebSocket candidate) { synchronized (socketLock) { return socket == candidate; } }
+
+    private String currentInstructions() {
+        String instructions = sessionConfig == null ? "" : sessionConfig.instructions;
+        synchronized (recentContext) {
+            if (recentContext.length() > 0)
+                instructions += "\\n\\nContexto reciente de continuidad (no repetir literalmente):\\n" + recentContext;
+        }
+        return instructions;
     }
 
     private JSONObject buildSetup() throws Exception {
@@ -228,7 +242,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
                         .put("voiceConfig", new JSONObject()
                                 .put("prebuiltVoiceConfig", new JSONObject().put("voiceName", "Puck")))));
         setup.put("systemInstruction", new JSONObject().put("parts",
-                new JSONArray().put(new JSONObject().put("text", config.instructions))));
+                new JSONArray().put(new JSONObject().put("text", currentInstructions()))));
         setup.put("inputAudioTranscription", new JSONObject());
         setup.put("outputAudioTranscription", new JSONObject());
         setup.put("sessionResumption", new JSONObject());
@@ -251,10 +265,31 @@ public final class GeminiLiveProvider implements VoiceProvider {
             JSONObject parameters = item.optJSONObject("parameters");
             if (parameters == null) parameters = item.optJSONObject("inputSchema");
             declaration.put("parameters", parameters == null
-                    ? new JSONObject().put("type", "OBJECT").put("properties", new JSONObject()) : parameters);
+                    ? new JSONObject().put("type", "OBJECT").put("properties", new JSONObject()) : normalizeSchema(parameters));
             output.put(declaration);
         }
         return output;
+    }
+
+    private JSONObject normalizeSchema(JSONObject schema) throws Exception {
+        JSONObject result = new JSONObject();
+        java.util.Iterator<String> keys = schema.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            Object value = schema.get(key);
+            if ("type".equals(key) && value instanceof String) result.put(key, ((String) value).toUpperCase(java.util.Locale.ROOT));
+            else if (value instanceof JSONObject) result.put(key, normalizeSchema((JSONObject) value));
+            else if (value instanceof JSONArray) {
+                JSONArray array = new JSONArray();
+                JSONArray source = (JSONArray) value;
+                for (int i = 0; i < source.length(); i++) {
+                    Object item = source.get(i);
+                    array.put(item instanceof JSONObject ? normalizeSchema((JSONObject) item) : item);
+                }
+                result.put(key, array);
+            } else result.put(key, value);
+        }
+        return result;
     }
 
     private void handleServerContent(JSONObject content) throws Exception {
@@ -318,6 +353,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
             String name = call.optString("name", "");
             JSONObject args = call.optJSONObject("args");
             if (!id.isEmpty() && !name.isEmpty()) {
+                toolNamesByCallId.put(id, name);
                 Listener current = listener;
                 if (current != null) current.onToolCall(id, name, args == null ? "{}" : args.toString());
             }
@@ -351,7 +387,9 @@ public final class GeminiLiveProvider implements VoiceProvider {
             player.play();
             recorder.startRecording();
             micRunning.set(true);
-            worker.execute(this::captureLoop);
+            Thread captureThread = new Thread(this::captureLoop, "GeminiLiveMic");
+            captureThread.setDaemon(true);
+            captureThread.start();
         } catch (Exception error) {
             fail(Failure.AUDIO, true, "No se pudo iniciar el audio Gemini: " + safeMessage(error));
         }
@@ -423,7 +461,9 @@ public final class GeminiLiveProvider implements VoiceProvider {
         try {
             JSONObject response = new JSONObject().put("result", result == null ? "" : result);
             if (isError) response.put("error", true);
-            JSONObject function = new JSONObject().put("id", callId).put("response", response);
+            String name = toolNamesByCallId.remove(callId);
+            if (name == null) return;
+            JSONObject function = new JSONObject().put("id", callId).put("name", name).put("response", response);
             current.send(new JSONObject().put("toolResponse",
                     new JSONObject().put("functionResponses", new JSONArray().put(function))).toString());
         } catch (Exception error) { fail(Failure.PROVIDER, true, safeMessage(error)); }
@@ -513,6 +553,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
         WebSocket old;
         synchronized (socketLock) { old = socket; socket = null; }
         if (old != null) old.close(1000, "Bellota session closed");
+        toolNamesByCallId.clear();
         worker.shutdownNow();
     }
 }

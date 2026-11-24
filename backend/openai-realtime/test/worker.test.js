@@ -16,7 +16,7 @@ test("health reports ready only when configuration and D1 are available", async 
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.ok, true);
-  assert.deepEqual(body.checks, { database: true, configuration: true });
+  assert.deepEqual(body.checks, { database: true, configuration: true, gemini: false });
 });
 
 test("health returns 503 when D1 cannot be reached without leaking details", async () => {
@@ -27,7 +27,7 @@ test("health returns 503 when D1 cannot be reached without leaking details", asy
   assert.equal(response.status, 503);
   const body = await response.json();
   assert.equal(body.ok, false);
-  assert.deepEqual(body.checks, { database: false, configuration: true });
+  assert.deepEqual(body.checks, { database: false, configuration: true, gemini: false });
   assert.equal(JSON.stringify(body).includes("private database detail"), false);
 });
 
@@ -65,4 +65,16 @@ test("malformed JSON is rejected instead of silently using defaults", async () =
   }), envWithDatabase());
   assert.equal(response.status, 400);
   assert.equal((await response.json()).error, "invalid_json");
+});
+
+test("Gemini token endpoint reports a missing server secret without exposing details", async () => {
+  const response = await worker.fetch(new Request("https://worker.test/v1/gemini/live-token", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({})
+  }), envWithDatabase());
+  assert.equal(response.status, 503);
+  const body = await response.json();
+  assert.equal(body.error, "provider_not_configured");
+  assert.equal(JSON.stringify(body).includes("test-gemini-key"), false);
 });
