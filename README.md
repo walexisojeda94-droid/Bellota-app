@@ -68,3 +68,5 @@ Comandos locales:
 - `docs/revision-6-backend-persistence.md`
 - `docs/revision-8-certificacion.md`
 - `backend/openai-realtime/README.md`
+
+- `docs/revision-14-code-dependencies-ci.md`
