@@ -182,7 +182,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         panel.addView(shareMemory);
 
         android.widget.TextView privacyNote = new android.widget.TextView(this);
-        privacyNote.setText("Desactivado por defecto. Si lo activás, solo se comparte un resumen limitado de nombre, apodos y gustos no sensibles. El diario cifrado y las transcripciones guardadas no se envían como memoria.");
+        privacyNote.setText("Desactivado por defecto. Si lo activás, se comparte un resumen limitado de nombre, apodos, gustos no sensibles y continuidad pendiente. El diario cifrado y las transcripciones guardadas no se envían como memoria.");
         privacyNote.setTextColor(0xFFB7C8C8);
         privacyNote.setTextSize(11f);
         panel.addView(privacyNote);
