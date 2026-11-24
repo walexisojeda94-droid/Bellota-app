@@ -55,7 +55,7 @@ public class ContinuousVoiceCommands {
 
     public void start() {
         if (running) return;
-        if (VoiceRecognitionPolicy.usesDedicatedOnDeviceRecognizer(android.os.Build.VERSION.SDK_INT)) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             if (!SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
                 status("No hay un motor de reconocimiento on-device disponible. Instalá un servicio compatible y el modelo de español en Android.");
                 return;
