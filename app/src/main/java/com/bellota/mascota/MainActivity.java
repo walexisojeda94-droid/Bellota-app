@@ -1144,9 +1144,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             requestWeather();
             return;
         }
-        if (result.type == Reply.Type.TEXT && result.text != null) speakIfEnabled(result.text);
-        else if (result.type == Reply.Type.NEEDS_AI) {
-            speakIfEnabled("Ese comando ya está disponible.");
+        if (result.type == Reply.Type.TEXT && result.text != null) {
+            speakIfEnabled(result.text);
         }
     }
 
