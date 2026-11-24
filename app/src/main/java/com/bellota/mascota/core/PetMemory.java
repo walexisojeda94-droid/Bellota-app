@@ -279,8 +279,14 @@ public final class PetMemory {
             return new byte[0];
         }
         if (!hasMagic(stored, MAGIC_V1)) {
-            // Legacy plaintext is encrypted by the BME2 migration before the next write.
-            return trimToLimit(stored);
+            // Accept only the known legacy JSONL format. Unknown binary headers are quarantined.
+            String legacyText = new String(stored, StandardCharsets.UTF_8).trim();
+            if (legacyText.isEmpty()) return new byte[0];
+            if (legacyText.startsWith("{") && legacyText.contains("\"timestamp\""))
+                return trimToLimit(stored);
+            if (!quarantineUnreadableJournal())
+                throw new GeneralSecurityException("No se pudo preservar un diario con formato desconocido.");
+            return new byte[0];
         }
         try {
             if (stored.length <= MAGIC_V1.length + GCM_IV_BYTES + 16)
