@@ -174,7 +174,6 @@ public final class LocalConversationEngine {
         StringBuilder joined = new StringBuilder();
         int count = Math.min(values.size(), limit);
         for (int i = 0; i < count; i++) {
-            if (joined.length() > 0) joined.append(", ");
             String safe = sanitizeMemoryValue(values.get(i));
             if (safe.isEmpty() || containsSensitiveContent(safe)) continue;
             if (joined.length() > 0) joined.append(", ");
