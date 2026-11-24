@@ -78,6 +78,8 @@ public class VoiceSessionServiceInstrumentedTest {
                     "Sos Bellota. Prueba de recuperación del proceso.", "[]", "marin", "es-AR");
             assertTrue("El servicio foreground no llegó a iniciarse para la prueba de recuperación.",
                     waitFor(VoiceSessionService::isServiceRunning, 10000L));
+            assertTrue("El servicio online no se promovió a foreground durante su creación.",
+                    waitFor(VoiceSessionService::isForegroundService, 5000L));
             assertTrue("La sesión no quedó persistida para recuperación tras reiniciar el servicio.",
                     VoiceSessionService.isActive(context));
 
@@ -91,6 +93,8 @@ public class VoiceSessionServiceInstrumentedTest {
             VoiceSessionService.restoreIfActive(context);
             assertTrue("No se pudo recuperar la sesión persistida después del cierre.",
                     waitFor(VoiceSessionService::isServiceRunning, 10000L));
+            assertTrue("La sesión recuperada no volvió a foreground durante la creación.",
+                    waitFor(VoiceSessionService::isForegroundService, 5000L));
         } finally {
             VoiceSessionService.stop(context);
             waitFor(() -> !VoiceSessionService.isActive(context), 5000L);
