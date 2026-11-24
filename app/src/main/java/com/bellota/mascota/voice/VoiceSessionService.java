@@ -157,6 +157,9 @@ public final class VoiceSessionService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        // Any command may arrive from startForegroundService(), including STOP and tool results.
+        // Promote before branching so no early return can violate Android 8+'s deadline.
+        ensureForeground();
         String action = intent == null ? ACTION_START : intent.getAction();
         if (ACTION_STOP.equals(action)) {
             stopSession(true);
@@ -175,9 +178,7 @@ public final class VoiceSessionService extends Service {
             }
             return START_STICKY;
         }
-        // Promote immediately: Android 8+ enforces a short startForegroundService deadline.
-        // Keystore I/O and config restoration must happen only after the notification is visible.
-        ensureForeground();
+        // Keystore I/O and config restoration happen only after the notification is visible.
         if (intent != null && ACTION_START.equals(action)) {
             backendUrl = intent.getStringExtra(EXTRA_BACKEND_URL);
             instructions = intent.getStringExtra(EXTRA_INSTRUCTIONS);
