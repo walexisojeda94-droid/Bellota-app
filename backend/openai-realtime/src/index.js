@@ -462,7 +462,7 @@ async function createGeminiLiveToken(request, env) {
     return fail("provider_error", 502, "Gemini no pudo emitir la credencial temporal.");
   }
   const token = typeof data.name === "string" ? data.name : "";
-  if (!token.startsWith("authTokens/"))
+  if (!/^auth_?Tokens?\/[A-Za-z0-9_-]+$/i.test(token))
     return fail("invalid_response", 502, "Gemini devolvió una credencial temporal incompleta.");
   await env.DB.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?")
     .bind(Math.floor(Date.now() / 1000), deviceId).run();
