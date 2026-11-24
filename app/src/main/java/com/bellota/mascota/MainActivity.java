@@ -3,7 +3,6 @@ package com.bellota.mascota;
 import android.Manifest;
 import android.app.Activity;
 import android.content.pm.PackageManager;
-import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -80,17 +79,13 @@ public class MainActivity extends Activity implements SensorEventListener {
     private long lastVoiceDiagnosticToastAt;
     private boolean voiceReceiverRegistered;
     private boolean localRecognitionPaused;
-    private final BroadcastReceiver voiceEventsReceiver = new BroadcastReceiver() {
-        @Override public void onReceive(Context context, Intent intent) {
-            if (intent == null) return;
-            String value = intent.getStringExtra(VoiceRecognitionService.EXTRA_TEXT);
-            if (VoiceRecognitionService.ACTION_RECOGNIZED.equals(intent.getAction())) {
-                if (value != null && !value.trim().isEmpty()) handleVoiceCommand(value);
-            } else if (VoiceRecognitionService.ACTION_STATUS.equals(intent.getAction())) handleVoiceStatus(value);
-            else if (VoiceRecognitionService.ACTION_STOPPED.equals(intent.getAction())) disconnectOnlineVoice(false);
-            else if (VoiceSessionService.ACTION_EVENT.equals(intent.getAction())) handleOnlineVoiceEvent(intent);
-        }
-    };
+    private final VoiceEventsReceiver voiceEventsReceiver = new VoiceEventsReceiver(
+            new VoiceEventsReceiver.Listener() {
+                @Override public void onRecognized(String text) { handleVoiceCommand(text); }
+                @Override public void onStatus(String status) { handleVoiceStatus(status); }
+                @Override public void onStopped() { disconnectOnlineVoice(false); }
+                @Override public void onSessionEvent(Intent intent) { handleOnlineVoiceEvent(intent); }
+            });
     private boolean soundEnabled = true;
     private boolean waitingForWeatherPermission;
     private boolean weatherRequestPending;
