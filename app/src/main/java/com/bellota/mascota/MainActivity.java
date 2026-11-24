@@ -1147,6 +1147,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             int target = Math.round(max * percent / 100f);
             audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0);
             int actual = max <= 0 ? 0 : Math.round(audio.getStreamVolume(AudioManager.STREAM_MUSIC) * 100f / max);
+            if (petMemory != null) petMemory.remember("volumen_dispositivo", actual + "%");
             return "Volumen multimedia ajustado al " + actual + " por ciento.";
         }
         if ("get_current_datetime".equals(name)) {
@@ -1189,6 +1190,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                     && !"affectionate".equals(kind) && !"apology".equals(kind))
                 throw new Exception("Tipo de interacción no admitido.");
             userInteracted(kind, false);
+            if (petMemory != null) petMemory.remember("interaccion", kind);
             if (eyes != null && !isAsleep()) eyes.reactToAttention();
             return "Interacción registrada: " + kind + ".";
         }
@@ -1205,7 +1207,9 @@ public class MainActivity extends Activity implements SensorEventListener {
                 default: throw new Exception("Juego no admitido.");
             }
             startGame(selected, key);
-            return playfield != null && playfield.isRunning() ? "Empecé a jugar: " + game + "." : "No pude iniciar el juego.";
+            boolean startedGame = playfield != null && playfield.isRunning();
+            if (startedGame && petMemory != null) petMemory.remember("juego", game);
+            return startedGame ? "Empecé a jugar: " + game + "." : "No pude iniciar el juego.";
         }
         throw new Exception("Herramienta desconocida: " + name);
     }

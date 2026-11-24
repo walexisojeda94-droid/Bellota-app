@@ -35,6 +35,17 @@ public class VoiceCommandIntentTest {
         assertFalse(VoiceCommandIntent.isVolumeQuery(Utterance.of("El volumen actual del juego")));
     }
 
+    @Test public void volumeChangesRequireAnExplicitCommand() {
+        assertTrue(VoiceCommandIntent.isVolumeChangeRequest(Utterance.of("Subí el volumen")));
+        assertTrue(VoiceCommandIntent.isVolumeChangeRequest(Utterance.of("Bajá el volumen al 30 por ciento")));
+        assertTrue(VoiceCommandIntent.isVolumeChangeRequest(Utterance.of("Poné el volumen al 75")));
+        assertEquals(75, VoiceCommandIntent.requestedVolumePercent(Utterance.of("Poné el volumen al 75 por ciento")));
+        assertEquals(30, VoiceCommandIntent.requestedVolumePercent(Utterance.of("Bajá el volumen al 30")));
+        assertEquals(10, VoiceCommandIntent.volumeChangeDelta(Utterance.of("Subí el volumen")));
+        assertEquals(-10, VoiceCommandIntent.volumeChangeDelta(Utterance.of("Bajá el volumen")));
+        assertFalse(VoiceCommandIntent.isVolumeChangeRequest(Utterance.of("El volumen de la música")));
+    }
+
     @Test public void incidentalSoundMentionDoesNotUnmute() {
         assertFalse(VoiceCommandIntent.isUnmuteRequest(Utterance.of("No hay sonido")));
         assertFalse(VoiceCommandIntent.isUnmuteRequest(Utterance.of("Me gusta ese sonido")));
