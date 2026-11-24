@@ -71,6 +71,36 @@ public class PetMemoryInstrumentedTest {
         assertTrue(journal.length() > after.length);
     }
 
+    @Test public void authenticationFailureQuarantinesDamagedDiaryAndStartsFresh() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        PetMemory memory = new PetMemory(context);
+        memory.clear();
+        assertTrue(PetMemory.awaitPendingWrites(10000L));
+        memory.remember("integrity", "authenticated record before corruption");
+        assertTrue(PetMemory.awaitPendingWrites(10000L));
+
+        File journal = memory.getJournalFile();
+        byte[] damaged = readAll(journal);
+        assertTrue(damaged.length > 32);
+        // Force the next write through the full authenticated-read/compaction path.
+        long oldTimestamp = System.currentTimeMillis() - 2L * 24L * 60L * 60L * 1000L;
+        for (int i = 0; i < 8; i++) damaged[4 + i] = (byte) (oldTimestamp >>> (56 - i * 8));
+        damaged[damaged.length - 1] ^= 0x01;
+        try (FileOutputStream output = new FileOutputStream(journal)) {
+            output.write(damaged);
+            output.getFD().sync();
+        }
+
+        memory.remember("integrity", "record after recovery");
+        assertTrue(PetMemory.awaitPendingWrites(10000L));
+        File[] quarantined = journal.getParentFile().listFiles(
+                (dir, name) -> name.startsWith("recuerdos.jsonl.locked."));
+        assertNotNull(quarantined);
+        assertTrue(quarantined.length > 0);
+        assertTrue(journal.exists());
+        assertEquals("BME3", new String(readAll(journal), 0, 4, StandardCharsets.US_ASCII));
+    }
+
     @Test public void lostKeystoreKeyQuarantinesCiphertextInsteadOfOverwritingIt() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         PetMemory memory = new PetMemory(context);
