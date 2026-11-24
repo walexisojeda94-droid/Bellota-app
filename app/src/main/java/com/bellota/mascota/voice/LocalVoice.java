@@ -6,6 +6,8 @@ import android.os.Looper;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import java.util.Locale;
+import java.util.Set;
+import android.speech.tts.Voice;
 
 /** Voz local de Bellota usando el motor TTS instalado en Android. */
 public class LocalVoice implements TextToSpeech.OnInitListener {
@@ -43,7 +45,17 @@ public class LocalVoice implements TextToSpeech.OnInitListener {
             result = engine.setLanguage(new Locale("es"));
 
         ready = result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED;
+        boolean offlineSpanishVoiceSelected = false;
         if (ready) {
+            try {
+                Set<Voice> voices = engine.getVoices();
+                Voice selected = findOfflineSpanishVoice(voices);
+                if (selected != null && engine.setVoice(selected) == TextToSpeech.SUCCESS) {
+                    offlineSpanishVoiceSelected = true;
+                }
+            } catch (RuntimeException ignored) {
+                // Se conserva el idioma español del motor si la enumeración de voces falla.
+            }
             engine.setSpeechRate(0.95f);
             engine.setPitch(1.05f);
             engine.setOnUtteranceProgressListener(new UtteranceProgressListener() {
@@ -54,8 +66,10 @@ public class LocalVoice implements TextToSpeech.OnInitListener {
         }
 
         notifyListener(ready, ready
-                ? "Voz local lista. Idioma español."
-                : "Falta instalar una voz española en Android.");
+                ? offlineSpanishVoiceSelected
+                    ? "Voz local lista: español con voz instalada sin conexión."
+                    : "Voz española disponible, pero Android no confirmó una voz offline. El motor podría requerir Internet."
+                : "Falta instalar una voz española compatible en Android.");
 
         if (!ready) {
             clearPendingSpeech();
@@ -70,6 +84,19 @@ public class LocalVoice implements TextToSpeech.OnInitListener {
         } else {
             cancelPendingTimeout();
         }
+    }
+
+    private Voice findOfflineSpanishVoice(Set<Voice> voices) {
+        if (voices == null || voices.isEmpty()) return null;
+        Voice fallback = null;
+        for (Voice voice : voices) {
+            if (voice == null || voice.getLocale() == null
+                    || !"es".equalsIgnoreCase(voice.getLocale().getLanguage())
+                    || voice.isNetworkConnectionRequired()) continue;
+            if ("AR".equalsIgnoreCase(voice.getLocale().getCountry())) return voice;
+            if (fallback == null) fallback = voice;
+        }
+        return fallback;
     }
 
     public boolean isReady() { return ready; }
