@@ -13,7 +13,7 @@ Esta revisión cubre BEL-081 a BEL-087. No se declara certificada hasta que la n
 | BEL-083 | Parcial | El workflow ahora se ejecuta en Pull Requests hacia `main`. Para impedir merges, GitHub debe exigir los checks de CI mediante protección de rama o ruleset. La conexión disponible permite leer, pero no configurar esa política administrativa. |
 | BEL-084 | Parcial | Se añadió revisión de dependencias en Pull Requests y escaneo OSV programado/semanal. La cobertura depende de los manifiestos y lockfiles que OSV pueda resolver; no se debe interpretar como auditoría completa hasta revisar el primer reporte. |
 | BEL-085 | Parcial | Se añadió generación CycloneDX agregada y publicación del SBOM como artefacto de CI. La integridad criptográfica y retención se validarán en la primera ejecución exitosa. |
-| BEL-086 | Pendiente | `MainActivity.java` tiene aproximadamente 1.397 líneas y concentra UI, ciclo de vida, autonomía, comandos, permisos y coordinación de voz. No se hará una extracción masiva sin pruebas de regresión por flujo. |
+| BEL-086 | Parcial | Se extrajo el enrutamiento de broadcasts de voz a `VoiceEventsReceiver`, dejando en `MainActivity` solo los callbacks de negocio. La Activity sigue concentrando UI, ciclo de vida, autonomía, comandos y permisos; el refactor continúa de forma incremental y requiere validar la nueva separación en CI. |
 | BEL-087 | Parcial | Release mantiene R8 y resource shrinking. Las reglas conservan la superficie Java de WebRTC, métodos JNI y atributos de reflexión. La CI incorpora compilación Release minificada; falta verificar el resultado y probar el APK minificado en dispositivo. |
 
 ## Controles incorporados
