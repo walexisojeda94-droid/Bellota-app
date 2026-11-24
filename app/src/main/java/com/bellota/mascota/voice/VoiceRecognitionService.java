@@ -76,6 +76,9 @@ public class VoiceRecognitionService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        // Promote every command before branching: STOP and pause actions may also be
+        // delivered to a service originally launched with startForegroundService().
+        ensureForeground();
         String action = intent == null ? ACTION_START : intent.getAction();
         if (ACTION_STOP.equals(action)) {
             Intent stopped = new Intent(ACTION_STOPPED);
@@ -87,10 +90,6 @@ public class VoiceRecognitionService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
-
-        // Android 8+ exige promover inmediatamente cualquier servicio iniciado con
-        // startForegroundService(), incluso si luego debemos abortar por falta de permiso.
-        ensureForeground();
 
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             sendStatus("Reconocimiento detenido: Android no concedió permiso de micrófono.");
