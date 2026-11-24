@@ -416,18 +416,15 @@ async function createGeminiLiveToken(request, env) {
   const voice = "Puck";
   const config = {
     responseModalities: ["AUDIO"],
+    maxOutputTokens: 1024,
+    speechConfig: {
+      languageCode: "es-AR",
+      voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } }
+    },
     inputAudioTranscription: {},
     outputAudioTranscription: {},
     sessionResumption: {},
-    systemInstruction: { parts: [{ text: instructions }] },
-    generationConfig: {
-      responseModalities: ["AUDIO"],
-      speechConfig: {
-        languageCode: "es-AR",
-        voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } }
-      },
-      maxOutputTokens: 1024
-    }
+    systemInstruction: { parts: [{ text: instructions }] }
   };
   if (functionDeclarations.length) config.tools = [{ functionDeclarations }];
 
@@ -439,11 +436,11 @@ async function createGeminiLiveToken(request, env) {
       model: "models/" + GEMINI_LIVE_MODEL,
       config
     },
-    httpOptions: { apiVersion: "v1alpha" }
+    httpOptions: { apiVersion: "v1beta" }
   };
   let response;
   try {
-    response = await fetch("https://generativelanguage.googleapis.com/v1alpha/authTokens", {
+    response = await fetch("https://generativelanguage.googleapis.com/v1beta/auth_tokens", {
       method: "POST",
       headers: {
         "x-goog-api-key": env.GEMINI_API_KEY,
@@ -474,7 +471,7 @@ async function createGeminiLiveToken(request, env) {
     model: GEMINI_LIVE_MODEL,
     expires_at: Math.floor(now / 1000) + GEMINI_TOKEN_TTL_SECONDS,
     new_session_expires_at: Math.floor(now / 1000) + 60,
-    websocket_url: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained"
+    websocket_url: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
   });
 }
 
