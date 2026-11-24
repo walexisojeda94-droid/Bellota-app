@@ -31,8 +31,10 @@ public class VoiceRecognitionService extends Service {
     private static final String CHANNEL_ID = "bellota_microphone";
     private static final int NOTIFICATION_ID = 2401;
 
+    private static volatile VoiceRecognitionService instance;
+
     private ContinuousVoiceCommands recognizer;
-    private boolean foregroundStarted;
+    private volatile boolean foregroundStarted;
     private boolean paused;
     private boolean externalMicActive;
 
@@ -49,7 +51,17 @@ public class VoiceRecognitionService extends Service {
     }
 
     public static void stop(Context context) {
+        // stopService() may race with a queued startForegroundService() call. Reset the
+        // in-memory promotion state before asking Android to stop the service so a
+        // reused instance cannot mistake itself for a foreground service on restart.
+        VoiceRecognitionService current = instance;
+        if (current != null) current.foregroundStarted = false;
         context.stopService(new Intent(context, VoiceRecognitionService.class));
+    }
+
+    public static boolean isForegroundService() {
+        VoiceRecognitionService current = instance;
+        return current != null && current.foregroundStarted;
     }
 
     public static void setExternalMicActive(Context context, boolean active) {
@@ -72,6 +84,7 @@ public class VoiceRecognitionService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        instance = this;
         createNotificationChannel();
         // startForegroundService() must be promoted immediately on Android 8+.
         // Doing this in onCreate also covers start/stop command races during recovery.
@@ -227,6 +240,8 @@ public class VoiceRecognitionService extends Service {
 
     @Override public void onDestroy() {
         stopRecognition();
+        foregroundStarted = false;
+        if (instance == this) instance = null;
         super.onDestroy();
     }
 
