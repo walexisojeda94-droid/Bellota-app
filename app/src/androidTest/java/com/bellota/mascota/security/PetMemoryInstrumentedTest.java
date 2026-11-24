@@ -32,20 +32,72 @@ public class PetMemoryInstrumentedTest {
 
         PetMemory memory = new PetMemory(context);
         memory.remember("test", "new private text");
+        assertTrue(PetMemory.awaitPendingWrites(10000L));
         byte[] first = readAll(journal);
         assertTrue(first.length > 20);
-        assertEquals("BME2", new String(first, 0, 4, StandardCharsets.US_ASCII));
+        assertEquals("BME3", new String(first, 0, 4, StandardCharsets.US_ASCII));
         String raw = new String(first, StandardCharsets.ISO_8859_1);
         assertFalse(raw.contains("legacy private text"));
         assertFalse(raw.contains("new private text"));
 
         memory.remember("test", "another private entry");
+        assertTrue(PetMemory.awaitPendingWrites(10000L));
         byte[] second = readAll(journal);
         assertTrue(second.length > first.length);
         assertTrue("A normal append must not rewrite the complete journal",
                 second.length - first.length < first.length);
         raw = new String(second, StandardCharsets.ISO_8859_1);
         assertFalse(raw.contains("another private entry"));
+    }
+
+    @Test public void rotatesVersionedKeyWithoutOverwritingTheDiary() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        PetMemory memory = new PetMemory(context);
+        memory.clear();
+        assertTrue(PetMemory.awaitPendingWrites(10000L));
+        memory.remember("rotation", "preserve this private entry");
+        assertTrue(PetMemory.awaitPendingWrites(10000L));
+        File journal = memory.getJournalFile();
+        byte[] before = readAll(journal);
+        assertEquals("BME3", new String(before, 0, 4, StandardCharsets.US_ASCII));
+        int oldVersion = readInt(before, 12);
+        memory.rotateKey();
+        assertTrue(PetMemory.awaitPendingWrites(10000L));
+        byte[] after = readAll(journal);
+        assertEquals("BME3", new String(after, 0, 4, StandardCharsets.US_ASCII));
+        assertEquals(oldVersion + 1, readInt(after, 12));
+        memory.remember("rotation", "append after key rotation");
+        assertTrue(PetMemory.awaitPendingWrites(10000L));
+        assertTrue(journal.length() > after.length);
+    }
+
+    @Test public void lostKeystoreKeyQuarantinesCiphertextInsteadOfOverwritingIt() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        PetMemory memory = new PetMemory(context);
+        memory.clear();
+        assertTrue(PetMemory.awaitPendingWrites(10000L));
+        memory.remember("key_loss", "private entry before key loss");
+        assertTrue(PetMemory.awaitPendingWrites(10000L));
+
+        java.security.KeyStore keyStore = java.security.KeyStore.getInstance("AndroidKeyStore");
+        keyStore.load(null);
+        if (keyStore.containsAlias("bellota_pet_memory_v2"))
+            keyStore.deleteEntry("bellota_pet_memory_v2");
+
+        memory.remember("key_loss", "new entry after key loss");
+        assertTrue(PetMemory.awaitPendingWrites(10000L));
+        File directory = memory.getJournalFile().getParentFile();
+        File[] quarantined = directory.listFiles((dir, name) -> name.startsWith("recuerdos.jsonl.locked."));
+        assertNotNull(quarantined);
+        assertTrue("The old encrypted journal must remain recoverable if its original key is restored.",
+                quarantined.length > 0);
+        assertTrue(memory.getJournalFile().exists());
+        assertEquals("BME3", new String(readAll(memory.getJournalFile()), 0, 4, StandardCharsets.US_ASCII));
+    }
+
+    private static int readInt(byte[] bytes, int offset) {
+        return ((bytes[offset] & 0xff) << 24) | ((bytes[offset + 1] & 0xff) << 16)
+                | ((bytes[offset + 2] & 0xff) << 8) | (bytes[offset + 3] & 0xff);
     }
 
     private static byte[] readAll(File file) throws Exception {
