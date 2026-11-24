@@ -862,8 +862,8 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
                             executeWorker(() -> {
                                 try {
                                     sessionBudget.reset();
-                                    establishTransport(config, credential, nextAttempt);
                                     renewalInProgress.set(false);
+                                    establishTransport(config, credential, nextAttempt);
                                 } catch (Exception error) {
                                     renewalInProgress.set(false);
                                     if (nextAttempt == activeAttemptId)
