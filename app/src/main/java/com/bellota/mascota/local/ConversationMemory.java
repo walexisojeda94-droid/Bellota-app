@@ -16,6 +16,7 @@ public final class ConversationMemory {
     public interface Store {
         String get(String key);
         void put(String key, String value);
+        void clear();
     }
 
     public static final long LONG_SILENCE_MS = 6L * 60 * 60 * 1000;
@@ -37,6 +38,7 @@ public final class ConversationMemory {
         return new ConversationMemory(new Store() {
             @Override public String get(String key) { return map.get(key); }
             @Override public void put(String key, String value) { map.put(key, value); }
+            @Override public void clear() { map.clear(); }
         });
     }
 
@@ -68,6 +70,25 @@ public final class ConversationMemory {
     }
 
     public String lastSkill() { return lastSkill; }
+
+    /** Online memory sharing is opt-in and stored in the encrypted preferences store. */
+    public boolean isOnlineMemorySharingEnabled() {
+        return "true".equalsIgnoreCase(store.get("share_online_memory"));
+    }
+
+    public void setOnlineMemorySharingEnabled(boolean enabled) {
+        store.put("share_online_memory", enabled ? "true" : "false");
+    }
+
+    /** Clears persistent and turn-local personal memory. */
+    public void clearPersistentMemory() {
+        store.clear();
+        lastSkill = null;
+        expecting = null;
+        expectingAt = 0L;
+        silenceMs = 0L;
+        welcomePending = false;
+    }
 
     // ---- Lo que Bellota espera que el usuario conteste ----------------------
 
