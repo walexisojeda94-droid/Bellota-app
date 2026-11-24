@@ -43,6 +43,31 @@ public class SecureStorageInstrumentedTest {
         assertFalse(store.hasRefreshToken());
     }
 
+    @Test public void missingConversationKeyDoesNotClearOrReplaceEncryptedPreferences() throws Exception {
+        EncryptedPreferencesStore store = new EncryptedPreferencesStore(context());
+        String key = "key_loss_" + UUID.randomUUID();
+        String secret = "preserve-encrypted-memory-" + UUID.randomUUID();
+        store.put(key, secret);
+        SharedPreferences raw = context().getSharedPreferences("bellota_conversation", Context.MODE_PRIVATE);
+        String encryptedBefore = raw.getString(key, null);
+        assertNotNull(encryptedBefore);
+        assertFalse(encryptedBefore.contains(secret));
+
+        java.security.KeyStore keyStore = java.security.KeyStore.getInstance("AndroidKeyStore");
+        keyStore.load(null);
+        if (keyStore.containsAlias("bellota_conversation_memory_v1"))
+            keyStore.deleteEntry("bellota_conversation_memory_v1");
+
+        EncryptedPreferencesStore afterLoss = new EncryptedPreferencesStore(context());
+        assertNull(afterLoss.get(key));
+        afterLoss.put(key, "replacement must not overwrite ciphertext");
+        assertEquals(encryptedBefore, raw.getString(key, null));
+        assertFalse(raw.getString(key, null).contains("replacement must not overwrite ciphertext"));
+
+        // Explicit deletion remains available even when the original key is gone.
+        assertTrue(afterLoss.clear());
+    }
+
     @Test public void diaryAndConversationPreferencesAreEncrypted() throws Exception {
         String marker = "BELL0TA_PRIVATE_SENTINEL_" + UUID.randomUUID();
         PetMemory memory = new PetMemory(context());
