@@ -38,7 +38,7 @@ No subir claves API, tokens, contraseñas ni archivos de firma al repositorio.
 - Android Gradle Plugin 8.13.2 y Gradle Wrapper 8.13 con checksum SHA-256.
 - WebRTC Android 150.7871.08.
 - R8 y reducción de recursos activados únicamente en Release, con reglas de conservación para JNI de WebRTC.
-- CI de Revisión 7 completada correctamente: pruebas JVM, Android Lint, compilación Release firmada, verificación del certificado y smoke tests en API 24, 27 y 31.
+- Estado de CI: pruebas JVM, Android Lint y compilación de APK aprobadas en la última ejecución de Revisión 7; smoke test API 24 aprobado y API 27 fallido por `RemoteServiceException` en la recuperación del servicio foreground. API 31 y compilación Release no se ejecutaron en esa ejecución. La matriz sigue abierta hasta corregir y repetir.
 
 Comandos locales:
 
