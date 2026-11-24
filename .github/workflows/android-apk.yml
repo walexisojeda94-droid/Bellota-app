@@ -15,14 +15,18 @@ env:
   ANDROID_HOME: /usr/local/lib/android/sdk
 jobs:
   osv-vulnerability-scan:
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.1
-    with:
-      scan-args: |-
-        --recursive
-        ./
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Scan repository with OSV-Scanner
+        run: go run github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.7.1 scan source --recursive ./
 
   dependency-review:
     if: github.event_name == 'pull_request'
