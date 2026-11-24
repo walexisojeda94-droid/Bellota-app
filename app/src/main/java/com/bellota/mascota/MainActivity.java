@@ -1037,7 +1037,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (VoiceCommandIntent.isTimeOrDateQuery(utterance)) {
             Date now = new Date();
             speakIfEnabled("Son las " + new SimpleDateFormat("HH:mm", new Locale("es", "AR")).format(now)
-                    + ". Hoy es " + new SimpleDateFormat("EEEE d 'de' MMMM", new Locale("es", "AR")).format(now) + ".");
+                    + ". Hoy es " + new SimpleDateFormat("EEEE d 'de' MMMM 'de' yyyy", new Locale("es", "AR")).format(now) + ".");
             return;
         }
         if (VoiceCommandIntent.isVolumeChangeRequest(utterance)) {
@@ -1168,6 +1168,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (isAsleep() || eyes == null) return "No puedo cambiar mi expresión mientras estoy dormida.";
             try { eyes.setMood(EyePetView.Mood.valueOf(emotion)); }
             catch (IllegalArgumentException e) { throw new Exception("Emoción no admitida."); }
+            if (petMemory != null) petMemory.remember("animo_bellota", emotion.toLowerCase(Locale.ROOT));
             return "Mi expresión ahora es " + emotion.toLowerCase(Locale.ROOT) + ".";
         }
         if ("speak_as_bellota".equals(name)) {
