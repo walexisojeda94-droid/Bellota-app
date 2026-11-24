@@ -94,7 +94,7 @@ public final class EncryptedPreferencesStore implements ConversationMemory.Store
             byte[] payload = new byte[iv.length + encrypted.length];
             System.arraycopy(iv, 0, payload, 0, iv.length);
             System.arraycopy(encrypted, 0, payload, iv.length, encrypted.length);
-            return preferences.edit()
+            preferences.edit()
                     .putString(key, PREFIX + Base64.encodeToString(payload, Base64.NO_WRAP))
                     .apply();
             return true;
