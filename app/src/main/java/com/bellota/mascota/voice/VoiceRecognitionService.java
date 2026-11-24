@@ -5,8 +5,10 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.IBinder;
 
@@ -86,6 +88,15 @@ public class VoiceRecognitionService extends Service {
             return START_NOT_STICKY;
         }
 
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            sendStatus("Reconocimiento detenido: Android no concedió permiso de micrófono.");
+            stopRecognition();
+            stopForeground(true);
+            foregroundStarted = false;
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
         ensureForeground();
         if (ACTION_EXTERNAL_MIC.equals(action)) {
             externalMicActive = intent != null && intent.getBooleanExtra(EXTRA_ACTIVE, false);
@@ -109,7 +120,16 @@ public class VoiceRecognitionService extends Service {
             updateNotification();
             startRecognition();
         }
-        return START_STICKY;
+        // El micrófono no se reactiva automáticamente después de una muerte del proceso
+        // o un reinicio del teléfono. El usuario vuelve a abrir Bellota para reanudarlo.
+        return START_NOT_STICKY;
+    }
+
+    private void sendStatus(String value) {
+        Intent event = new Intent(ACTION_STATUS);
+        event.setPackage(getPackageName());
+        event.putExtra(EXTRA_TEXT, value);
+        sendBroadcast(event);
     }
 
     private void ensureForeground() {
@@ -133,7 +153,7 @@ public class VoiceRecognitionService extends Service {
                 .setContentText(externalMicActive ? "Micrófono activo para OpenAI Realtime." : paused ? "El reconocimiento local está temporalmente pausado."
                         : Build.VERSION.SDK_INT >= 31
                         ? "Audio procesado por el reconocedor del dispositivo."
-                        : "Se solicita modo sin conexión; Android puede usar su proveedor configurado.")
+                        : "Android 7-11: sin conexión preferido, pero el proveedor puede requerir Internet.")
                 .setCategory(Notification.CATEGORY_SERVICE)
                 .setPriority(Notification.PRIORITY_LOW)
                 .setOngoing(true)
@@ -160,6 +180,13 @@ public class VoiceRecognitionService extends Service {
 
     private void startRecognition() {
         if (paused) return;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            sendStatus("Reconocimiento detenido: Android no concedió permiso de micrófono.");
+            stopForeground(true);
+            foregroundStarted = false;
+            stopSelf();
+            return;
+        }
         if (recognizer == null) {
             recognizer = new ContinuousVoiceCommands(getApplicationContext(),
                     new ContinuousVoiceCommands.Listener() {
@@ -171,10 +198,7 @@ public class VoiceRecognitionService extends Service {
                         }
 
                         @Override public void onStatus(String status) {
-                            Intent event = new Intent(ACTION_STATUS);
-                            event.setPackage(getPackageName());
-                            event.putExtra(EXTRA_TEXT, status);
-                            sendBroadcast(event);
+                            sendStatus(status);
                             if (status != null && (status.startsWith("No hay un servicio de reconocimiento")
                                     || status.startsWith("No hay un reconocedor de voz local")
                                     || status.startsWith("Reconocimiento detenido: Android no concedió permiso"))) {
