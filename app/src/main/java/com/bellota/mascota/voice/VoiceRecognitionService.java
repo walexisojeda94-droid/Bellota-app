@@ -88,6 +88,10 @@ public class VoiceRecognitionService extends Service {
             return START_NOT_STICKY;
         }
 
+        // Android 8+ exige promover inmediatamente cualquier servicio iniciado con
+        // startForegroundService(), incluso si luego debemos abortar por falta de permiso.
+        ensureForeground();
+
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             sendStatus("Reconocimiento detenido: Android no concedió permiso de micrófono.");
             stopRecognition();
@@ -96,8 +100,6 @@ public class VoiceRecognitionService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
-
-        ensureForeground();
         if (ACTION_EXTERNAL_MIC.equals(action)) {
             externalMicActive = intent != null && intent.getBooleanExtra(EXTRA_ACTIVE, false);
             paused = externalMicActive;
