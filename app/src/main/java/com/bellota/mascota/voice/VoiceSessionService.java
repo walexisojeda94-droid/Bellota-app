@@ -187,7 +187,7 @@ public final class VoiceSessionService extends Service {
             catch (Exception storageError) {
                 emit("state", VoiceProvider.State.CLOSED.name(),
                         "No se pudo proteger la configuración de recuperación. La sesión online no se inició.", null);
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
+                setActiveFlag(false);
                 new VoiceSessionConfigStore(this).clear();
                 stopSession(true);
                 stopSelf();
@@ -197,13 +197,12 @@ public final class VoiceSessionService extends Service {
             restoreConfig();
         }
         if (!hasConfig()) {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
+            setActiveFlag(false);
             stopSession(true);
             stopSelf();
             return START_NOT_STICKY;
         }
         started = true;
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, true).apply();
         VoiceRecognitionService.stop(this);
         if (manager == null) connectFreshManager();
         return START_STICKY;
@@ -217,14 +216,18 @@ public final class VoiceSessionService extends Service {
     private void persistConfig() throws Exception {
         new VoiceSessionConfigStore(this).save(new VoiceSessionConfigStore.Config(
                 backendUrl, instructions, toolsJson, voice, locale));
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, true).apply();
+        if (!setActiveFlag(true)) throw new IllegalStateException("No se pudo persistir el estado de sesión activa.");
+    }
+
+    private boolean setActiveFlag(boolean active) {
+        return getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, active).commit();
     }
 
     private void restoreConfig() {
         if (!getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_ACTIVE, false)) return;
         VoiceSessionConfigStore.Config config = new VoiceSessionConfigStore(this).load();
         if (config == null) {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
+            setActiveFlag(false);
             return;
         }
         backendUrl = config.backendUrl;
@@ -345,9 +348,25 @@ public final class VoiceSessionService extends Service {
             }
             @Override public void onLost(Network network) {
                 handler.post(() -> {
-                    if (!hasInternet()) releaseWakeLock();
+                    if (!started) return;
+                    // The old PeerConnection may still report CONNECTED briefly after the
+                    // default network changes. Retire it now so a stale transport cannot
+                    // suppress reconnection when the replacement network becomes available.
+                    handler.removeCallbacks(retryRunnable);
+                    VoiceProviderManager previous = manager;
+                    manager = null;
+                    connecting = false;
+                    synchronized (pendingToolCalls) { pendingToolCalls.clear(); }
+                    clearPersistedPendingCalls();
+                    if (previous != null) previous.disconnect();
                     emit("state", VoiceProvider.State.RECONNECTING.name(),
-                            "Se perdió Internet. Bellota reintentará al recuperar la conexión.", null);
+                            "Cambió o se perdió la red. Bellota preparará una conexión nueva.", null);
+                    if (hasInternet()) {
+                        retryIndex = 0;
+                        handler.postDelayed(retryRunnable, 1200L);
+                    } else {
+                        releaseWakeLock();
+                    }
                 });
             }
         };
@@ -374,7 +393,7 @@ public final class VoiceSessionService extends Service {
         manager = null;
         synchronized (pendingToolCalls) { pendingToolCalls.clear(); }
         clearPersistedPendingCalls();
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply();
+        setActiveFlag(false);
         if (resumeLocal) {
             new VoiceSessionConfigStore(this).clear();
             VoiceRecognitionService.resume(this);
