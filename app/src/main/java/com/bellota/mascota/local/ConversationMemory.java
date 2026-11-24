@@ -81,13 +81,16 @@ public final class ConversationMemory {
     }
 
     /** Clears persistent and turn-local personal memory. */
-    public void clearPersistentMemory() {
-        store.clear();
-        lastSkill = null;
-        expecting = null;
-        expectingAt = 0L;
-        silenceMs = 0L;
-        welcomePending = false;
+    public boolean clearPersistentMemory() {
+        boolean cleared = store.clear();
+        if (cleared) {
+            lastSkill = null;
+            expecting = null;
+            expectingAt = 0L;
+            silenceMs = 0L;
+            welcomePending = false;
+        }
+        return cleared;
     }
 
     // ---- Lo que Bellota espera que el usuario conteste ----------------------
