@@ -20,6 +20,7 @@ import android.os.PowerManager;
 import com.bellota.mascota.R;
 import com.bellota.mascota.voice.auth.SecureTokenStore;
 import com.bellota.mascota.voice.provider.OpenAIRealtimeWebRtcProvider;
+import com.bellota.mascota.voice.provider.GeminiLiveProvider;
 import com.bellota.mascota.voice.provider.VoiceProvider;
 import com.bellota.mascota.voice.provider.VoiceProviderManager;
 
@@ -252,10 +253,14 @@ public final class VoiceSessionService extends Service {
         clearPersistedPendingCalls();
 
         connecting = true;
+        VoiceRecognitionService.stop(this);
+        SecureTokenStore secureTokenStore = new SecureTokenStore(getApplicationContext());
         OpenAIRealtimeWebRtcProvider provider = new OpenAIRealtimeWebRtcProvider(
-                getApplicationContext(), backendUrl, new SecureTokenStore(getApplicationContext()));
+                getApplicationContext(), backendUrl, secureTokenStore);
+        GeminiLiveProvider geminiProvider = new GeminiLiveProvider(
+                getApplicationContext(), backendUrl, secureTokenStore);
         final VoiceProviderManager[] holder = new VoiceProviderManager[1];
-        VoiceProviderManager next = new VoiceProviderManager(provider, null,
+        VoiceProviderManager next = new VoiceProviderManager(provider, geminiProvider,
                 new VoiceProviderManager.Listener() {
                     @Override public void onStateChanged(VoiceProvider.State state, String providerId, String detail) {
                         if (manager != holder[0]) return;
@@ -265,7 +270,7 @@ public final class VoiceSessionService extends Service {
                             clearPersistedPendingCalls();
                         }
                         updateNotification(detail == null ? state.name() : detail);
-                        if (state == VoiceProvider.State.CONNECTED) { retryIndex = 0; connecting = false; acquireWakeLock(); }
+                        if (state == VoiceProvider.State.CONNECTED) { retryIndex = 0; connecting = false; VoiceRecognitionService.stop(VoiceSessionService.this); acquireWakeLock(); }
                         else if (state == VoiceProvider.State.FALLBACK_LOCAL) connecting = false;
                     }
                     @Override public void onUserTranscript(String text, boolean isFinal) {
@@ -306,7 +311,12 @@ public final class VoiceSessionService extends Service {
                             handler.post(() -> { emit("state", VoiceProvider.State.CLOSED.name(),
                                     "La sesión online requiere revisar la vinculación o el límite de consumo. Se reanudó la voz local.", null);
                                 stopSession(true); stopSelf(); });
-                        } else scheduleRetry();
+                        } else {
+                            VoiceRecognitionService.resume(VoiceSessionService.this);
+                            emit("state", VoiceProvider.State.FALLBACK_LOCAL.name(),
+                                    "OpenAI y Gemini no están disponibles. Bellota continúa con la voz local.", null);
+                            scheduleRetry();
+                        }
                     }
                 });
         holder[0] = next;

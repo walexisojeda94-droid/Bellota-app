@@ -12,7 +12,7 @@ Aplicación Android nativa de mascota virtual. Bellota mantiene su interfaz, com
 - OpenAI Realtime integrado en Android mediante WebRTC, credenciales efímeras emitidas por el Worker, renovación de la vinculación y fallback local.
 - Memoria compartida entre conversación local y Realtime; diario cifrado de ambos lados de la conversación.
 - Las llamadas de herramientas quedan asociadas a su sesión de origen, se serializan y descartan si llegan tarde.
-- OpenAI Realtime es el único proveedor online implementado y registrado. Gemini Live está definido como segundo proveedor objetivo, pero no tiene adaptador Android ni está disponible como fallback.
+- OpenAI Realtime es el proveedor online principal y Gemini Live es el segundo proveedor implementado mediante WebSocket y token efímero. La voz local es el último respaldo.
 - El reconocimiento local utiliza un Foreground Service. La sesión online actual se crea y administra desde MainActivity; por lo tanto, no se certifica continuidad de OpenAI en segundo plano ni después de destruir la Activity.
 
 ## Arquitectura de voz

@@ -1,6 +1,6 @@
 # Bellota OpenAI Realtime backend
 
-Worker de Cloudflare para vinculación de dispositivos, renovación/revocación y emisión de credenciales efímeras de OpenAI Realtime.
+Worker de Cloudflare para vinculación de dispositivos, renovación/revocación y emisión de credenciales efímeras de OpenAI Realtime y Gemini Live.
 
 ## Estado desplegado
 
@@ -19,6 +19,7 @@ No se documentan aquí valores de secretos ni identificadores internos de cuenta
 - `POST /v1/auth/refresh`: rota el refresh token de forma recuperable. Si la respuesta se pierde, el token anterior permite recuperar la misma rotación durante 120 segundos.
 - `POST /v1/device/revoke`: revoca remotamente el dispositivo. Es idempotente para permitir reintentos.
 - `POST /v1/realtime/client-secret`: requiere access token Bearer de 15 minutos. Body opcional: `{"instructions":"...","voice":"marin"}`.
+- `POST /v1/gemini/live-token`: requiere access token Bearer de 15 minutos. Emite un token efímero Gemini Live de un solo uso, restringido al modelo `gemini-3.8-live`, con vencimiento de 30 minutos y ventana de inicio de 60 segundos. La clave `GEMINI_API_KEY` permanece como secreto Cloudflare.
 - `GET /health`: comprueba las tablas/columnas requeridas de D1 y la presencia de los secretos principales. Devuelve `503` si falta una dependencia, sin exponer secretos.
 
 ## Configuración de un entorno nuevo
@@ -27,6 +28,7 @@ No se documentan aquí valores de secretos ni identificadores internos de cuenta
 2. En una base nueva, aplicar `schema.sql`. En una base existente, aplicar en orden `migrations/0001_recoverable_refresh.sql` y `migrations/0002_retention_indexes.sql`.
 3. Cargar los secretos en Cloudflare, nunca en el repositorio:
    - `OPENAI_API_KEY`
+   - `GEMINI_API_KEY`
    - `ADMIN_TOKEN`
    - `JWT_SECRET`
    - Opcional para TURN: `TURN_KEY_ID` y `TURN_KEY_API_TOKEN`
@@ -61,4 +63,4 @@ La CI ejecuta Node.js 22, pruebas del Worker y validación SQLite de migraciones
 
 ## Estado de Gemini Live
 
-Este Worker todavía no emite tokens efímeros de Gemini y no tiene endpoint Gemini. No colocar una clave Google en el APK. La emisión de token Gemini y el adaptador Android son trabajo pendiente de BEL-036.
+Gemini Live emite tokens efímeros restringidos mediante `/v1/gemini/live-token`. La clave `GEMINI_API_KEY` debe cargarse como secreto Cloudflare y nunca en Android ni en el repositorio.

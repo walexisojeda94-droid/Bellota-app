@@ -3,7 +3,7 @@
 ## Decisión de producto
 
 - OpenAI Realtime es el proveedor online principal.
-- Gemini Live es el segundo proveedor acordado, pero aún no está implementado.
+- Gemini Live es el segundo proveedor online, integrado mediante WebSocket con token efímero restringido.
 - La voz y conversación local permanecen como respaldo operativo.
 - La memoria, personalidad, estado emocional, autonomía, comandos y funciones propias de Bellota pertenecen a la aplicación, no a los proveedores.
 - No se incorporan otros motores en esta etapa. XiaoZhi fue retirado.
@@ -22,21 +22,21 @@
 ## Estado implementado
 
 - Contrato común `VoiceProvider` y coordinador `VoiceProviderManager`, con pruebas JVM.
-- Adaptador `OpenAIRealtimeWebRtcProvider` integrado y registrado en `MainActivity`.
-- Worker Cloudflare para pairing, refresh token rotatorio, revocación y credenciales efímeras de OpenAI.
+- Adaptadores `OpenAIRealtimeWebRtcProvider` (WebRTC) y `GeminiLiveProvider` (WebSocket) coordinados por `VoiceProviderManager` desde `VoiceSessionService`.
+- Worker Cloudflare para pairing, refresh token rotatorio, revocación y credenciales efímeras de OpenAI y Gemini.
 - D1 y secretos principales configurados; migraciones de retención aplicadas.
 - Memoria, personalidad y herramientas propias de Bellota separadas de la implementación del proveedor.
 - Reconocimiento local en un Foreground Service.
 - La sesión OpenAI online aún depende de `MainActivity`; no hay garantía de continuidad al destruir la Activity o pasar a segundo plano.
 
-## Gemini Live: diseño de integración pendiente
+## Gemini Live: integración y certificación operativa
 
 La documentación vigente de Gemini Live describe un transporte WebSocket bidireccional. Para clientes móviles, el diseño de Bellota debe usar un token efímero de un solo uso emitido por el backend, nunca una API key de Google dentro del APK. El cliente enviaría audio PCM16 mono a 16 kHz y procesaría audio PCM16 de salida a 24 kHz; la configuración inicial debe fijar el modelo, la modalidad de audio y las instrucciones de Bellota.
 
 La API de tokens efímeros y el endpoint WebSocket restringido deben tratarse como una sola pareja de versiones/protocolo. Antes de producción hay que fijar y probar una versión exacta del endpoint, el modelo Live disponible para la cuenta y el formato de sesión. No mezclar ejemplos de SDK o versiones alpha/beta.
 
-La integración requiere:
-- secreto `GEMINI_API_KEY` solo en Cloudflare Worker;
+La integración implementada incluye:
+- secreto `GEMINI_API_KEY` solo en Cloudflare Worker (pendiente de cargar en el entorno de producción);
 - endpoint autenticado del Worker para emitir token efímero de un solo uso y acotado al modelo/configuración;
 - adaptador Android `GeminiLiveProvider` que implemente `VoiceProvider`;
 - captura y reproducción de audio, interrupciones, fin de turno, transcripciones y errores;

@@ -5,6 +5,8 @@ const PAIRING_TTL_SECONDS = 600;
 const OPENAI_MODEL = "gpt-realtime-2.1";
 const REALTIME_MAX_OUTPUT_TOKENS = 1024;
 const TURN_CREDENTIAL_TTL_SECONDS = 3600;
+const GEMINI_LIVE_MODEL = "gemini-3.8-live";
+const GEMINI_TOKEN_TTL_SECONDS = 1800;
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
@@ -136,7 +138,7 @@ async function healthCheck(env) {
   return json({
     ok,
     service: "bellota-openai-realtime",
-    checks: { database, configuration: configured }
+    checks: { database, configuration: configured, gemini: Boolean(env.GEMINI_API_KEY) }
   }, ok ? 200 : 503);
 }
 function bearer(request) {
@@ -356,6 +358,113 @@ async function createRealtimeSecret(request, env) {
   });
 }
 
+async function createGeminiLiveToken(request, env) {
+  if (!env.GEMINI_API_KEY)
+    return fail("provider_not_configured", 503, "Gemini Live todavía no está configurado en el backend.");
+  const deviceId = await authenticatedDevice(request, env);
+  if (!deviceId) return fail("device_unauthorized", 401, "La vinculación del dispositivo no es válida.");
+  const parsed = await readJson(request, 16384, true);
+  if (!parsed.ok) return invalidBody(parsed);
+  const body = parsed.value;
+  if (body.instructions !== undefined && (typeof body.instructions !== "string" || body.instructions.length > 12000))
+    return fail("invalid_request", 400, "Las instrucciones deben ser texto de hasta 12.000 caracteres.");
+  if (body.voice !== undefined && (typeof body.voice !== "string" || body.voice.length > 32))
+    return fail("invalid_request", 400, "La voz solicitada no es válida.");
+  if (body.tools_json !== undefined && (typeof body.tools_json !== "string" || body.tools_json.length > 12000))
+    return fail("invalid_request", 400, "Las herramientas superan el tamaño permitido.");
+
+  let sourceTools = [];
+  try {
+    sourceTools = body.tools_json ? JSON.parse(body.tools_json) : [];
+    if (!Array.isArray(sourceTools)) throw new Error("tools must be an array");
+  } catch {
+    return fail("invalid_request", 400, "La definición de herramientas no es JSON válido.");
+  }
+  const functionDeclarations = [];
+  for (const item of sourceTools.slice(0, 32)) {
+    if (!item || typeof item !== "object") continue;
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    if (!/^[a-zA-Z0-9_]{1,64}$/.test(name)) continue;
+    const parameters = item.parameters && typeof item.parameters === "object"
+      ? item.parameters
+      : (item.inputSchema && typeof item.inputSchema === "object"
+        ? item.inputSchema : { type: "OBJECT", properties: {} });
+    functionDeclarations.push({
+      name,
+      description: typeof item.description === "string" ? item.description.slice(0, 1024) : "",
+      parameters
+    });
+  }
+
+  const now = Date.now();
+  const instructions = typeof body.instructions === "string" && body.instructions.trim()
+    ? body.instructions.trim()
+    : "Sos Bellota, una compañera virtual conversacional. Hablá en español rioplatense natural. No cambies de idioma por la configuración del dispositivo.";
+  const voice = "Puck";
+  const config = {
+    responseModalities: ["AUDIO"],
+    inputAudioTranscription: {},
+    outputAudioTranscription: {},
+    sessionResumption: {},
+    systemInstruction: { parts: [{ text: instructions }] },
+    generationConfig: {
+      responseModalities: ["AUDIO"],
+      speechConfig: {
+        languageCode: "es-AR",
+        voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } }
+      },
+      maxOutputTokens: 1024
+    }
+  };
+  if (functionDeclarations.length) config.tools = [{ functionDeclarations }];
+
+  const tokenRequest = {
+    uses: 1,
+    expireTime: new Date(now + GEMINI_TOKEN_TTL_SECONDS * 1000).toISOString(),
+    newSessionExpireTime: new Date(now + 60 * 1000).toISOString(),
+    liveConnectConstraints: {
+      model: "models/" + GEMINI_LIVE_MODEL,
+      config
+    },
+    httpOptions: { apiVersion: "v1alpha" }
+  };
+  let response;
+  try {
+    response = await fetch("https://generativelanguage.googleapis.com/v1alpha/authTokens", {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": env.GEMINI_API_KEY,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(tokenRequest)
+    });
+  } catch {
+    return fail("provider_network", 502, "No se pudo contactar con el servicio de credenciales de Gemini.");
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403)
+      return fail("provider_authentication", 502, "Gemini rechazó la autenticación del backend.");
+    if (response.status === 429)
+      return fail("provider_rate_limit", 429, "Gemini limitó temporalmente las solicitudes.");
+    if (response.status === 402)
+      return fail("provider_quota", 402, "La cuenta de Gemini no tiene cuota disponible.");
+    return fail("provider_error", 502, "Gemini no pudo emitir la credencial temporal.");
+  }
+  const token = typeof data.name === "string" ? data.name : "";
+  if (!token.startsWith("authTokens/"))
+    return fail("invalid_response", 502, "Gemini devolvió una credencial temporal incompleta.");
+  await env.DB.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?")
+    .bind(Math.floor(Date.now() / 1000), deviceId).run();
+  return json({
+    token,
+    model: GEMINI_LIVE_MODEL,
+    expires_at: Math.floor(now / 1000) + GEMINI_TOKEN_TTL_SECONDS,
+    new_session_expires_at: Math.floor(now / 1000) + 60,
+    websocket_url: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained"
+  });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -368,7 +477,8 @@ export default {
       "/v1/pair": () => pairDevice(request, env),
       "/v1/auth/refresh": () => refreshDevice(request, env),
       "/v1/device/revoke": () => revokeDevice(request, env),
-      "/v1/realtime/client-secret": () => createRealtimeSecret(request, env)
+      "/v1/realtime/client-secret": () => createRealtimeSecret(request, env),
+      "/v1/gemini/live-token": () => createGeminiLiveToken(request, env)
     };
     if (routes[url.pathname]) {
       if (request.method !== "POST") return new Response(null, { status: 405, headers: { ...JSON_HEADERS, allow: "POST" } });

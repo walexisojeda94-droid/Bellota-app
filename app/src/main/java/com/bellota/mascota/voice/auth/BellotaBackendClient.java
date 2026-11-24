@@ -160,6 +160,55 @@ public final class BellotaBackendClient {
                 response.optLong("session_expires_at", 0L));
     }
 
+
+    /** Requests a model-constrained, single-use Gemini Live ephemeral token. */
+    public GeminiCredential createGeminiLiveToken(String instructions, String voice, String toolsJson)
+            throws IOException, BackendException {
+        requireWorkerThread();
+        JSONObject body = new JSONObject();
+        try {
+            if (instructions != null && !instructions.trim().isEmpty())
+                body.put("instructions", instructions.trim());
+            if (voice != null && !voice.trim().isEmpty()) body.put("voice", voice.trim());
+            if (toolsJson != null && !toolsJson.trim().isEmpty())
+                body.put("tools_json", toolsJson);
+        } catch (JSONException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+        String token = getAccessToken();
+        JSONObject response;
+        try {
+            response = request("POST", "/v1/gemini/live-token", body, token);
+        } catch (BackendException unauthorized) {
+            if (unauthorized.httpStatus != 401) throw unauthorized;
+            refresh();
+            synchronized (authLock) { token = accessToken; }
+            response = request("POST", "/v1/gemini/live-token", body, token);
+        }
+        String value = response.optString("token", "");
+        String model = response.optString("model", "");
+        String websocketUrl = response.optString("websocket_url", "");
+        long expiresAt = response.optLong("expires_at", 0L);
+        if (!value.startsWith("authTokens/") || model.isEmpty()
+                || !websocketUrl.startsWith("wss://") || expiresAt <= 0L)
+            throw new BackendException("invalid_response", 502,
+                    "El backend devolvió una credencial Gemini incompleta.");
+        return new GeminiCredential(value, model, websocketUrl, expiresAt);
+    }
+
+    public static final class GeminiCredential {
+        public final String value;
+        public final String model;
+        public final String websocketUrl;
+        public final long expiresAtEpochSeconds;
+        GeminiCredential(String value, String model, String websocketUrl, long expiresAtEpochSeconds) {
+            this.value = value;
+            this.model = model;
+            this.websocketUrl = websocketUrl;
+            this.expiresAtEpochSeconds = expiresAtEpochSeconds;
+        }
+    }
+
     static List<IceServerConfig> parseIceServers(JSONArray servers) {
         if (servers == null || servers.length() == 0) return Collections.emptyList();
         List<IceServerConfig> parsed = new ArrayList<>();
