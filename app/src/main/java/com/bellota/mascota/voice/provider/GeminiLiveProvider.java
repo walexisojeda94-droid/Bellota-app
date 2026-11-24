@@ -142,7 +142,9 @@ public final class GeminiLiveProvider implements VoiceProvider {
                     scheduleRenewal();
                 } catch (BellotaBackendClient.BackendException error) {
                     boolean permanent = error.httpStatus == 401 || error.httpStatus == 402
-                            || error.httpStatus == 403 || "provider_not_configured".equals(error.code);
+                            || error.httpStatus == 403 || "provider_not_configured".equals(error.code)
+                            || "provider_authentication".equals(error.code)
+                            || "provider_configuration".equals(error.code);
                     fail(mapBackendFailure(error), !permanent, error.getMessage());
                 } catch (Exception error) {
                     fail(Failure.NETWORK, true, safeMessage(error));
@@ -227,13 +229,13 @@ public final class GeminiLiveProvider implements VoiceProvider {
 
         @Override public void onFailure(WebSocket webSocket, Throwable error, Response response) {
             if (closed.get() || !isCurrentSocket(webSocket)) return;
-            if (connected.get() && recoveryCount < MAX_RECOVERIES) recover("Se interrumpió el WebSocket de Gemini Live.");
+            if (recoveryCount < MAX_RECOVERIES) recover("Se interrumpió el WebSocket de Gemini Live.");
             else fail(Failure.NETWORK, true, safeMessage(error));
         }
 
         @Override public void onClosed(WebSocket webSocket, int code, String reason) {
             if (closed.get() || !isCurrentSocket(webSocket)) return;
-            if (connected.get() && recoveryCount < MAX_RECOVERIES)
+            if (recoveryCount < MAX_RECOVERIES)
                 recover("Gemini cerró la conexión (" + code + ").");
             else fail(Failure.NETWORK, true, "Gemini cerró la conexión: " + reason);
         }
@@ -489,7 +491,15 @@ public final class GeminiLiveProvider implements VoiceProvider {
         WebSocket current = socket;
         if (current == null) return;
         try {
-            JSONObject response = new JSONObject().put("result", result == null ? "" : result);
+            JSONObject response;
+            try {
+                response = new JSONObject(result == null ? "{}" : result);
+            } catch (Exception notObject) {
+                try { response = new JSONObject().put("result", new JSONArray(result)); }
+                catch (Exception notArray) {
+                    response = new JSONObject().put("result", result == null ? "" : result);
+                }
+            }
             if (isError) response.put("error", true);
             String name = toolNamesByCallId.remove(callId);
             if (name == null) return;
@@ -564,9 +574,12 @@ public final class GeminiLiveProvider implements VoiceProvider {
     }
 
     private static Failure mapBackendFailure(BellotaBackendClient.BackendException error) {
-        if (error.httpStatus == 401 || error.httpStatus == 403) return Failure.AUTHENTICATION;
-        if (error.httpStatus == 402) return Failure.QUOTA;
-        if (error.httpStatus == 429) return Failure.RATE_LIMIT;
+        if ("provider_not_configured".equals(error.code)
+                || "provider_configuration".equals(error.code)) return Failure.CONFIGURATION;
+        if ("provider_authentication".equals(error.code)
+                || error.httpStatus == 401 || error.httpStatus == 403) return Failure.AUTHENTICATION;
+        if ("provider_quota".equals(error.code) || error.httpStatus == 402) return Failure.QUOTA;
+        if ("provider_rate_limit".equals(error.code) || error.httpStatus == 429) return Failure.RATE_LIMIT;
         if (error.httpStatus >= 500) return Failure.PROVIDER;
         return Failure.CONFIGURATION;
     }
@@ -588,5 +601,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
         sessionResumeHandle = null;
         activeInstructions = null;
         worker.shutdownNow();
+        http.dispatcher().executorService().shutdown();
+        http.connectionPool().evictAll();
     }
 }
