@@ -132,6 +132,11 @@ public class PlayfieldView extends View {
         if (notify && listener != null) listener.onFinished(finished);
     }
 
+    @Override protected void onDetachedFromWindow() {
+        stop(false);
+        super.onDetachedFromWindow();
+    }
+
     @Override protected void onDraw(Canvas c) {
         super.onDraw(c);
         if (game == Game.NONE) return;
