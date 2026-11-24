@@ -196,17 +196,20 @@ public class MainActivity extends Activity implements SensorEventListener {
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Borrar", (confirm, which) -> {
                     clearMemoryButton.setEnabled(false);
+                    disconnectOnlineVoice(false);
+                    VoiceRecognitionService.stop(MainActivity.this);
                     new Thread(() -> {
                         boolean semanticCleared = conversationEngine == null
                                 || conversationEngine.memory().clearPersistentMemory();
                         if (petMemory != null) petMemory.clear();
                         boolean journalCleared = petMemory == null
-                                || PetMemory.awaitPendingWrites(10000L);
+                                || (PetMemory.awaitPendingWrites(10000L) && PetMemory.wasLastClearSuccessful());
                         final boolean success = semanticCleared && journalCleared;
                         runOnUiThread(() -> {
                             if (isFinishing() || isDestroyed()) return;
                             clearMemoryButton.setEnabled(true);
                             shareMemory.setChecked(false);
+                            VoiceRecognitionService.resume(MainActivity.this);
                             Toast.makeText(MainActivity.this,
                                     success ? "Recuerdos locales eliminados." : "No se pudo confirmar el borrado completo. Revisá el almacenamiento.",
                                     Toast.LENGTH_LONG).show();
