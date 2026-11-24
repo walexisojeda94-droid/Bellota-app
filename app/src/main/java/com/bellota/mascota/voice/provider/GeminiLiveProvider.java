@@ -108,11 +108,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
                 try {
                     BellotaBackendClient backend = new BellotaBackendClient(backendUrl, tokenStore);
                     SessionConfig config = sessionConfig;
-                    String instructions = config.instructions;
-                    synchronized (recentContext) {
-                        if (recentContext.length() > 0)
-                            instructions += "\n\nContexto reciente de continuidad (no repetir literalmente):\n" + recentContext;
-                    }
+                    String instructions = currentInstructions();
                     BellotaBackendClient.GeminiCredential credential =
                             backend.createGeminiLiveToken(instructions, config.voice, config.toolDefinitionsJson);
                     if (closed.get()) return;
