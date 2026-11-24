@@ -180,6 +180,7 @@ public final class PetMemory {
                     int oldVersion = isV3Journal() ? readKeyVersion() : 1;
                     byte[] plaintext = isV3Journal() ? readV3Plaintext()
                             : isV2Journal() ? readV2Plaintext() : readLegacyPlaintext();
+                    if (!journal.exists()) return; // key loss/corruption was quarantined; preserve its ciphertext
                     int nextVersion = Math.max(CURRENT_KEY_VERSION, oldVersion + 1);
                     getOrCreateKey(nextVersion);
                     writeEncryptedV3(plaintext, System.currentTimeMillis(), nextVersion);
@@ -236,7 +237,7 @@ public final class PetMemory {
         try (DataInputStream input = new DataInputStream(atomicJournal.openRead())) {
             byte[] magic = new byte[4];
             input.readFully(magic);
-            if (!Arrays.equals(magic, MAGIC_V2)) return 0L;
+            if (!Arrays.equals(magic, MAGIC_V3)) return 0L;
             return input.readLong();
         } catch (Exception ignored) { return 0L; }
     }
@@ -329,16 +330,15 @@ public final class PetMemory {
     private void appendEncryptedRecord(byte[] plaintext, int version) throws Exception {
         byte[] record = encryptRecord(plaintext, version, false);
         try (RandomAccessFile output = new RandomAccessFile(journal, "rw")) {
-            if (output.length() == 0) {
-                output.write(MAGIC_V2);
-                output.writeLong(System.currentTimeMillis());
-            }
+            if (output.length() == 0) throw new GeneralSecurityException("No existe un diario BME3 para anexar.");
             byte[] magic = new byte[4];
             output.seek(0L);
             output.readFully(magic);
-            if (!Arrays.equals(magic, MAGIC_V2)) throw new GeneralSecurityException("Formato de diario inesperado.");
-            long validEnd = V2_HEADER_BYTES;
-            output.seek(V2_HEADER_BYTES);
+            if (!Arrays.equals(magic, MAGIC_V3)) throw new GeneralSecurityException("Formato de diario inesperado.");
+            int versionInFile = readKeyVersion();
+            if (versionInFile != version) throw new GeneralSecurityException("La versión de clave cambió durante la escritura.");
+            long validEnd = V3_HEADER_BYTES;
+            output.seek(V3_HEADER_BYTES);
             while (output.getFilePointer() + 4 <= output.length()) {
                 int length = output.readInt();
                 if (length < GCM_IV_BYTES + 16 || length > MAX_ENTRY_BYTES + 64
