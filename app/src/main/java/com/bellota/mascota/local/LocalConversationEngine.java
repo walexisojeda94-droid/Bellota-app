@@ -159,7 +159,9 @@ public final class LocalConversationEngine {
         String safe = sanitizeMemoryValue(value);
         if (safe.isEmpty() || containsSensitiveContent(safe) || target.length() + safe.length() > 600) return;
         if (target.length() > 0) target.append("; ");
-        target.append(key).append(": ").append(safe);
+        target.append(key).append(": \"")
+                .append(safe.replace("\\", "\\\\").replace("\"", "\\\""))
+                .append("\"");
     }
 
     private static boolean containsSensitiveContent(String value) {
