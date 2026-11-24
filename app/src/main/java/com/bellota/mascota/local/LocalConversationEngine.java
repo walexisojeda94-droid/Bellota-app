@@ -164,7 +164,7 @@ public final class LocalConversationEngine {
 
     private static boolean containsSensitiveContent(String value) {
         String lower = value.toLowerCase(Locale.ROOT);
-        return lower.matches("(?s).*\\b(salud|medicamento|medicación|diagnóstico|enfermedad|tratamiento|terapia|síntoma|síntomas|contraseña|password|dni|documento|domicilio|dirección|teléfono|tarjeta|cuenta bancaria|religión|política|partido político|orientación sexual|vida sexual)\\b.*")
+        return lower.matches("(?s).*\\b(salud|médico|medico|doctor|hospital|medicamento|medicación|diagnóstico|enfermedad|tratamiento|terapia|síntoma|síntomas|presión|diabetes|cáncer|ansiedad|depresión|discapacidad|alergia|embarazo|peso|contraseña|password|dni|documento|domicilio|dirección|teléfono|tarjeta|cuenta bancaria|religión|iglesia|cristiano|musulmán|judío|política|partido político|voto|ideología|sindicato|raza|etnia|orientación sexual|vida sexual|antecedentes penales|condena)\\b.*")
                 || lower.matches("(?s).*\\b[\\w.%+-]+@[\\w.-]+\\.[a-z]{2,}\\b.*")
                 || lower.matches("(?s).*https?://\\S+.*")
                 || lower.matches("(?s).*\\b(?:\\+?\\d[\\d .()/-]{7,}\\d)\\b.*");
