@@ -15,6 +15,9 @@ env:
   ANDROID_HOME: /usr/local/lib/android/sdk
 jobs:
   osv-vulnerability-scan:
+    permissions:
+      contents: read
+      security-events: write
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.1
     with:
       scan-args: |-
