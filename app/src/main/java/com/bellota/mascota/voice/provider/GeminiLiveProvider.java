@@ -436,14 +436,11 @@ public final class GeminiLiveProvider implements VoiceProvider {
                 if (input == null) break;
                 int count = input.read(samples, 0, samples.length);
                 if (count <= 0) {
-                    if (count < 0 && micRunning.get())
-                        fail(Failure.AUDIO, true, "Falló la captura de audio del micrófono.");
+                    if (micRunning.get())
+                        fail(Failure.AUDIO, true, "La captura de audio del micrófono se interrumpió.");
                     break;
                 }
-                for (int i = 0; i < count; i++) {
-                    pcm[i * 2] = (byte) (samples[i] & 0xff);
-                    pcm[i * 2 + 1] = (byte) ((samples[i] >>> 8) & 0xff);
-                }
+                Pcm16Encoder.encode(samples, count, pcm);
                 sendAudioFrame(pcm, count * 2);
             }
         } finally {
