@@ -55,8 +55,13 @@ public class ContinuousVoiceCommands {
 
     public void start() {
         if (running) return;
-        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            status("No hay un servicio de reconocimiento de voz disponible.");
+        if (VoiceRecognitionPolicy.usesDedicatedOnDeviceRecognizer(android.os.Build.VERSION.SDK_INT)) {
+            if (!SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
+                status("No hay un motor de reconocimiento on-device disponible. Instalá un servicio compatible y el modelo de español en Android.");
+                return;
+            }
+        } else if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            status("No hay un servicio de reconocimiento de voz disponible en Android.");
             return;
         }
 
@@ -70,7 +75,8 @@ public class ContinuousVoiceCommands {
 
         try {
             createRecognizer(session);
-            status("Reconocimiento español iniciado; preparando el micrófono.");
+            status(VoiceRecognitionPolicy.descriptionForApi(android.os.Build.VERSION.SDK_INT)
+                    + " Idioma solicitado por Bellota: español argentino (es-AR).");
             listenAgain(session, 250L);
         } catch (Exception error) {
             running = false;
@@ -243,7 +249,9 @@ public class ContinuousVoiceCommands {
 
             if (error == SpeechRecognizer.ERROR_NETWORK || error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT) {
                 long delay = Math.min(60000L, 5000L * (1L << Math.min(networkErrorCount++, 3)));
-                status("El servicio de voz no tiene conexión estable; se ampliará la espera antes de reintentar.");
+                status(android.os.Build.VERSION.SDK_INT >= 31
+                    ? "El reconocedor on-device informó un error de red. Se reintentará sin cambiar al idioma del teléfono."
+                    : "El proveedor de voz de Android requiere conexión. En Android 7-11 la preferencia sin conexión no garantiza un modelo offline; se reintentará y se informará si no está disponible.");
                 listenAgain(session, delay);
                 return;
             }
