@@ -235,7 +235,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
     private String currentInstructions() {
         String instructions = sessionConfig == null ? "" : sessionConfig.instructions;
         synchronized (recentContext) {
-            if (recentContext.length() > 0)
+            if ((sessionResumeHandle == null || sessionResumeHandle.isEmpty()) && recentContext.length() > 0)
                 instructions += "\n\nContexto reciente de continuidad (no repetir literalmente):\n" + recentContext;
         }
         return instructions;
