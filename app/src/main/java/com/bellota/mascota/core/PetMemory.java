@@ -50,6 +50,7 @@ public final class PetMemory {
     private static final AtomicInteger REJECTED_WRITES = new AtomicInteger();
     private static final AtomicBoolean CLEARING = new AtomicBoolean(false);
     private static final AtomicBoolean LAST_CLEAR_SUCCESS = new AtomicBoolean(false);
+    private static final AtomicInteger CLEAR_GENERATION = new AtomicInteger();
     private static final String ANDROID_KEY_STORE = "AndroidKeyStore";
     private static final int GCM_TAG_BITS = 128;
     private static final int GCM_IV_BYTES = 12;
@@ -75,8 +76,11 @@ public final class PetMemory {
      */
     public void remember(String type, String detail) {
         if (CLEARING.get()) return;
+        int generation = CLEAR_GENERATION.get();
+        if (CLEARING.get()) return;
         enqueue(() -> {
-            if (!CLEARING.get()) rememberNow(type, detail);
+            if (!CLEARING.get() && generation == CLEAR_GENERATION.get())
+                rememberNow(type, detail);
         });
     }
 
@@ -169,6 +173,7 @@ public final class PetMemory {
     /** Deletes active and quarantined diary files before removing its encryption keys. */
     public void clear() {
         if (!CLEARING.compareAndSet(false, true)) return;
+        CLEAR_GENERATION.incrementAndGet();
         LAST_CLEAR_SUCCESS.set(false);
         boolean queued = enqueue(() -> {
             try {
