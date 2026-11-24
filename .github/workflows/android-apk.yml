@@ -3,6 +3,8 @@ on:
   push:
     branches: [main, 'fix/xiaozhi-voice-pipeline', 'fix/revision-6-backend-persistence', 'fix/revision-7-build-dependencies-tests']
   workflow_dispatch:
+  pull_request:
+    branches: [main]
 concurrency:
   group: bellota-android-${{ github.ref }}
   cancel-in-progress: true
@@ -10,6 +12,18 @@ concurrency:
 env:
   ANDROID_HOME: /usr/local/lib/android/sdk
 jobs:
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Review dependency changes for known vulnerabilities
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -149,6 +163,17 @@ jobs:
         run: ./gradlew --no-daemon :app:testDebugUnitTest
       - name: Run Android lint
         run: ./gradlew --no-daemon :app:lintDebug
+      - name: Build minified Release variant
+        run: ./gradlew --no-daemon :app:assembleRelease
+      - name: Generate CycloneDX SBOM
+        run: ./gradlew --no-daemon :app:cyclonedxBom
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: bellota-sbom-cyclonedx
+          path: app/build/reports/bom.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Upload QA reports
         if: always()
         uses: actions/upload-artifact@v4
