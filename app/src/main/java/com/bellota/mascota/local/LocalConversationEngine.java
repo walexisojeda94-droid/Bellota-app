@@ -190,7 +190,7 @@ public final class LocalConversationEngine {
         return clean.length() > 120 ? clean.substring(0, 120) : clean;
     }
 
-    public synchronized void clearMemory() { memory.clearPersistentMemory(); }
+    public synchronized boolean clearMemory() { return memory.clearPersistentMemory(); }
 
     public ConversationMemory memory() { return memory; }
 
