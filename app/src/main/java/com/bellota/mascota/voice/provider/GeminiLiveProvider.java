@@ -26,8 +26,6 @@ import okhttp3.WebSocketListener;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -66,6 +64,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
     private volatile WebSocket socket;
     private volatile AudioRecord recorder;
     private volatile AudioTrack player;
+    private volatile Thread captureThread;
     private volatile AudioManager audioManager;
     private volatile int previousAudioMode = AudioManager.MODE_NORMAL;
     private volatile boolean previousSpeakerphone;
@@ -390,8 +389,8 @@ public final class GeminiLiveProvider implements VoiceProvider {
     }
 
     @SuppressLint("MissingPermission")
-    private void startAudio() {
-        if (closed.get() || !connected.get()) return;
+    private synchronized void startAudio() {
+        if (closed.get() || !connected.get() || recorder != null || captureThread != null) return;
         try {
             if (appContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
                 throw new SecurityException("Bellota no tiene permiso para usar el micrófono.");
@@ -419,36 +418,45 @@ public final class GeminiLiveProvider implements VoiceProvider {
             player.play();
             recorder.startRecording();
             micRunning.set(true);
-            Thread captureThread = new Thread(this::captureLoop, "GeminiLiveMic");
+            captureThread = new Thread(this::captureLoop, "GeminiLiveMic");
             captureThread.setDaemon(true);
             captureThread.start();
         } catch (Exception error) {
+            stopAudio();
             fail(Failure.AUDIO, true, "No se pudo iniciar el audio Gemini: " + safeMessage(error));
         }
     }
 
     private void captureLoop() {
         short[] samples = new short[FRAME_SAMPLES];
-        while (!closed.get() && connected.get() && micRunning.get()) {
-            AudioRecord input = recorder;
-            if (input == null) break;
-            int count = input.read(samples, 0, samples.length);
-            if (count <= 0) {
-                if (count < 0) fail(Failure.AUDIO, true, "Falló la captura de audio del micrófono.");
-                break;
+        byte[] pcm = new byte[FRAME_SAMPLES * 2];
+        try {
+            while (!closed.get() && connected.get() && micRunning.get()) {
+                AudioRecord input = recorder;
+                if (input == null) break;
+                int count = input.read(samples, 0, samples.length);
+                if (count <= 0) {
+                    if (count < 0 && micRunning.get())
+                        fail(Failure.AUDIO, true, "Falló la captura de audio del micrófono.");
+                    break;
+                }
+                for (int i = 0; i < count; i++) {
+                    pcm[i * 2] = (byte) (samples[i] & 0xff);
+                    pcm[i * 2 + 1] = (byte) ((samples[i] >>> 8) & 0xff);
+                }
+                sendAudioFrame(pcm, count * 2);
             }
-            ByteBuffer bytes = ByteBuffer.allocate(count * 2).order(ByteOrder.LITTLE_ENDIAN);
-            for (int i = 0; i < count; i++) bytes.putShort(samples[i]);
-            sendAudioFrame(bytes.array());
+        } finally {
+            if (Thread.currentThread() == captureThread) captureThread = null;
         }
     }
 
-    private void sendAudioFrame(byte[] pcm) {
+    private void sendAudioFrame(byte[] pcm, int length) {
         WebSocket current = socket;
         if (current == null || !connected.get()) return;
         try {
             JSONObject audio = new JSONObject().put("mimeType", "audio/pcm;rate=16000")
-                    .put("data", Base64.encodeToString(pcm, Base64.NO_WRAP));
+                    .put("data", Base64.encodeToString(pcm, 0, length, Base64.NO_WRAP));
             current.send(new JSONObject().put("realtimeInput", new JSONObject().put("audio", audio)).toString());
         } catch (Exception ignored) { }
     }
@@ -521,13 +529,19 @@ public final class GeminiLiveProvider implements VoiceProvider {
         }
     }
 
-    private void stopAudio() {
+    private synchronized void stopAudio() {
         micRunning.set(false);
         AudioRecord input = recorder;
         recorder = null;
         if (input != null) {
             try { input.stop(); } catch (RuntimeException ignored) { }
             try { input.release(); } catch (RuntimeException ignored) { }
+        }
+        Thread capture = captureThread;
+        captureThread = null;
+        if (capture != null && capture != Thread.currentThread()) {
+            try { capture.join(300L); }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
         }
         AudioTrack output = player;
         player = null;
@@ -536,6 +550,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
             try { output.release(); } catch (RuntimeException ignored) { }
         }
         AudioManager manager = audioManager;
+        audioManager = null;
         if (manager != null && audioModeChanged) {
             try { manager.setSpeakerphoneOn(previousSpeakerphone); manager.setMode(previousAudioMode); }
             catch (RuntimeException ignored) { }
