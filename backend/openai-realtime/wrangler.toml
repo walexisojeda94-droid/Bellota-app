@@ -12,3 +12,8 @@ enabled = true
 binding = "DB"
 database_name = "bellota-devices"
 database_id = "ac97ad0c-e0fe-4f0f-b12c-0dc607e5d025"
+
+[[previews.d1_databases]]
+binding = "DB"
+database_name = "bellota-devices-preview"
+database_id = "6386dc30-8cb4-4a65-80aa-d311375dacc5"
