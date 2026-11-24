@@ -17,6 +17,11 @@ import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -31,13 +36,25 @@ public final class PetMemory {
     private static final long MAX_ENTRY_AGE_MS = 180L * 24L * 60L * 60L * 1000L;
     private static final long COMPACT_INTERVAL_MS = 24L * 60L * 60L * 1000L;
     private static final int MAX_ENTRY_BYTES = 256 * 1024;
-    private static final String KEY_ALIAS = "bellota_pet_memory_v1";
+    private static final String KEY_ALIAS_PREFIX = "bellota_pet_memory_v";
+    private static final int CURRENT_KEY_VERSION = 2;
+    private static final ThreadPoolExecutor WRITER = new ThreadPoolExecutor(
+            1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(512), runnable -> {
+                Thread thread = new Thread(runnable, "Bellota-MemoryWriter");
+                thread.setDaemon(true);
+                return thread;
+            }, new ThreadPoolExecutor.AbortPolicy());
+    private static final AtomicInteger PENDING_WRITES = new AtomicInteger();
+    private static final AtomicInteger FAILED_WRITES = new AtomicInteger();
+    private static final AtomicInteger REJECTED_WRITES = new AtomicInteger();
     private static final String ANDROID_KEY_STORE = "AndroidKeyStore";
     private static final int GCM_TAG_BITS = 128;
     private static final int GCM_IV_BYTES = 12;
     private static final byte[] MAGIC_V1 = new byte[] { 'B', 'M', 'E', '1' };
     private static final byte[] MAGIC_V2 = new byte[] { 'B', 'M', 'E', '2' };
+    private static final byte[] MAGIC_V3 = new byte[] { 'B', 'M', 'E', '3' };
     private static final int V2_HEADER_BYTES = 12; // magic + last compaction timestamp
+    private static final int V3_HEADER_BYTES = 16; // magic + compaction timestamp + key version
     private static final Object JOURNAL_LOCK = new Object();
     private final File journal;
     private final AtomicFile atomicJournal;
@@ -49,7 +66,15 @@ public final class PetMemory {
         atomicJournal = new AtomicFile(journal);
     }
 
-    public synchronized void remember(String type, String detail) {
+    /**
+     * Enqueues a memory event without touching disk on the caller thread.
+     * A single bounded writer preserves ordering and never falls back to the UI thread.
+     */
+    public void remember(String type, String detail) {
+        enqueue(() -> rememberNow(type, detail));
+    }
+
+    private synchronized void rememberNow(String type, String detail) {
         try {
             JSONObject entry = new JSONObject();
             entry.put("timestamp", System.currentTimeMillis());
@@ -75,25 +100,106 @@ public final class PetMemory {
 
             synchronized (JOURNAL_LOCK) {
                 long now = System.currentTimeMillis();
-                if (isV2Journal()) {
+                if (isV3Journal()) {
+                    int version = readKeyVersion();
                     long lastCompacted = readCompactionTime();
                     if (journal.length() + line.length + 64L > MAX_JOURNAL_BYTES
                             || lastCompacted <= 0L || now - lastCompacted >= COMPACT_INTERVAL_MS) {
-                        byte[] current = pruneExpired(readV2Plaintext(), now);
-                        byte[] combined = appendLine(current, line);
-                        writeEncryptedV2(trimToLimit(combined), now);
+                        byte[] current = pruneExpired(readV3Plaintext(), now);
+                        writeEncryptedV3(trimToLimit(appendLine(current, line)), now, version);
                     } else {
-                        appendEncryptedRecord(line);
+                        appendEncryptedRecord(line, version);
                     }
+                } else if (isV2Journal()) {
+                    byte[] current = pruneExpired(readV2Plaintext(), now);
+                    writeEncryptedV3(trimToLimit(appendLine(current, line)), now, CURRENT_KEY_VERSION);
                 } else {
                     // One-time migration from plaintext JSONL or the original BME1 envelope.
                     byte[] previous = pruneExpired(readLegacyPlaintext(), now);
-                    writeEncryptedV2(trimToLimit(appendLine(previous, line)), now);
+                    writeEncryptedV3(trimToLimit(appendLine(previous, line)), now, CURRENT_KEY_VERSION);
                 }
             }
-        } catch (Exception ignored) {
-            // Memory persistence must never interrupt the pet's runtime.
+        } catch (Exception error) {
+            FAILED_WRITES.incrementAndGet();
+            // Persistence errors are observable through counters and never interrupt the pet runtime.
         }
+    }
+
+    private static void enqueue(Runnable operation) {
+        PENDING_WRITES.incrementAndGet();
+        try {
+            WRITER.execute(() -> {
+                try { operation.run(); }
+                catch (RuntimeException ignored) { FAILED_WRITES.incrementAndGet(); }
+                finally { PENDING_WRITES.decrementAndGet(); }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException full) {
+            PENDING_WRITES.decrementAndGet();
+            REJECTED_WRITES.incrementAndGet();
+        }
+    }
+
+    /** Test/diagnostic hook. Waiting is explicit and must never be called from the UI thread. */
+    public static boolean awaitPendingWrites(long timeoutMs) throws InterruptedException {
+        CountDownLatch barrier = new CountDownLatch(1);
+        try { WRITER.execute(barrier::countDown); }
+        catch (java.util.concurrent.RejectedExecutionException full) { return false; }
+        return barrier.await(timeoutMs, TimeUnit.MILLISECONDS);
+    }
+
+    public static int getPendingWriteCount() { return PENDING_WRITES.get(); }
+    public static int getFailedWriteCount() { return FAILED_WRITES.get(); }
+    public static int getRejectedWriteCount() { return REJECTED_WRITES.get(); }
+
+    /** Deletes active and quarantined diary files before removing its encryption keys. */
+    public void clear() {
+        enqueue(() -> {
+            synchronized (JOURNAL_LOCK) {
+                File[] files = journal.getParentFile().listFiles((dir, name) ->
+                        name.equals(journal.getName()) || name.equals(journal.getName() + ".bak")
+                                || name.startsWith(journal.getName() + ".locked."));
+                if (files != null) {
+                    for (File file : files) {
+                        if (file.exists() && !file.delete()) {
+                            FAILED_WRITES.incrementAndGet();
+                            return;
+                        }
+                    }
+                }
+                deleteAllKeys();
+            }
+        });
+    }
+
+    /** Re-encrypts the complete diary with a fresh versioned Keystore key. */
+    public void rotateKey() {
+        enqueue(() -> {
+            synchronized (JOURNAL_LOCK) {
+                try {
+                    if (!journal.exists() || journal.length() == 0L) return;
+                    int oldVersion = isV3Journal() ? readKeyVersion() : 1;
+                    byte[] plaintext = isV3Journal() ? readV3Plaintext()
+                            : isV2Journal() ? readV2Plaintext() : readLegacyPlaintext();
+                    int nextVersion = Math.max(CURRENT_KEY_VERSION, oldVersion + 1);
+                    getOrCreateKey(nextVersion);
+                    writeEncryptedV3(plaintext, System.currentTimeMillis(), nextVersion);
+                    deleteKey(oldVersion);
+                } catch (Exception error) {
+                    FAILED_WRITES.incrementAndGet();
+                }
+            }
+        });
+    }
+
+    private static void deleteAllKeys() {
+        try {
+            KeyStore keyStore = KeyStore.getInstance(ANDROID_KEY_STORE);
+            keyStore.load(null);
+            for (int version = 1; version <= 16; version++) {
+                String alias = KEY_ALIAS_PREFIX + version;
+                if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias);
+            }
+        } catch (Exception ignored) { }
     }
 
     private static byte[] appendLine(byte[] previous, byte[] line) {
@@ -103,12 +209,27 @@ public final class PetMemory {
         return combined;
     }
 
-    private boolean isV2Journal() {
-        if (!journal.exists() || journal.length() < MAGIC_V2.length) return false;
+    private boolean hasMagicAtStart(byte[] expected) {
+        if (!journal.exists() || journal.length() < expected.length) return false;
         try (FileInputStream input = atomicJournal.openRead()) {
-            byte[] header = new byte[4];
-            return input.read(header) == 4 && Arrays.equals(header, MAGIC_V2);
+            byte[] header = new byte[expected.length];
+            return input.read(header) == expected.length && Arrays.equals(header, expected);
         } catch (Exception ignored) { return false; }
+    }
+
+    private boolean isV2Journal() { return hasMagicAtStart(MAGIC_V2); }
+    private boolean isV3Journal() { return hasMagicAtStart(MAGIC_V3); }
+
+    private int readKeyVersion() throws Exception {
+        try (DataInputStream input = new DataInputStream(atomicJournal.openRead())) {
+            byte[] magic = new byte[4];
+            input.readFully(magic);
+            if (!Arrays.equals(magic, MAGIC_V3)) return 1;
+            input.readLong();
+            int version = input.readInt();
+            if (version < 1 || version > 16) throw new GeneralSecurityException("Versión de clave inválida.");
+            return version;
+        }
     }
 
     private long readCompactionTime() {
@@ -141,11 +262,10 @@ public final class PetMemory {
             byte[] iv = Arrays.copyOfRange(stored, MAGIC_V1.length, MAGIC_V1.length + GCM_IV_BYTES);
             byte[] ciphertext = Arrays.copyOfRange(stored, MAGIC_V1.length + GCM_IV_BYTES, stored.length);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, getExistingKey(), new GCMParameterSpec(GCM_TAG_BITS, iv));
+            cipher.init(Cipher.DECRYPT_MODE, getExistingKey(1), new GCMParameterSpec(GCM_TAG_BITS, iv));
             return cipher.doFinal(ciphertext);
         } catch (Exception invalidatedOrDamaged) {
-            quarantineUnreadableJournal();
-            deleteKey();
+            if (!quarantineUnreadableJournal()) throw new GeneralSecurityException("No se pudo preservar el diario bloqueado.");
             return new byte[0];
         }
     }
@@ -155,9 +275,10 @@ public final class PetMemory {
         try (DataInputStream input = new DataInputStream(atomicJournal.openRead())) {
             byte[] magic = new byte[4];
             input.readFully(magic);
-            if (!Arrays.equals(magic, MAGIC_V2)) return new byte[0];
-            input.readLong(); // compaction timestamp
-            while (input.available() >= 4) {
+            if (!Arrays.equals(magic, MAGIC_V2)) throw new GeneralSecurityException("Formato BME2 inválido.");
+            input.readLong();
+            while (input.available() > 0) {
+                if (input.available() < 4) break; // incomplete trailing length from an interrupted append
                 int recordLength = input.readInt();
                 if (recordLength < GCM_IV_BYTES + 16 || recordLength > MAX_ENTRY_BYTES + 64
                         || input.available() < recordLength) break;
@@ -166,19 +287,47 @@ public final class PetMemory {
                 byte[] iv = Arrays.copyOfRange(record, 0, GCM_IV_BYTES);
                 byte[] ciphertext = Arrays.copyOfRange(record, GCM_IV_BYTES, record.length);
                 Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-                cipher.init(Cipher.DECRYPT_MODE, getExistingKey(), new GCMParameterSpec(GCM_TAG_BITS, iv));
+                cipher.init(Cipher.DECRYPT_MODE, getExistingKey(1), new GCMParameterSpec(GCM_TAG_BITS, iv));
                 output.write(cipher.doFinal(ciphertext));
             }
             return output.toByteArray();
-        } catch (Exception damaged) {
-            quarantineUnreadableJournal();
-            deleteKey();
+        } catch (Exception damagedOrMissingKey) {
+            if (!quarantineUnreadableJournal()) throw new IllegalStateException("No se pudo preservar el diario BME2.", damagedOrMissingKey);
             return new byte[0];
         }
     }
 
-    private void appendEncryptedRecord(byte[] plaintext) throws Exception {
-        byte[] record = encryptRecord(plaintext);
+    private byte[] readV3Plaintext() {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (DataInputStream input = new DataInputStream(atomicJournal.openRead())) {
+            byte[] magic = new byte[4];
+            input.readFully(magic);
+            if (!Arrays.equals(magic, MAGIC_V3)) throw new GeneralSecurityException("Formato BME3 inválido.");
+            input.readLong();
+            int version = input.readInt();
+            if (version < 1 || version > 16) throw new GeneralSecurityException("Versión de clave inválida.");
+            while (input.available() > 0) {
+                if (input.available() < 4) break;
+                int recordLength = input.readInt();
+                if (recordLength < GCM_IV_BYTES + 16 || recordLength > MAX_ENTRY_BYTES + 64
+                        || input.available() < recordLength) break;
+                byte[] record = new byte[recordLength];
+                input.readFully(record);
+                byte[] iv = Arrays.copyOfRange(record, 0, GCM_IV_BYTES);
+                byte[] ciphertext = Arrays.copyOfRange(record, GCM_IV_BYTES, record.length);
+                Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                cipher.init(Cipher.DECRYPT_MODE, getExistingKey(version), new GCMParameterSpec(GCM_TAG_BITS, iv));
+                output.write(cipher.doFinal(ciphertext));
+            }
+            return output.toByteArray();
+        } catch (Exception damagedOrMissingKey) {
+            if (!quarantineUnreadableJournal()) throw new IllegalStateException("No se pudo preservar el diario BME3.", damagedOrMissingKey);
+            return new byte[0];
+        }
+    }
+
+    private void appendEncryptedRecord(byte[] plaintext, int version) throws Exception {
+        byte[] record = encryptRecord(plaintext, version, false);
         try (RandomAccessFile output = new RandomAccessFile(journal, "rw")) {
             if (output.length() == 0) {
                 output.write(MAGIC_V2);
@@ -205,9 +354,9 @@ public final class PetMemory {
         }
     }
 
-    private byte[] encryptRecord(byte[] plaintext) throws Exception {
+    private byte[] encryptRecord(byte[] plaintext, int version, boolean allowCreate) throws Exception {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
+        cipher.init(Cipher.ENCRYPT_MODE, allowCreate ? getOrCreateKey(version) : getExistingKey(version));
         byte[] encrypted = cipher.doFinal(plaintext);
         byte[] iv = cipher.getIV();
         if (iv == null || iv.length != GCM_IV_BYTES)
@@ -218,13 +367,14 @@ public final class PetMemory {
         return record;
     }
 
-    private void writeEncryptedV2(byte[] plaintext, long compactedAt) throws Exception {
+    private void writeEncryptedV3(byte[] plaintext, long compactedAt, int version) throws Exception {
+        getOrCreateKey(version);
         List<byte[]> records = new ArrayList<>();
         String[] lines = new String(plaintext, StandardCharsets.UTF_8).split("\n");
-        long totalBytes = V2_HEADER_BYTES;
+        long totalBytes = V3_HEADER_BYTES;
         for (int i = lines.length - 1; i >= 0; i--) {
             if (lines[i].isEmpty()) continue;
-            byte[] record = encryptRecord((lines[i] + "\n").getBytes(StandardCharsets.UTF_8));
+            byte[] record = encryptRecord((lines[i] + "\n").getBytes(StandardCharsets.UTF_8), version, false);
             long required = 4L + record.length;
             if (totalBytes + required > MAX_JOURNAL_BYTES) break;
             records.add(0, record);
@@ -233,12 +383,16 @@ public final class PetMemory {
         FileOutputStream output = null;
         try {
             output = atomicJournal.startWrite();
-            output.write(MAGIC_V2);
+            output.write(MAGIC_V3);
             output.write(new byte[] {
                     (byte) (compactedAt >>> 56), (byte) (compactedAt >>> 48),
                     (byte) (compactedAt >>> 40), (byte) (compactedAt >>> 32),
                     (byte) (compactedAt >>> 24), (byte) (compactedAt >>> 16),
                     (byte) (compactedAt >>> 8), (byte) compactedAt
+            });
+            output.write(new byte[] {
+                    (byte) (version >>> 24), (byte) (version >>> 16),
+                    (byte) (version >>> 8), (byte) version
             });
             for (byte[] record : records) {
                 output.write(new byte[] {
@@ -287,17 +441,14 @@ public final class PetMemory {
         return true;
     }
 
-    private SecretKey getOrCreateKey() throws Exception {
+    private SecretKey getOrCreateKey(int version) throws Exception {
         KeyStore keyStore = KeyStore.getInstance(ANDROID_KEY_STORE);
         keyStore.load(null);
-        try {
-            java.security.Key existing = keyStore.getKey(KEY_ALIAS, null);
-            if (existing instanceof SecretKey) return (SecretKey) existing;
-        } catch (Exception invalidated) {
-            if (keyStore.containsAlias(KEY_ALIAS)) keyStore.deleteEntry(KEY_ALIAS);
-        }
+        String alias = KEY_ALIAS_PREFIX + version;
+        java.security.Key existing = keyStore.getKey(alias, null);
+        if (existing instanceof SecretKey) return (SecretKey) existing;
         KeyGenerator generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEY_STORE);
-        generator.init(new KeyGenParameterSpec.Builder(KEY_ALIAS,
+        generator.init(new KeyGenParameterSpec.Builder(alias,
                 KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
@@ -306,31 +457,33 @@ public final class PetMemory {
         return generator.generateKey();
     }
 
-    private SecretKey getExistingKey() throws Exception {
+    private SecretKey getExistingKey(int version) throws Exception {
         KeyStore keyStore = KeyStore.getInstance(ANDROID_KEY_STORE);
         keyStore.load(null);
-        java.security.Key key = keyStore.getKey(KEY_ALIAS, null);
-        if (!(key instanceof SecretKey)) throw new GeneralSecurityException("No existe la clave del diario.");
+        java.security.Key key = keyStore.getKey(KEY_ALIAS_PREFIX + version, null);
+        if (!(key instanceof SecretKey)) throw new GeneralSecurityException("No existe la clave v" + version + " del diario.");
         return (SecretKey) key;
     }
 
-    private void deleteKey() {
+    private void deleteKey(int version) {
         try {
             KeyStore keyStore = KeyStore.getInstance(ANDROID_KEY_STORE);
             keyStore.load(null);
-            if (keyStore.containsAlias(KEY_ALIAS)) keyStore.deleteEntry(KEY_ALIAS);
+            String alias = KEY_ALIAS_PREFIX + version;
+            if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias);
         } catch (Exception ignored) { }
     }
 
-    private void quarantineUnreadableJournal() {
+    private boolean quarantineUnreadableJournal() {
         try {
-            if (!journal.exists()) return;
+            if (!journal.exists()) return true;
             File quarantined = new File(journal.getParentFile(),
                     "recuerdos.jsonl.locked." + System.currentTimeMillis());
-            journal.renameTo(quarantined);
-        } catch (Exception ignored) { }
+            return journal.renameTo(quarantined);
+        } catch (Exception ignored) { return false; }
     }
 
     /** Returns the on-disk path; contents are encrypted binary, not readable JSONL. */
+
     public File getJournalFile() { return journal; }
 }
