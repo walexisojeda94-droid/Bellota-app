@@ -13,19 +13,19 @@ Aplicación Android nativa de mascota virtual. Bellota mantiene su interfaz, com
 - Memoria compartida entre conversación local y Realtime; diario cifrado de ambos lados de la conversación.
 - Las llamadas de herramientas quedan asociadas a su sesión de origen, se serializan y descartan si llegan tarde.
 - OpenAI Realtime es el proveedor online principal y Gemini Live es el segundo proveedor implementado mediante WebSocket y token efímero. La voz local es el último respaldo.
-- El reconocimiento local utiliza un Foreground Service. La sesión online actual se crea y administra desde MainActivity; por lo tanto, no se certifica continuidad de OpenAI en segundo plano ni después de destruir la Activity.
+- VoiceSessionService administra OpenAI y Gemini como Foreground Service; MainActivity solo inicia y controla la sesión. El reconocimiento local conserva su propio Foreground Service. La continuidad tras destruir Activity y pantalla apagada requiere prueba física prolongada.
 
 ## Arquitectura de voz
 
 1. OpenAI Realtime es el proveedor online principal.
-2. Gemini Live es el segundo proveedor planificado, pendiente de implementación.
-3. La voz y conversación locales son el respaldo operativo actual.
+2. Gemini Live (gemini-3.8-live) es el segundo proveedor implementado mediante WebSocket y credenciales efímeras emitidas por Cloudflare.
+3. La voz local es el último respaldo cuando ambos proveedores online fallan.
 4. La personalidad, memoria, emociones, autonomía y herramientas de Bellota son independientes del proveedor.
 5. XiaoZhi fue retirado; no se conserva compatibilidad con ese protocolo.
 
 ## Backend OpenAI
 
-El Worker `bellota-openai-realtime` está desplegado en Cloudflare. El binding D1 `DB` apunta a la base existente `bellota-devices`; las migraciones de recuperación de refresh y los índices de retención se aplicaron. Los secretos `ADMIN_TOKEN`, `JWT_SECRET` y `OPENAI_API_KEY` y el binding D1 fueron verificados durante la Revisión 6. La observabilidad de logs y traces está habilitada.
+El Worker `bellota-openai-realtime` está desplegado en Cloudflare. El binding D1 `DB` apunta a la base existente `bellota-devices`; las migraciones de recuperación de refresh y los índices de retención se aplicaron. Los secretos `ADMIN_TOKEN`, `JWT_SECRET` y `OPENAI_API_KEY` y el binding D1 fueron verificados. El Worker ahora también publica `/v1/gemini/live-token`; falta cargar `GEMINI_API_KEY` como secreto para habilitarlo. La observabilidad de logs y traces está habilitada.
 
 El endpoint `GET /health` comprueba configuración y esquema D1. El código y la infraestructura fueron revisados, pero no se registra en esta certificación una respuesta HTTP externa del endpoint. La emisión y selección real de TURN en una red restrictiva tampoco se considera probada; depende de las credenciales TURN correspondientes.
 
@@ -53,10 +53,10 @@ Comandos locales:
 ## Límites de certificación
 
 - El límite local de 24.000 tokens depende de eventos de uso recibidos; no es un límite de facturación impuesto por OpenAI.
-- El reintento de OpenAI es acotado. Tras el fallo se usa la voz local; no existe todavía failover OpenAI → Gemini.
+- VoiceProviderManager coordina el orden OpenAI → Gemini → voz local, con aislamiento de llamadas a herramientas por sesión. La conmutación real con Gemini requiere una clave Google válida y prueba de audio.
 - La prueba de emuladores no sustituye la prueba física de audio, interrupciones, funcionamiento prolongado, cambios de red y segundo plano en los dispositivos objetivo.
-- La continuidad de voz online en segundo plano sigue pendiente.
-- La prueba real de audio y failover OpenAI → Gemini → local requiere un secreto Gemini válido y dispositivos físicos.
+- La sesión online ya vive en VoiceSessionService foreground; falta validar físicamente pantalla apagada, cambios de red y recuperación prolongada.
+- La prueba real de audio y failover OpenAI → Gemini → local requiere cargar GEMINI_API_KEY en Cloudflare y probar con un dispositivo físico.
 - La certificación de BEL-001 a BEL-035 requiere disponer de los criterios formales originales de cada ticket. El estado trazable conocido se registra en `docs/revision-8-certificacion.md`.
 
 ## Documentación
