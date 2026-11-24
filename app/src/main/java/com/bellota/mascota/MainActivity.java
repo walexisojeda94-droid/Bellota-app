@@ -1021,6 +1021,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (status.startsWith("Error de reconocimiento:")
                 || status.startsWith("No hay un servicio de reconocimiento")
                 || status.startsWith("No hay un reconocedor de voz local")
+                || status.startsWith("No hay un motor de reconocimiento on-device")
                 || status.startsWith("No hay un modelo español local")) {
             long now = System.currentTimeMillis();
             if (!paused && now - lastVoiceDiagnosticToastAt >= 10000L) {
