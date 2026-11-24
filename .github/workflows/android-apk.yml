@@ -168,7 +168,7 @@ jobs:
       - name: Create SBOM integrity checksum
         run: sha256sum build/reports/cyclonedx/bom.json > build/reports/cyclonedx/bom.json.sha256
       - name: Upload SBOM and resolved dependency lockfile
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bellota-sbom-cyclonedx
           path: |
@@ -179,7 +179,7 @@ jobs:
           retention-days: 90
       - name: Upload QA reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bellota-qa-reports
           path: |
@@ -297,7 +297,7 @@ jobs:
         run: ./gradlew --no-daemon :app:assembleDebug
       - name: Upload signed release APK
         if: steps.signing.outputs.enabled == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bellota-release-apk
           path: app/build/outputs/apk/release/app-release.apk
@@ -305,7 +305,7 @@ jobs:
           retention-days: 30
       - name: Upload temporary debug APK
         if: steps.signing.outputs.enabled != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bellota-debug-apk-temporal
           path: app/build/outputs/apk/debug/app-debug.apk
