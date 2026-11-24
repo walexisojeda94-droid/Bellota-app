@@ -59,7 +59,6 @@ public final class OpenAIRealtimeWebRtcProvider implements VoiceProvider {
     private static final int MAX_RECOVERY_ATTEMPTS = 1;
     private static final int MAX_SDP_BYTES = 262144;
     private static final long OFFER_GATHER_TIMEOUT_MS = 10000L;
-    private static final long SESSION_RENEWAL_LEAD_TIME_MS = 120000L;
     private static final Object FACTORY_LOCK = new Object();
     private static boolean factoryInitialized;
 
