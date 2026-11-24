@@ -169,6 +169,52 @@ public class MainActivity extends Activity implements SensorEventListener {
         explanation.setTextSize(14f);
         panel.addView(explanation);
 
+        android.widget.CheckBox shareMemory = new android.widget.CheckBox(this);
+        shareMemory.setText("Permitir que la voz online use recuerdos relevantes");
+        shareMemory.setTextColor(0xFFE7EEEE);
+        shareMemory.setTextSize(13f);
+        shareMemory.setButtonTintList(android.content.res.ColorStateList.valueOf(0xFF00BFA6));
+        shareMemory.setChecked(memory() != null && memory().isOnlineMemorySharingEnabled());
+        shareMemory.setOnCheckedChangeListener((button, checked) -> {
+            ConversationMemory currentMemory = memory();
+            if (currentMemory != null) currentMemory.setOnlineMemorySharingEnabled(checked);
+        });
+        panel.addView(shareMemory);
+
+        android.widget.TextView privacyNote = new android.widget.TextView(this);
+        privacyNote.setText("Desactivado por defecto. Si lo activás, solo se comparte un resumen limitado de nombre, apodos y gustos no sensibles. El diario cifrado y las transcripciones guardadas no se envían como memoria.");
+        privacyNote.setTextColor(0xFFB7C8C8);
+        privacyNote.setTextSize(11f);
+        panel.addView(privacyNote);
+
+        android.widget.Button clearMemoryButton = new android.widget.Button(this);
+        clearMemoryButton.setText("Borrar recuerdos locales");
+        clearMemoryButton.setTextColor(0xFFFFC0B8);
+        clearMemoryButton.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
+                .setTitle("Borrar recuerdos de Bellota")
+                .setMessage("Se eliminarán el diario cifrado, los recuerdos semánticos y las copias locales bloqueadas. Esta acción no se puede deshacer.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Borrar", (confirm, which) -> {
+                    clearMemoryButton.setEnabled(false);
+                    new Thread(() -> {
+                        boolean semanticCleared = conversationEngine == null
+                                || conversationEngine.memory().clearPersistentMemory();
+                        if (petMemory != null) petMemory.clear();
+                        boolean journalCleared = petMemory == null
+                                || PetMemory.awaitPendingWrites(10000L);
+                        final boolean success = semanticCleared && journalCleared;
+                        runOnUiThread(() -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            clearMemoryButton.setEnabled(true);
+                            shareMemory.setChecked(false);
+                            Toast.makeText(MainActivity.this,
+                                    success ? "Recuerdos locales eliminados." : "No se pudo confirmar el borrado completo. Revisá el almacenamiento.",
+                                    Toast.LENGTH_LONG).show();
+                        });
+                    }, "Bellota-MemoryDelete").start();
+                }).show());
+        panel.addView(clearMemoryButton);
+
         android.widget.EditText codeInput = new android.widget.EditText(this);
         codeInput.setSingleLine(true);
         codeInput.setHint("Código de vinculación");
