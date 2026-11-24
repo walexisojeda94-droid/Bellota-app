@@ -336,7 +336,7 @@ public final class PetMemory {
             return output.toByteArray();
         } catch (Exception damagedOrMissingKey) {
             if (!quarantineUnreadableJournal()) throw new IllegalStateException("No se pudo preservar el diario BME2.", damagedOrMissingKey);
-            return new byte[0];
+            return output.toByteArray();
         }
     }
 
@@ -366,7 +366,7 @@ public final class PetMemory {
             return output.toByteArray();
         } catch (Exception damagedOrMissingKey) {
             if (!quarantineUnreadableJournal()) throw new IllegalStateException("No se pudo preservar el diario BME3.", damagedOrMissingKey);
-            return new byte[0];
+            return output.toByteArray();
         }
     }
 
@@ -392,8 +392,15 @@ public final class PetMemory {
             output.seek(V3_HEADER_BYTES);
             while (output.getFilePointer() + 4 <= output.length()) {
                 int length = output.readInt();
-                if (length < GCM_IV_BYTES + 16 || length > MAX_ENTRY_BYTES + 64)
+                if (length < GCM_IV_BYTES + 16 || length > MAX_ENTRY_BYTES + 64) {
+                    byte[] recovered = readV3Plaintext();
+                    if (!journal.exists()) {
+                        writeEncryptedV3(appendLine(recovered, plaintext), System.currentTimeMillis(),
+                                Math.max(CURRENT_KEY_VERSION, version + 1));
+                        return;
+                    }
                     throw new GeneralSecurityException("Longitud de registro BME3 inválida.");
+                }
                 if (output.getFilePointer() + length > output.length()) break;
                 output.seek(output.getFilePointer() + length);
                 validEnd = output.getFilePointer();
