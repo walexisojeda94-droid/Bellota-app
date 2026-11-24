@@ -63,6 +63,7 @@ public class ConversationMemoryTest {
         engine.rememberOnlineMessage("Me llamo Alexis");
         engine.rememberOnlineMessage("Me gusta el mate");
         engine.rememberOnlineMessage("Llamame Ale");
+        memory.setOnlineMemorySharingEnabled(true);
 
         assertEquals("Alexis", memory.name());
         assertEquals(1, memory.likes().size());
@@ -140,9 +141,43 @@ public class ConversationMemoryTest {
         assertNull(memory.expecting(System.currentTimeMillis()));
     }
 
-    @Test public void onlineMemoryContextIsEmptyWhenThereAreNoKnownFacts() {
-        LocalConversationEngine engine = new LocalConversationEngine(ConversationMemory.inMemory());
+    @Test public void onlineMemorySharingIsDisabledByDefault() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        memory.setName("Alexis");
+        LocalConversationEngine engine = new LocalConversationEngine(memory);
         assertEquals("", engine.memoryContextForOnline());
+    }
+
+    @Test public void onlineMemorySharingRequiresExplicitConsent() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        memory.setName("Alexis");
+        LocalConversationEngine engine = new LocalConversationEngine(memory);
+        memory.setOnlineMemorySharingEnabled(true);
+        assertTrue(engine.memoryContextForOnline().contains("nombre: Alexis"));
+        memory.setOnlineMemorySharingEnabled(false);
+        assertEquals("", engine.memoryContextForOnline());
+    }
+
+    @Test public void sensitiveMemoryIsNeverIncludedInOnlineContext() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        memory.addLike("un medicamento para la presión");
+        memory.addLike("el mate");
+        memory.setOnlineMemorySharingEnabled(true);
+        LocalConversationEngine engine = new LocalConversationEngine(memory);
+        String context = engine.memoryContextForOnline();
+        assertFalse(context.contains("medicamento"));
+        assertTrue(context.contains("el mate"));
+    }
+
+    @Test public void clearingMemoryRemovesFactsAndSharingConsent() {
+        ConversationMemory memory = ConversationMemory.inMemory();
+        memory.setName("Alexis");
+        memory.addLike("el mate");
+        memory.setOnlineMemorySharingEnabled(true);
+        assertTrue(memory.clearPersistentMemory());
+        assertNull(memory.name());
+        assertTrue(memory.likes().isEmpty());
+        assertFalse(memory.isOnlineMemorySharingEnabled());
     }
 
     @Test public void onlineContextIncludesPendingQuestionAndLongAbsence() {
@@ -150,6 +185,7 @@ public class ConversationMemoryTest {
         long now = System.currentTimeMillis();
         memory.onUserMessage(now - ConversationMemory.LONG_SILENCE_MS - 1L);
         memory.expect("like:el mate", now);
+        memory.setOnlineMemorySharingEnabled(true);
         LocalConversationEngine engine = new LocalConversationEngine(memory);
         String context = engine.memoryContextForOnline();
         assertTrue(context.contains("pregunta_pendiente"));
