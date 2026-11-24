@@ -202,8 +202,16 @@ public class MainActivity extends Activity implements SensorEventListener {
                         boolean semanticCleared = conversationEngine == null
                                 || conversationEngine.clearMemory();
                         if (petMemory != null) petMemory.clear();
-                        boolean journalCleared = petMemory == null
-                                || (PetMemory.awaitPendingWrites(10000L) && PetMemory.wasLastClearSuccessful());
+                        boolean journalCleared = petMemory == null;
+                        if (petMemory != null) {
+                            try {
+                                journalCleared = PetMemory.awaitPendingWrites(10000L)
+                                        && PetMemory.wasLastClearSuccessful();
+                            } catch (InterruptedException interrupted) {
+                                Thread.currentThread().interrupt();
+                                journalCleared = false;
+                            }
+                        }
                         final boolean success = semanticCleared && journalCleared;
                         runOnUiThread(() -> {
                             if (isFinishing() || isDestroyed()) return;
