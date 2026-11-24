@@ -69,8 +69,8 @@ public class ConversationMemoryTest {
         assertEquals(1, memory.likes().size());
         assertEquals("el mate", memory.likes().get(0));
         assertEquals("Ale", memory.nicknames().get(0));
-        assertTrue(engine.memoryContextForOnline().contains("nombre: Alexis"));
-        assertTrue(engine.memoryContextForOnline().contains("gustos: el mate"));
+        assertTrue(engine.memoryContextForOnline().contains("nombre: \\"Alexis\\""));
+        assertTrue(engine.memoryContextForOnline().contains("gustos: \\"el mate\\""));
     }
 
     @Test public void uncertainOnlinePreferenceIsNotLearned() {
