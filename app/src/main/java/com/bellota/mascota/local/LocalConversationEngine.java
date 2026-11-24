@@ -175,7 +175,10 @@ public final class LocalConversationEngine {
         int count = Math.min(values.size(), limit);
         for (int i = 0; i < count; i++) {
             if (joined.length() > 0) joined.append(", ");
-            joined.append(sanitizeMemoryValue(values.get(i)));
+            String safe = sanitizeMemoryValue(values.get(i));
+            if (safe.isEmpty() || containsSensitiveContent(safe)) continue;
+            if (joined.length() > 0) joined.append(", ");
+            joined.append(safe);
         }
         return joined.toString();
     }
