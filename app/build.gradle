@@ -1,6 +1,5 @@
 plugins {
     id 'com.android.application'
-    id 'org.cyclonedx.bom'
 }
 
 def signingStoreFile = System.getenv('BELLOTA_KEYSTORE_FILE')
