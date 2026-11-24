@@ -59,7 +59,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     private static final int MICROPHONE_PERMISSION = 41;
     private static final int LOCATION_PERMISSION = 42;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final ExecutorService toolCallExecutor = Executors.newSingleThreadExecutor(r -> {
+    private final ExecutorService toolCallExecutor = Executors.newFixedThreadPool(3, r -> {
         Thread thread = new Thread(r, "Bellota-ToolCall");
         thread.setDaemon(true);
         return thread;
