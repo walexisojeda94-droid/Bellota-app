@@ -358,6 +358,19 @@ async function createRealtimeSecret(request, env) {
   });
 }
 
+
+function normalizeGeminiSchema(schema) {
+  if (Array.isArray(schema)) return schema.map(normalizeGeminiSchema);
+  if (!schema || typeof schema !== "object") return schema;
+  const result = {};
+  for (const [key, value] of Object.entries(schema)) {
+    result[key] = key === "type" && typeof value === "string"
+      ? value.toUpperCase()
+      : normalizeGeminiSchema(value);
+  }
+  return result;
+}
+
 async function createGeminiLiveToken(request, env) {
   if (!env.GEMINI_API_KEY)
     return fail("provider_not_configured", 503, "Gemini Live todavía no está configurado en el backend.");
@@ -392,7 +405,7 @@ async function createGeminiLiveToken(request, env) {
     functionDeclarations.push({
       name,
       description: typeof item.description === "string" ? item.description.slice(0, 1024) : "",
-      parameters
+      parameters: normalizeGeminiSchema(parameters)
     });
   }
 

@@ -23,7 +23,6 @@ import okhttp3.WebSocketListener;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.ExecutorService;
@@ -161,6 +160,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
         recoveryCount++;
         connected.set(false);
         stopAudio();
+        toolNamesByCallId.clear();
         WebSocket old;
         synchronized (socketLock) { old = socket; socket = null; }
         if (old != null) old.close(1000, "renewing");
@@ -170,7 +170,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
 
     private final class LiveSocketListener extends WebSocketListener {
         @Override public void onOpen(WebSocket webSocket, Response response) {
-            if (closed.get()) { webSocket.close(1000, "closed"); return; }
+            if (closed.get() || !isCurrentSocket(webSocket)) { webSocket.close(1000, "closed"); return; }
             try { webSocket.send(new JSONObject().put("setup", buildSetup()).toString()); }
             catch (Exception error) { fail(Failure.CONFIGURATION, false, "No se pudo preparar Gemini Live: " + safeMessage(error)); }
         }
@@ -192,7 +192,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
                     JSONObject cancellation = event.optJSONObject("toolCallCancellation");
                     JSONArray ids = cancellation == null ? null : cancellation.optJSONArray("ids");
                     if (ids != null) for (int i = 0; i < ids.length(); i++)
-                        notifyError(Failure.PROVIDER, true, "Gemini canceló una llamada de herramienta.");
+                        toolNamesByCallId.remove(ids.optString(i, ""));
                 }
                 if (event.has("goAway")) recover("Gemini anunció el cierre próximo de la conexión.");
                 if (event.has("error")) {
