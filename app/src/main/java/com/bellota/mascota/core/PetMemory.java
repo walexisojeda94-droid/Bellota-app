@@ -125,14 +125,14 @@ public final class PetMemory {
                     byte[] current = pruneExpired(readV2Plaintext(), now);
                     boolean legacyKeyWasUsable = journal.exists();
                     writeEncryptedV3(trimToLimit(appendLine(current, line)), now, CURRENT_KEY_VERSION);
-                    if (legacyKeyWasUsable) deleteKey(1);
+                    if (legacyKeyWasUsable && !hasLockedJournals()) deleteKey(1);
                 } else {
                     // One-time migration from plaintext JSONL or the original BME1 envelope.
                     boolean encryptedLegacy = hasMagicAtStart(MAGIC_V1);
                     byte[] previous = pruneExpired(readLegacyPlaintext(), now);
                     boolean legacyKeyWasUsable = encryptedLegacy && journal.exists();
                     writeEncryptedV3(trimToLimit(appendLine(previous, line)), now, CURRENT_KEY_VERSION);
-                    if (legacyKeyWasUsable) deleteKey(1);
+                    if (legacyKeyWasUsable && !hasLockedJournals()) deleteKey(1);
                 }
             }
         } catch (Exception error) {
@@ -218,7 +218,7 @@ public final class PetMemory {
                     int nextVersion = Math.max(CURRENT_KEY_VERSION, oldVersion + 1);
                     getOrCreateKey(nextVersion);
                     writeEncryptedV3(plaintext, System.currentTimeMillis(), nextVersion);
-                    deleteKey(oldVersion);
+                    if (!hasLockedJournals()) deleteKey(oldVersion);
                 } catch (Exception error) {
                     FAILED_WRITES.incrementAndGet();
                 }
@@ -515,6 +515,12 @@ public final class PetMemory {
         java.security.Key key = keyStore.getKey(KEY_ALIAS_PREFIX + version, null);
         if (!(key instanceof SecretKey)) throw new GeneralSecurityException("No existe la clave v" + version + " del diario.");
         return (SecretKey) key;
+    }
+
+    private boolean hasLockedJournals() {
+        File[] files = journal.getParentFile().listFiles((dir, name) ->
+                name.startsWith(journal.getName() + ".locked."));
+        return files != null && files.length > 0;
     }
 
     private void deleteKey(int version) {
