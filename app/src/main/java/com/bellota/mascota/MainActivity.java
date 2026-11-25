@@ -71,6 +71,11 @@ public class MainActivity extends Activity implements SensorEventListener {
     private LocalVoice localVoice;
     private volatile VoiceProviderManager onlineVoiceManager;
     private boolean onlineVoiceConnecting;
+    private volatile android.widget.TextView onlineVoiceStatusView;
+    private volatile android.widget.Button onlineVoiceControlButton;
+    private volatile String lastOnlineVoiceState = VoiceProvider.State.IDLE.name();
+    private volatile String lastOnlineVoiceProvider;
+    private volatile String lastOnlineVoiceDetail;
     private PetLife petLife;
     private AutonomousBehavior autonomy;
     private PetMemory petMemory;
@@ -276,11 +281,22 @@ public class MainActivity extends Activity implements SensorEventListener {
                 .setPositiveButton(paired ? "Desvincular" : "Vincular", null)
                 .setNeutralButton((onlineVoiceConnecting || VoiceSessionService.isActive(this)) ? "Desconectar" : "Conectar", null)
                 .create();
+        dialog.setOnDismissListener(ignored -> {
+            if (onlineVoiceStatusView == status) onlineVoiceStatusView = null;
+            if (onlineVoiceControlButton == dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL))
+                onlineVoiceControlButton = null;
+        });
         dialog.setOnShowListener(ignored -> {
             android.widget.Button primary = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
             android.widget.Button online = dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL);
+            onlineVoiceStatusView = status;
+            onlineVoiceControlButton = online;
             primary.setEnabled(configured);
             online.setEnabled(configured && paired);
+            if (paired && VoiceSessionService.isActive(this)) {
+                status.setText(currentOnlineVoiceStatusText());
+                online.setText("Desconectar");
+            }
 
             primary.setOnClickListener(v -> {
                 if (paired) {
@@ -430,15 +446,31 @@ public class MainActivity extends Activity implements SensorEventListener {
         if ("state".equals(event)) {
             String state = intent.getStringExtra(VoiceSessionService.EXTRA_STATE);
             String detail = intent.getStringExtra(VoiceSessionService.EXTRA_DETAIL);
+            String provider = intent.getStringExtra(VoiceSessionService.EXTRA_PROVIDER);
+            lastOnlineVoiceState = state == null ? VoiceProvider.State.UNKNOWN.name() : state;
+            if (provider != null) lastOnlineVoiceProvider = provider;
+            lastOnlineVoiceDetail = detail;
             if (VoiceProvider.State.CONNECTED.name().equals(state)) onlineVoiceConnecting = false;
             else if (VoiceProvider.State.CLOSED.name().equals(state)) {
                 onlineVoiceConnecting = false;
                 localRecognitionPaused = false;
             }
-            String provider = intent.getStringExtra(VoiceSessionService.EXTRA_PROVIDER);
             DebugLog.i("BellotaOnlineVoice", "estado=" + state
                     + "; proveedor=" + (provider == null ? "desconocido" : provider)
                     + (detail == null || detail.isEmpty() ? "" : "; detalle=" + detail));
+            runOnUiThread(() -> {
+                android.widget.TextView statusView = onlineVoiceStatusView;
+                if (statusView != null && statusView.isAttachedToWindow())
+                    statusView.setText(currentOnlineVoiceStatusText());
+                android.widget.Button control = onlineVoiceControlButton;
+                if (control != null && control.isAttachedToWindow()) {
+                    boolean active = !VoiceProvider.State.CLOSED.name().equals(state)
+                            && VoiceSessionService.isActive(MainActivity.this);
+                    control.setText(active ? "Desconectar" : "Conectar");
+                    control.setEnabled(getString(R.string.backend_base_url).trim().startsWith("https://")
+                            && new SecureTokenStore(getApplicationContext()).hasRefreshToken());
+                }
+            });
             return;
         }
         if ("user_transcript".equals(event)) {
@@ -487,6 +519,35 @@ public class MainActivity extends Activity implements SensorEventListener {
                         "Bellota está cerrando y no puede ejecutar esta acción.", true);
             }
         }
+    }
+
+
+    private String currentOnlineVoiceStatusText() {
+        return formatOnlineVoiceStatus(lastOnlineVoiceState, lastOnlineVoiceProvider, lastOnlineVoiceDetail);
+    }
+
+    private String formatOnlineVoiceStatus(String state, String provider, String detail) {
+        String motor = provider != null && provider.toLowerCase(Locale.ROOT).contains("gemini")
+                ? "Gemini Live" : "OpenAI Realtime";
+        if (VoiceProvider.State.REQUESTING_CREDENTIAL.name().equals(state))
+            return "Solicitando credencial segura de " + motor + "...";
+        if (VoiceProvider.State.CONNECTING.name().equals(state))
+            return "Conectando con " + motor + "...";
+        if (VoiceProvider.State.CONNECTED.name().equals(state))
+            return motor + " conectado. La voz online está activa.";
+        if (VoiceProvider.State.RECONNECTING.name().equals(state))
+            return detail == null || detail.trim().isEmpty()
+                    ? "La conexión se interrumpió. Bellota está intentando recuperarla."
+                    : detail;
+        if (VoiceProvider.State.FALLBACK_LOCAL.name().equals(state))
+            return detail == null || detail.trim().isEmpty()
+                    ? "Los motores online no están disponibles. Bellota continúa con voz local."
+                    : detail;
+        if (VoiceProvider.State.CLOSED.name().equals(state))
+            return detail == null || detail.trim().isEmpty() ? "La sesión online está cerrada." : detail;
+        return detail == null || detail.trim().isEmpty()
+                ? "Dispositivo vinculado. La conexión online todavía no está iniciada."
+                : detail;
     }
 
     private void buildPetScreen() {
