@@ -447,7 +447,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             String state = intent.getStringExtra(VoiceSessionService.EXTRA_STATE);
             String detail = intent.getStringExtra(VoiceSessionService.EXTRA_DETAIL);
             String provider = intent.getStringExtra(VoiceSessionService.EXTRA_PROVIDER);
-            lastOnlineVoiceState = state == null ? VoiceProvider.State.UNKNOWN.name() : state;
+            lastOnlineVoiceState = state == null ? VoiceProvider.State.IDLE.name() : state;
             if (provider != null) lastOnlineVoiceProvider = provider;
             lastOnlineVoiceDetail = detail;
             if (VoiceProvider.State.CONNECTED.name().equals(state)) onlineVoiceConnecting = false;
