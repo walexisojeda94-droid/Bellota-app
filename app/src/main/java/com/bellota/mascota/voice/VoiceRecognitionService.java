@@ -30,6 +30,7 @@ public class VoiceRecognitionService extends Service {
     public static final String EXTRA_TEXT = "text";
     private static final String CHANNEL_ID = "bellota_microphone";
     private static final int NOTIFICATION_ID = 2401;
+    private static final String FG_TRACE_TAG = "BellotaFgLifecycle";
 
     private static volatile VoiceRecognitionService instance;
 
@@ -55,7 +56,11 @@ public class VoiceRecognitionService extends Service {
         // in-memory promotion state before asking Android to stop the service so a
         // reused instance cannot mistake itself for a foreground service on restart.
         VoiceRecognitionService current = instance;
-        if (current != null) current.foregroundStarted = false;
+        if (current != null) {
+            current.traceForeground("stop.requested");
+            current.foregroundStarted = false;
+            current.traceForeground("stop.state-invalidated");
+        }
         context.stopService(new Intent(context, VoiceRecognitionService.class));
     }
 
@@ -73,6 +78,11 @@ public class VoiceRecognitionService extends Service {
     }
 
     private static void startServiceAction(Context context, String action) {
+        if ((context.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            android.util.Log.d(FG_TRACE_TAG, "VoiceRecognitionService enqueue action=" + action
+                    + " current=" + (instance != null)
+                    + " foreground=" + (instance != null && instance.foregroundStarted));
+        }
         Intent intent = new Intent(context, VoiceRecognitionService.class);
         intent.setAction(action);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -84,18 +94,21 @@ public class VoiceRecognitionService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        traceForeground("onCreate.begin");
         instance = this;
         createNotificationChannel();
         // startForegroundService() must be promoted immediately on Android 8+.
         // Doing this in onCreate also covers start/stop command races during recovery.
         ensureForeground();
+        traceForeground("onCreate.promoted");
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        String action = intent == null ? ACTION_START : intent.getAction();
+        traceForeground("onStartCommand.begin action=" + action);
         // Promote every command before branching: STOP and pause actions may also be
         // delivered to a service originally launched with startForegroundService().
         ensureForeground();
-        String action = intent == null ? ACTION_START : intent.getAction();
         if (ACTION_STOP.equals(action)) {
             Intent stopped = new Intent(ACTION_STOPPED);
             stopped.setPackage(getPackageName());
@@ -150,9 +163,22 @@ public class VoiceRecognitionService extends Service {
     }
 
     private void ensureForeground() {
-        if (foregroundStarted) return;
+        if (foregroundStarted) {
+            traceForeground("ensureForeground.skip");
+            return;
+        }
+        traceForeground("ensureForeground.promoting");
         startForeground(NOTIFICATION_ID, buildNotification());
         foregroundStarted = true;
+        traceForeground("ensureForeground.promoted");
+    }
+
+    private void traceForeground(String event) {
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return;
+        android.util.Log.d(FG_TRACE_TAG, "VoiceRecognitionService " + event
+                + " foregroundStarted=" + foregroundStarted
+                + " paused=" + paused + " externalMicActive=" + externalMicActive
+                + " current=" + (instance == this));
     }
 
     private Notification buildNotification() {
@@ -239,9 +265,12 @@ public class VoiceRecognitionService extends Service {
     }
 
     @Override public void onDestroy() {
-        stopRecognition();
+        traceForeground("onDestroy.begin");
         foregroundStarted = false;
         if (instance == this) instance = null;
+        traceForeground("onDestroy.state-cleared");
+        stopRecognition();
+        traceForeground("onDestroy.cleanup-complete");
         super.onDestroy();
     }
 
