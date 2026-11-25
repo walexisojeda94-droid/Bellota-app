@@ -431,7 +431,10 @@ public class MainActivity extends Activity implements SensorEventListener {
                 onlineVoiceConnecting = false;
                 localRecognitionPaused = false;
             }
-            if (detail != null && !detail.isEmpty()) DebugLog.i("BellotaOnlineVoice", detail);
+            String provider = intent.getStringExtra(VoiceSessionService.EXTRA_PROVIDER);
+            DebugLog.i("BellotaOnlineVoice", "estado=" + state
+                    + "; proveedor=" + (provider == null ? "desconocido" : provider)
+                    + (detail == null || detail.isEmpty() ? "" : "; detalle=" + detail));
             return;
         }
         if ("user_transcript".equals(event)) {
