@@ -205,7 +205,7 @@ jobs:
             ./gradlew --no-daemon :app:connectedDebugAndroidTest
             adb shell am force-stop com.bellota.mascota
             adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p com.bellota.mascota | tee /tmp/bellota-launch.txt
-grep -q 'Status: ok' /tmp/bellota-launch.txt
+            grep -q 'Status: ok' /tmp/bellota-launch.txt
             sleep 8
             adb shell pidof com.bellota.mascota | grep -Eq '[0-9]+'
             ! adb logcat -d -t 2000 | grep -A 8 -F "FATAL EXCEPTION" | grep -F "com.bellota.mascota"
@@ -223,7 +223,7 @@ grep -q 'Status: ok' /tmp/bellota-launch.txt
             ./gradlew --no-daemon :app:connectedDebugAndroidTest
             adb shell am force-stop com.bellota.mascota
             adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p com.bellota.mascota | tee /tmp/bellota-launch.txt
-grep -q 'Status: ok' /tmp/bellota-launch.txt
+            grep -q 'Status: ok' /tmp/bellota-launch.txt
             sleep 8
             adb shell pidof com.bellota.mascota | grep -Eq '[0-9]+'
             ! adb logcat -d -t 2000 | grep -A 8 -F "FATAL EXCEPTION" | grep -F "com.bellota.mascota"
@@ -241,7 +241,7 @@ grep -q 'Status: ok' /tmp/bellota-launch.txt
             ./gradlew --no-daemon :app:connectedDebugAndroidTest
             adb shell am force-stop com.bellota.mascota
             adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p com.bellota.mascota | tee /tmp/bellota-launch.txt
-grep -q 'Status: ok' /tmp/bellota-launch.txt
+            grep -q 'Status: ok' /tmp/bellota-launch.txt
             sleep 8
             adb shell pidof com.bellota.mascota | grep -Eq '[0-9]+'
             ! adb logcat -d -t 2000 | grep -A 8 -F "FATAL EXCEPTION" | grep -F "com.bellota.mascota"
