@@ -130,7 +130,7 @@ test("Gemini ephemeral credentials use the v1alpha constrained Live API", async 
     assert.equal(calls[0].body.liveConnectConstraints.model, "models/gemini-3.8-live");
     assert.deepEqual(calls[0].body.liveConnectConstraints.config.sessionResumption, {});
     assert.equal(body.websocket_url,
-      "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent");
+      "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained");
   } finally {
     globalThis.fetch = originalFetch;
   }
