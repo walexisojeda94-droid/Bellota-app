@@ -15,6 +15,8 @@ import java.util.Locale;
  * Logcat. No debe recibir tokens, claves ni transcripciones.
  */
 public final class DebugLog {
+    // TEMPORAL: mantener el registro disponible también en builds release para diagnosticar el dispositivo.
+    private static final boolean TEMPORARY_DIAGNOSTICS_ENABLED = true;
     private static final int MAX_LINES = 120;
     private static final ArrayDeque<String> LINES = new ArrayDeque<>();
     private static final SimpleDateFormat TIME = new SimpleDateFormat("HH:mm:ss", Locale.US);
