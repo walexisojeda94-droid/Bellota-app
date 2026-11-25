@@ -107,6 +107,8 @@ public class VoiceSessionServiceInstrumentedTest {
             context.stopService(new Intent(context, VoiceSessionService.class));
             assertTrue("El servicio no terminó durante la simulación de cierre del proceso.",
                     waitFor(() -> !VoiceSessionService.isServiceRunning(), 10000L));
+            assertTrue("El estado foreground no se limpió durante onDestroy.",
+                    !VoiceSessionService.isForegroundService());
             assertTrue("El estado recuperable se perdió durante el cierre inesperado.",
                     VoiceSessionService.isActive(context));
 
