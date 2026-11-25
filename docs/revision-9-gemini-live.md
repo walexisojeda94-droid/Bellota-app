@@ -25,7 +25,7 @@
 | ID | Implementación | Estado de certificación |
 |---|---|---|
 | BEL-045 | GeminiLiveProvider integrado como segundo proveedor | Código integrado; falta probar conexión real |
-| BEL-046 | Endpoint seguro de tokens efímeros | Worker desplegado; falta cargar GEMINI_API_KEY |
+| BEL-046 | Endpoint seguro de tokens efímeros | Worker desplegado y `GEMINI_API_KEY` registrada como secreto; falta validar emisión real |
 | BEL-047 | Transporte de audio bidireccional PCM16 | Código integrado; prueba física pendiente |
 | BEL-048 | Transcripciones, interrupciones, turnos y reanudación | Código integrado; prueba física pendiente |
 | BEL-049 | Herramientas convertidas al protocolo Gemini | Código integrado; prueba con funciones reales pendiente |
@@ -40,7 +40,7 @@ Endpoint: POST /v1/gemini/live-token
 
 Modelo: gemini-3.8-live
 
-El Worker fue actualizado mediante la API de contenido sin reemplazar su configuración. Se verificó que permanecen los bindings D1 y los secretos existentes (ADMIN_TOKEN, JWT_SECRET, OPENAI_API_KEY). En el momento de esta revisión no existe el secreto GEMINI_API_KEY; el endpoint responde provider_not_configured hasta que se agregue como secreto Cloudflare.
+El Worker fue actualizado mediante la API de contenido sin reemplazar su configuración. Se verificó que permanecen los bindings D1 y los secretos existentes (ADMIN_TOKEN, JWT_SECRET, OPENAI_API_KEY). El secreto `GEMINI_API_KEY` fue agregado y verificado como binding en Cloudflare. El Worker quedó desplegado en la versión 20 con el flujo Gemini Live `v1beta`. La presencia del secreto está confirmada, pero todavía falta comprobar que Google acepte la clave y emita el token.
 
 ## Validaciones
 
@@ -53,7 +53,6 @@ El Worker fue actualizado mediante la API de contenido sin reemplazar su configu
 
 ## Activación pendiente
 
-1. Crear una API key en Google AI Studio.
-2. En Cloudflare Dashboard → Workers & Pages → bellota-openai-realtime → Settings → Variables and Secrets, agregar GEMINI_API_KEY como Secret.
-3. Iniciar una sesión online desde Bellota y validar audio, herramientas y recuperación.
-4. Provocar un fallo de OpenAI y confirmar el paso a Gemini; provocar después el fallo de Gemini y confirmar el modo local.
+1. Probar desde Bellota la emisión del token Gemini y confirmar que el Worker no devuelve errores de autenticación o cuota.
+2. Validar audio bidireccional, transcripciones, herramientas, interrupciones y recuperación en el moto g52.
+3. Provocar un fallo controlado de OpenAI y confirmar el paso a Gemini; después provocar un fallo de Gemini y confirmar el modo local.
