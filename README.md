@@ -25,7 +25,7 @@ Aplicación Android nativa de mascota virtual. Bellota mantiene su interfaz, com
 
 ## Backend OpenAI
 
-El Worker `bellota-openai-realtime` está desplegado en Cloudflare. El binding D1 `DB` apunta a la base existente `bellota-devices`; las migraciones de recuperación de refresh y los índices de retención se aplicaron. Los secretos `ADMIN_TOKEN`, `JWT_SECRET` y `OPENAI_API_KEY` y el binding D1 fueron verificados. El Worker ahora también publica `/v1/gemini/live-token`; falta cargar `GEMINI_API_KEY` como secreto para habilitarlo. La observabilidad de logs y traces está habilitada.
+El Worker `bellota-openai-realtime` está desplegado en Cloudflare. El binding D1 `DB` apunta a la base existente `bellota-devices`; las migraciones de recuperación de refresh y los índices de retención se aplicaron. Los secretos `ADMIN_TOKEN`, `JWT_SECRET` y `OPENAI_API_KEY` y el binding D1 fueron verificados. El Worker también publica `/v1/gemini/live-token`; el binding secreto `GEMINI_API_KEY` está presente en Cloudflare. La emisión real de tokens y la sesión de audio todavía requieren prueba de extremo a extremo. La observabilidad de logs y traces está habilitada.
 
 El endpoint `GET /health` comprueba configuración y esquema D1. El código y la infraestructura fueron revisados, pero no se registra en esta certificación una respuesta HTTP externa del endpoint. La emisión y selección real de TURN en una red restrictiva tampoco se considera probada; depende de las credenciales TURN correspondientes.
 
@@ -38,7 +38,7 @@ No subir claves API, tokens, contraseñas ni archivos de firma al repositorio.
 - Android Gradle Plugin 8.13.2 y Gradle Wrapper 8.13 con checksum SHA-256.
 - WebRTC Android 150.7871.08.
 - R8 y reducción de recursos activados únicamente en Release, con reglas de conservación para JNI de WebRTC.
-- Estado de CI: pruebas JVM, Android Lint y compilación de APK aprobadas en la última ejecución de Revisión 7; smoke test API 24 aprobado y API 27 fallido por `RemoteServiceException` en la recuperación del servicio foreground. API 31 y compilación Release no se ejecutaron en esa ejecución. La matriz sigue abierta hasta corregir y repetir.
+- Estado de CI: en la última ejecución completa de la matriz (25/11/2026) aprobaron pruebas JVM, Android Lint, compilación Release, smoke tests API 24, API 27 y API 31, firma y publicación del APK. Esto no sustituye la validación física en el moto g52.
 
 Comandos locales:
 
@@ -56,7 +56,7 @@ Comandos locales:
 - VoiceProviderManager coordina el orden OpenAI → Gemini → voz local, con aislamiento de llamadas a herramientas por sesión. La conmutación real con Gemini requiere una clave Google válida y prueba de audio.
 - La prueba de emuladores no sustituye la prueba física de audio, interrupciones, funcionamiento prolongado, cambios de red y segundo plano en los dispositivos objetivo.
 - La sesión online ya vive en VoiceSessionService foreground; falta validar físicamente pantalla apagada, cambios de red y recuperación prolongada.
-- La prueba real de audio y failover OpenAI → Gemini → local requiere cargar GEMINI_API_KEY en Cloudflare y probar con un dispositivo físico.
+- La prueba real de audio y failover OpenAI → Gemini → local requiere probar una sesión con un dispositivo físico y revisar el estado de cada proveedor.
 - La certificación de BEL-001 a BEL-035 requiere disponer de los criterios formales originales de cada ticket. El estado trazable conocido se registra en `docs/revision-8-certificacion.md`.
 
 ## Documentación
