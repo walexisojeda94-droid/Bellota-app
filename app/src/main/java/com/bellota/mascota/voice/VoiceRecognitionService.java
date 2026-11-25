@@ -32,6 +32,7 @@ public class VoiceRecognitionService extends Service {
     private static final int NOTIFICATION_ID = 2401;
 
     private ContinuousVoiceCommands recognizer;
+    private static volatile boolean startRequested;
     private boolean foregroundStarted;
     private boolean paused;
     private boolean externalMicActive;
@@ -49,7 +50,13 @@ public class VoiceRecognitionService extends Service {
     }
 
     public static void stop(Context context) {
-        context.stopService(new Intent(context, VoiceRecognitionService.class));
+        if (!startRequested) return;
+        // Queue STOP behind a pending start instead of cancelling that start.
+        // A plain stopService() can cancel startForegroundService() before
+        // onStartCommand() promotes the service, crashing Android 8+.
+        Intent intent = new Intent(context, VoiceRecognitionService.class);
+        intent.setAction(ACTION_STOP);
+        context.startService(intent);
     }
 
     public static void setExternalMicActive(Context context, boolean active) {
@@ -63,15 +70,23 @@ public class VoiceRecognitionService extends Service {
     private static void startServiceAction(Context context, String action) {
         Intent intent = new Intent(context, VoiceRecognitionService.class);
         intent.setAction(action);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(intent);
-        } else {
-            context.startService(intent);
+        boolean wasRequested = startRequested;
+        startRequested = true;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent);
+            } else {
+                context.startService(intent);
+            }
+        } catch (RuntimeException startError) {
+            startRequested = wasRequested;
+            throw startError;
         }
     }
 
     @Override public void onCreate() {
         super.onCreate();
+        startRequested = true;
         createNotificationChannel();
     }
 
@@ -224,6 +239,7 @@ public class VoiceRecognitionService extends Service {
 
     @Override public void onDestroy() {
         stopRecognition();
+        startRequested = false;
         super.onDestroy();
     }
 
