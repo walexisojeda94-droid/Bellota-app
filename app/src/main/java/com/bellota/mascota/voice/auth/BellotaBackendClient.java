@@ -190,7 +190,8 @@ public final class BellotaBackendClient {
         String websocketUrl = response.optString("websocket_url", "");
         long expiresAt = response.optLong("expires_at", 0L);
         if (!(value.startsWith("authTokens/") || value.startsWith("auth_tokens/")) || model.isEmpty()
-                || !websocketUrl.startsWith("wss://") || expiresAt <= 0L)
+                || !websocketUrl.startsWith("wss://")
+                || !websocketUrl.endsWith("BidiGenerateContentConstrained") || expiresAt <= 0L)
             throw new BackendException("invalid_response", 502,
                     "El backend devolvió una credencial Gemini incompleta.");
         return new GeminiCredential(value, model, websocketUrl, expiresAt);
