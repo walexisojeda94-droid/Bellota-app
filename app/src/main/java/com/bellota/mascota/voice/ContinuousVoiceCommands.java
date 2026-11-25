@@ -25,7 +25,7 @@ public class ContinuousVoiceCommands {
     private static final String TAG = "BellotaSpeech";
     private static final int ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT = 12;
     private static final long LANGUAGE_RETRY_DELAY_MS = 60000L;
-    private static final String[] SPANISH_LANGUAGES = {"es-AR", "es-ES", "es-US"};
+    private static final String[] SPANISH_LANGUAGES = {"es-US", "es-AR", "es-ES", "es"};
 
     public interface Listener {
         void onRecognized(String text);
@@ -37,6 +37,9 @@ public class ContinuousVoiceCommands {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ArrayList<String> languageCandidates =
             new ArrayList<>(Arrays.asList(SPANISH_LANGUAGES));
+    // Android puede tener el paquete de voz de Google y su modelo descargado,
+    // aunque el motor dedicado on-device no exponga ese mismo modelo.
+    private boolean usingDefaultProvider;
 
     private SpeechRecognizer recognizer;
     private boolean running;
@@ -55,14 +58,19 @@ public class ContinuousVoiceCommands {
 
     public void start() {
         if (running) return;
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            if (!SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
-                status("No hay un motor de reconocimiento on-device disponible. Instalá un servicio compatible y el modelo de español en Android.");
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+                && !SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
+            // Si el motor dedicado no existe, probar el proveedor configurado en Android.
+            if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+                status("No hay un servicio de reconocimiento de voz disponible en Android.");
                 return;
             }
+            usingDefaultProvider = true;
         } else if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             status("No hay un servicio de reconocimiento de voz disponible en Android.");
             return;
+        } else {
+            usingDefaultProvider = false;
         }
 
         running = true;
@@ -74,9 +82,11 @@ public class ContinuousVoiceCommands {
         final long session = ++generation;
 
         try {
-            createRecognizer(session);
-            status(VoiceRecognitionPolicy.descriptionForApi(android.os.Build.VERSION.SDK_INT)
-                    + " Idioma solicitado por Bellota: español argentino (es-AR).");
+            createRecognizer(session, usingDefaultProvider);
+            status(usingDefaultProvider
+                    ? "Usando el servicio de reconocimiento configurado en Android; se prioriza el modelo descargado y se solicita funcionamiento sin conexión. Idioma inicial: " + languageTag() + "."
+                    : VoiceRecognitionPolicy.descriptionForApi(android.os.Build.VERSION.SDK_INT)
+                            + " Idioma inicial: " + languageTag() + ".");
             listenAgain(session, 250L);
         } catch (Exception error) {
             running = false;
@@ -98,9 +108,9 @@ public class ContinuousVoiceCommands {
         status("Reconocimiento local detenido.");
     }
 
-    private void createRecognizer(long session) {
+    private void createRecognizer(long session, boolean useDefaultProvider) {
         SpeechRecognizer created;
-        if (android.os.Build.VERSION.SDK_INT >= 31) {
+        if (!useDefaultProvider && android.os.Build.VERSION.SDK_INT >= 31) {
             if (!SpeechRecognizer.isOnDeviceRecognitionAvailable(context))
                 throw new IllegalStateException("No hay motor de voz en el dispositivo.");
             created = SpeechRecognizer.createOnDeviceSpeechRecognizer(context);
@@ -165,7 +175,7 @@ public class ContinuousVoiceCommands {
             if (!running || generation != session) return;
             releaseRecognizer();
             try {
-                createRecognizer(session);
+                createRecognizer(session, usingDefaultProvider);
                 restarting = false;
                 listenAgain(session, 500L);
             } catch (Exception error) {
@@ -179,13 +189,36 @@ public class ContinuousVoiceCommands {
     private void moveToNextLanguageMode(long session) {
         if (languageCandidateIndex + 1 < languageCandidates.size()) {
             languageCandidateIndex++;
-            status("La variante española anterior no está disponible; probando " + languageTag() + " sin conexión.");
+            status("La variante española anterior no está disponible; probando " + languageTag() + ".");
             listenAgain(session, 1200L);
-        } else {
-            languageCandidateIndex = 0;
-            status("No hay un modelo español local compatible. Se reintentará en un minuto; no se cambiará al idioma del teléfono ni al reconocimiento en línea.");
-            listenAgain(session, LANGUAGE_RETRY_DELAY_MS);
+            return;
         }
+
+        languageCandidateIndex = 0;
+        if (!usingDefaultProvider && SpeechRecognizer.isRecognitionAvailable(context)) {
+            // Segundo intento: proveedor elegido por Android (por ejemplo, Servicios de voz de Google).
+            // EXTRA_PREFER_OFFLINE sigue activo, pero Android puede requerir red según el proveedor.
+            restarting = true;
+            status("El motor local dedicado no acepta las variantes españolas. Probando el servicio de voz configurado en Android con el idioma descargado " + languageTag() + ".");
+            handler.postDelayed(() -> {
+                if (!running || generation != session) return;
+                releaseRecognizer();
+                try {
+                    usingDefaultProvider = true;
+                    createRecognizer(session, true);
+                    restarting = false;
+                    listenAgain(session, 500L);
+                } catch (Exception error) {
+                    restarting = false;
+                    status("No se pudo iniciar el servicio de voz configurado en Android.");
+                    listenAgain(session, LANGUAGE_RETRY_DELAY_MS);
+                }
+            }, 1200L);
+            return;
+        }
+
+        status("Ningún motor aceptó los modelos españoles disponibles. Se reintentará en un minuto sin desconectar la voz online.");
+        listenAgain(session, LANGUAGE_RETRY_DELAY_MS);
     }
 
     private final class SessionListener implements RecognitionListener {
