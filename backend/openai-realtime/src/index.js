@@ -470,7 +470,7 @@ async function createGeminiLiveToken(request, env) {
     model: GEMINI_LIVE_MODEL,
     expires_at: Math.floor(now / 1000) + GEMINI_TOKEN_TTL_SECONDS,
     new_session_expires_at: Math.floor(now / 1000) + 60,
-    websocket_url: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+    websocket_url: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained"
   });
 }
 
