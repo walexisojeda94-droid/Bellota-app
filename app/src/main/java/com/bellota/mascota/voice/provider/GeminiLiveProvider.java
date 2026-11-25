@@ -39,7 +39,7 @@ import java.util.Map;
  */
 public final class GeminiLiveProvider implements VoiceProvider {
     private static final String PROVIDER_ID = "gemini-live-websocket";
-    private static final String LIVE_WEBSOCKET_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained";
+    private static final String LIVE_WEBSOCKET_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
     private static final int INPUT_RATE = 16000;
     private static final int OUTPUT_RATE = 24000;
     private static final int FRAME_SAMPLES = 1600; // 100 ms
