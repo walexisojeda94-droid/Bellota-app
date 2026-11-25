@@ -70,11 +70,17 @@ public class VoiceRecognitionService extends Service {
     private static void startServiceAction(Context context, String action) {
         Intent intent = new Intent(context, VoiceRecognitionService.class);
         intent.setAction(action);
+        boolean wasRequested = startRequested;
         startRequested = true;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(intent);
-        } else {
-            context.startService(intent);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent);
+            } else {
+                context.startService(intent);
+            }
+        } catch (RuntimeException startError) {
+            startRequested = wasRequested;
+            throw startError;
         }
     }
 
