@@ -39,7 +39,7 @@ import java.util.Map;
  */
 public final class GeminiLiveProvider implements VoiceProvider {
     private static final String PROVIDER_ID = "gemini-live-websocket";
-    private static final String LIVE_WEBSOCKET_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
+    private static final String REQUIRED_WEBSOCKET_SUFFIX = "BidiGenerateContentConstrained";
     private static final int INPUT_RATE = 16000;
     private static final int OUTPUT_RATE = 24000;
     private static final int FRAME_SAMPLES = 1600; // 100 ms
@@ -71,6 +71,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
     private volatile boolean audioModeChanged;
     private volatile long credentialExpiresAt;
     private volatile String ephemeralToken;
+    private volatile String ephemeralWebsocketUrl;
     private volatile String sessionResumeHandle;
     private volatile String activeInstructions;
     private volatile int recoveryCount;
@@ -101,6 +102,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
         recoveryCount = 0;
         activeInstructions = null;
         ephemeralToken = null;
+        ephemeralWebsocketUrl = null;
         sessionResumeHandle = null;
         synchronized (userTranscript) { userTranscript.setLength(0); assistantTranscript.setLength(0); recentContext.setLength(0); }
         notifyState(State.REQUESTING_CREDENTIAL, "Solicitando token efímero de Gemini Live.");
@@ -118,6 +120,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
                     BellotaBackendClient backend = new BellotaBackendClient(backendUrl, tokenStore);
                     SessionConfig config = sessionConfig;
                     String tokenValue = ephemeralToken;
+                    String websocketUrl = ephemeralWebsocketUrl;
                     boolean resumeExisting = recovery && sessionResumeHandle != null
                             && !sessionResumeHandle.isEmpty() && tokenValue != null
                             && credentialExpiresAt > System.currentTimeMillis() / 1000L + 15L;
@@ -129,10 +132,14 @@ public final class GeminiLiveProvider implements VoiceProvider {
                         if (closed.get()) return;
                         tokenValue = credential.value;
                         ephemeralToken = credential.value;
+                        ephemeralWebsocketUrl = credential.websocketUrl;
+                        websocketUrl = credential.websocketUrl;
                         credentialExpiresAt = credential.expiresAtEpochSeconds;
                     }
+                    if (websocketUrl == null || !websocketUrl.endsWith(REQUIRED_WEBSOCKET_SUFFIX))
+                        throw new IllegalStateException("Gemini devolvió un endpoint WebSocket incompatible con tokens efímeros.");
                     Request request = new Request.Builder()
-                            .url(LIVE_WEBSOCKET_URL + "?access_token=" +
+                            .url(websocketUrl + "?access_token=" +
                                     java.net.URLEncoder.encode(tokenValue, "UTF-8").replace("+", "%20"))
                             .build();
                     notifyState(State.CONNECTING, "Abriendo WebSocket de Gemini Live.");
@@ -610,6 +617,7 @@ public final class GeminiLiveProvider implements VoiceProvider {
         if (old != null) old.close(1000, "Bellota session closed");
         toolNamesByCallId.clear();
         ephemeralToken = null;
+        ephemeralWebsocketUrl = null;
         sessionResumeHandle = null;
         activeInstructions = null;
         worker.shutdownNow();
