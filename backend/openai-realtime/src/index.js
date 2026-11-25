@@ -439,7 +439,7 @@ async function createGeminiLiveToken(request, env) {
   };
   let response;
   try {
-    response = await fetch("https://generativelanguage.googleapis.com/v1alpha/auth_tokens", {
+    response = await fetch("https://generativelanguage.googleapis.com/v1beta/auth_tokens", {
       method: "POST",
       headers: {
         "x-goog-api-key": env.GEMINI_API_KEY,
@@ -470,7 +470,7 @@ async function createGeminiLiveToken(request, env) {
     model: GEMINI_LIVE_MODEL,
     expires_at: Math.floor(now / 1000) + GEMINI_TOKEN_TTL_SECONDS,
     new_session_expires_at: Math.floor(now / 1000) + 60,
-    websocket_url: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained"
+    websocket_url: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
   });
 }
 
