@@ -596,15 +596,15 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     private String buildDiagnosticsReport() {
         StringBuilder out = new StringBuilder();
-        out.append("BELLOTA | DIAGNÓSTICO TEMPORAL\\n");
-        out.append("Fecha: ").append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date())).append('\\n');
-        out.append("App: ").append(BuildConfig.VERSION_NAME).append(" (").append(BuildConfig.VERSION_CODE).append(")\\n");
+        out.append("BELLOTA | DIAGNÓSTICO TEMPORAL\n");
+        out.append("Fecha: ").append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date())).append('\n');
+        out.append("App: ").append(BuildConfig.VERSION_NAME).append(" (").append(BuildConfig.VERSION_CODE).append(")\n");
         out.append("Android: ").append(android.os.Build.VERSION.RELEASE)
-                .append(" / API ").append(android.os.Build.VERSION.SDK_INT).append('\\n');
+                .append(" / API ").append(android.os.Build.VERSION.SDK_INT).append('\n');
         out.append("Dispositivo: ").append(android.os.Build.MANUFACTURER).append(' ')
-                .append(android.os.Build.MODEL).append('\\n');
+                .append(android.os.Build.MODEL).append('\n');
         out.append("Micrófono: ").append(checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-                == PackageManager.PERMISSION_GRANTED ? "PERMITIDO" : "SIN PERMISO").append('\\n');
+                == PackageManager.PERMISSION_GRANTED ? "PERMITIDO" : "SIN PERMISO").append('\n');
         out.append("Internet: ");
         android.net.ConnectivityManager connectivity =
                 (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
@@ -614,23 +614,23 @@ public class MainActivity extends Activity implements SensorEventListener {
         boolean online = capabilities != null && (capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
                 || capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)
                 || capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET));
-        out.append(online ? "RED DISPONIBLE" : "SIN RED DETECTADA").append('\\n');
+        out.append(online ? "RED DISPONIBLE" : "SIN RED DETECTADA").append('\n');
         String backend = getString(R.string.backend_base_url).trim();
-        out.append("Backend URL: ").append(backend.startsWith("https://") ? "CONFIGURADA (HTTPS)" : "NO CONFIGURADA").append('\\n');
+        out.append("Backend URL: ").append(backend.startsWith("https://") ? "CONFIGURADA (HTTPS)" : "NO CONFIGURADA").append('\n');
         SecureTokenStore tokenStore = new SecureTokenStore(getApplicationContext());
-        out.append("Dispositivo vinculado: ").append(tokenStore.hasRefreshToken() ? "SÍ" : "NO").append('\\n');
+        out.append("Dispositivo vinculado: ").append(tokenStore.hasRefreshToken() ? "SÍ" : "NO").append('\n');
         out.append("Voz local TTS: ").append(localVoice == null ? "NO INICIALIZADA"
-                : localVoice.isReady() ? "LISTA" : "NO LISTA").append('\\n');
-        out.append("Reconocimiento local: ").append(localRecognitionPaused ? "PAUSADO" : "NO PAUSADO").append('\\n');
-        out.append("Servicio voz online activo: ").append(VoiceSessionService.isActive(this) ? "SÍ" : "NO").append('\\n');
-        out.append("Servicio foreground en ejecución: ").append(VoiceSessionService.isServiceRunning() ? "SÍ" : "NO").append('\\n');
+                : localVoice.isReady() ? "LISTA" : "NO LISTA").append('\n');
+        out.append("Reconocimiento local: ").append(localRecognitionPaused ? "PAUSADO" : "NO PAUSADO").append('\n');
+        out.append("Servicio voz online activo: ").append(VoiceSessionService.isActive(this) ? "SÍ" : "NO").append('\n');
+        out.append("Servicio foreground en ejecución: ").append(VoiceSessionService.isServiceRunning() ? "SÍ" : "NO").append('\n');
         out.append("Proveedor online conectado: ").append(onlineVoiceManager != null && onlineVoiceManager.isConnected()
-                ? String.valueOf(onlineVoiceManager.getActiveProviderId()) : "NINGUNO DESDE ACTIVITY").append('\\n');
-        out.append("Gemini Live: la configuración del secreto del servidor no puede verificarse desde el teléfono. Revisar eventos del backend.\\n");
-        out.append("\\n--- ÚLTIMOS EVENTOS (máx. 120) ---\\n");
+                ? String.valueOf(onlineVoiceManager.getActiveProviderId()) : "NINGUNO DESDE ACTIVITY").append('\n');
+        out.append("Gemini Live: la configuración del secreto del servidor no puede verificarse desde el teléfono. Revisar eventos del backend.\n");
+        out.append("\n--- ÚLTIMOS EVENTOS (máx. 120) ---\n");
         String logs = DebugLog.dump();
-        out.append(logs.isEmpty() ? "Todavía no hay eventos registrados en esta sesión.\\n" : logs);
-        out.append("\\nNota: el panel no muestra claves, tokens ni conversaciones. Compartí el texto copiado para analizar el fallo.\\n");
+        out.append(logs.isEmpty() ? "Todavía no hay eventos registrados en esta sesión.\n" : logs);
+        out.append("\nNota: el panel no muestra claves, tokens ni conversaciones. Compartí el texto copiado para analizar el fallo.\n");
         return out.toString();
     }
 
