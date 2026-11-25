@@ -56,6 +56,7 @@ public final class VoiceSessionService extends Service {
     public static final String EXTRA_IS_ERROR = "is_error";
 
     private static volatile VoiceSessionService instance;
+    private static final String FG_TRACE_TAG = "BellotaFgLifecycle";
     private static final String CHANNEL_ID = "bellota_online_voice";
     private static final int NOTIFICATION_ID = 2402;
     private static final String PREFS = "bellota_voice_session";
@@ -150,12 +151,14 @@ public final class VoiceSessionService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        traceForeground("onCreate.begin");
         instance = this;
         createNotificationChannel();
         // Promote during creation, not after command dispatch. Android 8+ starts this
         // service through startForegroundService(); a queued/replaced command must not
         // leave the five-second foreground-promotion deadline dependent on onStartCommand.
         ensureForeground();
+        traceForeground("onCreate.promoted");
         PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         if (powerManager != null) {
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Bellota:VoiceSession");
@@ -166,10 +169,11 @@ public final class VoiceSessionService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        String action = intent == null ? ACTION_START : intent.getAction();
+        traceForeground("onStartCommand.begin action=" + action);
         // Any command may arrive from startForegroundService(), including STOP and tool results.
         // Promote before branching so no early return can violate Android 8+'s deadline.
         ensureForeground();
-        String action = intent == null ? ACTION_START : intent.getAction();
         if (ACTION_STOP.equals(action)) {
             stopSession(true);
             stopSelf();
@@ -453,7 +457,11 @@ public final class VoiceSessionService extends Service {
     }
 
     private void ensureForeground() {
-        if (foreground) return;
+        if (foreground) {
+            traceForeground("ensureForeground.skip");
+            return;
+        }
+        traceForeground("ensureForeground.promoting");
         Intent stop = new Intent(this, VoiceSessionService.class);
         stop.setAction(ACTION_STOP);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
@@ -469,6 +477,14 @@ public final class VoiceSessionService extends Service {
                 .addAction(android.R.drawable.ic_media_pause, "Detener", pending).build();
         startForeground(NOTIFICATION_ID, notification);
         foreground = true;
+        traceForeground("ensureForeground.promoted");
+    }
+
+    private void traceForeground(String event) {
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return;
+        android.util.Log.d(FG_TRACE_TAG, "VoiceSessionService " + event
+                + " started=" + started + " foreground=" + foreground
+                + " current=" + (instance == this));
     }
 
     private void updateNotification(String detail) {
@@ -524,12 +540,14 @@ public final class VoiceSessionService extends Service {
     }
 
     @Override public void onDestroy() {
+        traceForeground("onDestroy.begin");
         // Publish teardown before cleanup so an immediate restore cannot observe
         // a stale foreground owner or reuse its promotion state.
         boolean wasStarted = started;
         started = false;
         foreground = false;
         if (instance == this) instance = null;
+        traceForeground("onDestroy.state-cleared");
 
         // Unexpected service teardown must not erase the encrypted restart configuration.
         // START_STICKY or the next Activity resume can recreate the owner.
@@ -546,6 +564,7 @@ public final class VoiceSessionService extends Service {
             try { connectivityManager.unregisterNetworkCallback(networkCallback); }
             catch (RuntimeException ignored) { }
         }
+        traceForeground("onDestroy.cleanup-complete");
         super.onDestroy();
     }
 
