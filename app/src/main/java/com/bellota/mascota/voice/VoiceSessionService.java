@@ -524,10 +524,16 @@ public final class VoiceSessionService extends Service {
     }
 
     @Override public void onDestroy() {
+        // Publish teardown before cleanup so an immediate restore cannot observe
+        // a stale foreground owner or reuse its promotion state.
+        boolean wasStarted = started;
+        started = false;
+        foreground = false;
+        if (instance == this) instance = null;
+
         // Unexpected service teardown must not erase the encrypted restart configuration.
         // START_STICKY or the next Activity resume can recreate the owner.
-        if (started) {
-            started = false;
+        if (wasStarted) {
             connecting = false;
             handler.removeCallbacksAndMessages(null);
             if (manager != null) manager.disconnect();
@@ -536,7 +542,6 @@ public final class VoiceSessionService extends Service {
             clearPersistedPendingCalls();
         }
         releaseWakeLock();
-        if (instance == this) instance = null;
         if (connectivityManager != null && networkCallback != null) {
             try { connectivityManager.unregisterNetworkCallback(networkCallback); }
             catch (RuntimeException ignored) { }
