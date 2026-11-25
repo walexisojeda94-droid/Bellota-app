@@ -505,8 +505,9 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (event.getActionMasked() == MotionEvent.ACTION_UP) {
                 long duration = System.currentTimeMillis() - touchStartedAt;
                 float distance = (float) Math.hypot(event.getX() - touchStartX, event.getY() - touchStartY);
-                if (duration >= android.view.ViewConfiguration.getLongPressTimeout()) {
-                    // La pulsación prolongada no ejecuta acciones ocultas.
+                if (duration >= android.view.ViewConfiguration.getLongPressTimeout()
+                        && distance <= dp(24)) {
+                    showDiagnosticsDialog();
                 } else {
                     boolean stroke = distance > 24f || duration > 420L;
                     boolean firm = !stroke && touchPressure >= 0.72f && duration < 190L;
@@ -549,6 +550,85 @@ public class MainActivity extends Activity implements SensorEventListener {
         aiButton.setOnClickListener(v -> showOnlinePairingDialog());
 
         setContentView(root);
+    }
+
+    /**
+     * Panel temporal de diagnóstico. Se abre manteniendo presionada a Bellota.
+     * No muestra credenciales, tokens ni transcripciones.
+     */
+    private void showDiagnosticsDialog() {
+        android.widget.TextView report = new android.widget.TextView(this);
+        report.setTextColor(0xFFE7EEEE);
+        report.setTextSize(12f);
+        report.setTypeface(android.graphics.Typeface.MONOSPACE);
+        report.setPadding(dp(16), dp(12), dp(16), dp(12));
+        report.setText(buildDiagnosticsReport());
+
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.addView(report);
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("Diagnóstico temporal de Bellota")
+                .setView(scroll)
+                .setPositiveButton("Actualizar", null)
+                .setNeutralButton("Copiar", null)
+                .setNegativeButton("Cerrar", null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v ->
+                    report.setText(buildDiagnosticsReport()));
+            dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                android.content.ClipboardManager clipboard =
+                        (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText(
+                            "Diagnóstico de Bellota", buildDiagnosticsReport()));
+                    Toast.makeText(this, "Diagnóstico copiado.", Toast.LENGTH_SHORT).show();
+                }
+            });
+        });
+        dialog.show();
+    }
+
+    private String buildDiagnosticsReport() {
+        StringBuilder out = new StringBuilder();
+        out.append("BELLOTA | DIAGNÓSTICO TEMPORAL\\n");
+        out.append("Fecha: ").append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date())).append('\\n');
+        out.append("App: ").append(BuildConfig.VERSION_NAME).append(" (").append(BuildConfig.VERSION_CODE).append(")\\n");
+        out.append("Android: ").append(android.os.Build.VERSION.RELEASE)
+                .append(" / API ").append(android.os.Build.VERSION.SDK_INT).append('\\n');
+        out.append("Dispositivo: ").append(android.os.Build.MANUFACTURER).append(' ')
+                .append(android.os.Build.MODEL).append('\\n');
+        out.append("Micrófono: ").append(checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED ? "PERMITIDO" : "SIN PERMISO").append('\\n');
+        out.append("Internet: ");
+        android.net.ConnectivityManager connectivity =
+                (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        android.net.Network activeNetwork = connectivity == null ? null : connectivity.getActiveNetwork();
+        android.net.NetworkCapabilities capabilities = connectivity == null || activeNetwork == null
+                ? null : connectivity.getNetworkCapabilities(activeNetwork);
+        boolean online = capabilities != null && (capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+                || capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)
+                || capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET));
+        out.append(online ? "RED DISPONIBLE" : "SIN RED DETECTADA").append('\\n');
+        String backend = getString(R.string.backend_base_url).trim();
+        out.append("Backend URL: ").append(backend.startsWith("https://") ? "CONFIGURADA (HTTPS)" : "NO CONFIGURADA").append('\\n');
+        SecureTokenStore tokenStore = new SecureTokenStore(getApplicationContext());
+        out.append("Dispositivo vinculado: ").append(tokenStore.hasRefreshToken() ? "SÍ" : "NO").append('\\n');
+        out.append("Voz local TTS: ").append(localVoice == null ? "NO INICIALIZADA"
+                : localVoice.isReady() ? "LISTA" : "NO LISTA").append('\\n');
+        out.append("Reconocimiento local: ").append(localRecognitionPaused ? "PAUSADO" : "NO PAUSADO").append('\\n');
+        out.append("Servicio voz online activo: ").append(VoiceSessionService.isActive(this) ? "SÍ" : "NO").append('\\n');
+        out.append("Servicio foreground en ejecución: ").append(VoiceSessionService.isServiceRunning() ? "SÍ" : "NO").append('\\n');
+        out.append("Proveedor online conectado: ").append(onlineVoiceManager != null && onlineVoiceManager.isConnected()
+                ? String.valueOf(onlineVoiceManager.getActiveProviderId()) : "NINGUNO DESDE ACTIVITY").append('\\n');
+        out.append("Gemini Live: la configuración del secreto del servidor no puede verificarse desde el teléfono. Revisar eventos del backend.\\n");
+        out.append("\\n--- ÚLTIMOS EVENTOS (máx. 120) ---\\n");
+        String logs = DebugLog.dump();
+        out.append(logs.isEmpty() ? "Todavía no hay eventos registrados en esta sesión.\\n" : logs);
+        out.append("\\nNota: el panel no muestra claves, tokens ni conversaciones. Compartí el texto copiado para analizar el fallo.\\n");
+        return out.toString();
     }
 
     // ---------------------------------------------------------------------------
