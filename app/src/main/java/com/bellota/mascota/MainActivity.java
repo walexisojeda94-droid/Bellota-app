@@ -84,7 +84,11 @@ public class MainActivity extends Activity implements SensorEventListener {
             new VoiceEventsReceiver.Listener() {
                 @Override public void onRecognized(String text) { handleVoiceCommand(text); }
                 @Override public void onStatus(String status) { handleVoiceStatus(status); }
-                @Override public void onStopped() { disconnectOnlineVoice(false); }
+                @Override public void onStopped() {
+                    // Detener el reconocedor local es parte del traspaso al micrófono online.
+                    // No debe cerrar VoiceSessionService ni cancelar OpenAI Realtime.
+                    localRecognitionPaused = false;
+                }
                 @Override public void onSessionEvent(Intent intent) { handleOnlineVoiceEvent(intent); }
             });
     private boolean soundEnabled = true;
