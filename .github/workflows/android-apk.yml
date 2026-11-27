@@ -201,15 +201,18 @@ jobs:
           profile: Nexus 5
           script: |
             ./gradlew --no-daemon :app:connectedDebugAndroidTest
-            # Instrumentation teardown may leave the target package stopped or absent.
-            # Reinstall the exact APK under test after instrumentation, then verify
-            # that PackageManager still exposes its MAIN/LAUNCHER entry point.
+            # Verify the packaged APK declares the expected exported launcher before installation.
+            AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+            "$AAPT" dump badging app/build/outputs/apk/debug/app-debug.apk | tee /tmp/bellota-badging.txt
+            grep -F "package: name='com.bellota.mascota'" /tmp/bellota-badging.txt
+            grep -F "launchable-activity: name='com.bellota.mascota.MainActivity'" /tmp/bellota-badging.txt
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell pm grant com.bellota.mascota android.permission.RECORD_AUDIO
             adb shell pm path com.bellota.mascota | grep -q 'base.apk'
             adb shell am force-stop com.bellota.mascota
-            # Resolve and launch the exported MAIN/LAUNCHER activity through ActivityManager.
-            adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p com.bellota.mascota | tee /tmp/bellota-launch.txt
+            # Launch the exact activity verified in the APK manifest; explicit launch is
+            # supported on API 24 and avoids resolver differences in older PackageManager.
+            adb shell am start -W -n com.bellota.mascota/.MainActivity | tee /tmp/bellota-launch.txt
             grep -q 'Status: ok' /tmp/bellota-launch.txt
             sleep 8
             adb shell pidof com.bellota.mascota | grep -Eq '[0-9]+'
@@ -224,15 +227,18 @@ jobs:
           profile: Nexus 5
           script: |
             ./gradlew --no-daemon :app:connectedDebugAndroidTest
-            # Instrumentation teardown may leave the target package stopped or absent.
-            # Reinstall the exact APK under test after instrumentation, then verify
-            # that PackageManager still exposes its MAIN/LAUNCHER entry point.
+            # Verify the packaged APK declares the expected exported launcher before installation.
+            AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+            "$AAPT" dump badging app/build/outputs/apk/debug/app-debug.apk | tee /tmp/bellota-badging.txt
+            grep -F "package: name='com.bellota.mascota'" /tmp/bellota-badging.txt
+            grep -F "launchable-activity: name='com.bellota.mascota.MainActivity'" /tmp/bellota-badging.txt
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell pm grant com.bellota.mascota android.permission.RECORD_AUDIO
             adb shell pm path com.bellota.mascota | grep -q 'base.apk'
             adb shell am force-stop com.bellota.mascota
-            # Resolve and launch the exported MAIN/LAUNCHER activity through ActivityManager.
-            adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p com.bellota.mascota | tee /tmp/bellota-launch.txt
+            # Launch the exact activity verified in the APK manifest; explicit launch is
+            # supported on API 24 and avoids resolver differences in older PackageManager.
+            adb shell am start -W -n com.bellota.mascota/.MainActivity | tee /tmp/bellota-launch.txt
             grep -q 'Status: ok' /tmp/bellota-launch.txt
             sleep 8
             adb shell pidof com.bellota.mascota | grep -Eq '[0-9]+'
@@ -247,15 +253,18 @@ jobs:
           profile: Nexus 5
           script: |
             ./gradlew --no-daemon :app:connectedDebugAndroidTest
-            # Instrumentation teardown may leave the target package stopped or absent.
-            # Reinstall the exact APK under test after instrumentation, then verify
-            # that PackageManager still exposes its MAIN/LAUNCHER entry point.
+            # Verify the packaged APK declares the expected exported launcher before installation.
+            AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+            "$AAPT" dump badging app/build/outputs/apk/debug/app-debug.apk | tee /tmp/bellota-badging.txt
+            grep -F "package: name='com.bellota.mascota'" /tmp/bellota-badging.txt
+            grep -F "launchable-activity: name='com.bellota.mascota.MainActivity'" /tmp/bellota-badging.txt
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell pm grant com.bellota.mascota android.permission.RECORD_AUDIO
             adb shell pm path com.bellota.mascota | grep -q 'base.apk'
             adb shell am force-stop com.bellota.mascota
-            # Resolve and launch the exported MAIN/LAUNCHER activity through ActivityManager.
-            adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p com.bellota.mascota | tee /tmp/bellota-launch.txt
+            # Launch the exact activity verified in the APK manifest; explicit launch is
+            # supported on API 24 and avoids resolver differences in older PackageManager.
+            adb shell am start -W -n com.bellota.mascota/.MainActivity | tee /tmp/bellota-launch.txt
             grep -q 'Status: ok' /tmp/bellota-launch.txt
             sleep 8
             adb shell pidof com.bellota.mascota | grep -Eq '[0-9]+'
