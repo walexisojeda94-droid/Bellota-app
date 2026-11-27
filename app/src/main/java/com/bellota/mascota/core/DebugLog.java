@@ -41,7 +41,7 @@ public final class DebugLog {
     }
 
     public static synchronized String dump() {
-        if (!BuildConfig.DEBUG) return "";
+        if (!BuildConfig.DEBUG && !TEMPORARY_DIAGNOSTICS_ENABLED) return "";
         StringBuilder out = new StringBuilder();
         for (String line : LINES) out.append(line).append('\n');
         return out.toString();
