@@ -2,6 +2,8 @@ package com.bellota.mascota.voice.auth;
 
 import android.os.Looper;
 
+import com.bellota.mascota.core.DebugLog;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -280,7 +282,20 @@ public final class BellotaBackendClient {
         JSONObject body = new JSONObject();
         try { body.put("refresh_token", refresh); }
         catch (JSONException impossible) { throw new IllegalStateException(impossible); }
-        request("POST", "/v1/device/revoke", body, null);
+        try {
+            request("POST", "/v1/device/revoke", body, null);
+        } catch (BackendException error) {
+            if (error.httpStatus != 401) throw error;
+            DebugLog.w("BellotaAuth", "Revocación remota respondió 401; se elimina la credencial local inválida.");
+            if (!tokenStore.clear())
+                throw new BackendException("secure_storage_error", 500,
+                        "El servidor rechazó la credencial y Android no pudo borrarla localmente.");
+            synchronized (authLock) {
+                accessToken = null;
+                accessTokenExpiresAtMs = 0L;
+            }
+            return;
+        }
         if (!tokenStore.clear())
             throw new BackendException("secure_storage_error", 500,
                     "El servidor revocó el dispositivo, pero no se pudo borrar la credencial local. Podés reintentar.");
@@ -322,11 +337,18 @@ public final class BellotaBackendClient {
                 throw new BackendException("invalid_response", status,
                         "El backend devolvió una respuesta que no es JSON válido.");
             }
+            String errorCode = response.optString("error", "");
+            DebugLog.i("BellotaHTTP", method + " " + path + " -> HTTP " + status
+                    + (errorCode.isEmpty() ? "" : " (" + errorCode + ")"));
             if (status < 200 || status >= 300) {
                 throw new BackendException(response.optString("error", "backend_error"), status,
                         response.optString("message", "El backend rechazó la solicitud."));
             }
             return response;
+        } catch (IOException error) {
+            DebugLog.e("BellotaHTTP", method + " " + path + " falló por I/O: "
+                    + error.getClass().getSimpleName() + (error.getMessage() == null ? "" : " - " + error.getMessage()));
+            throw error;
         } finally {
             if (connection != null) connection.disconnect();
         }
