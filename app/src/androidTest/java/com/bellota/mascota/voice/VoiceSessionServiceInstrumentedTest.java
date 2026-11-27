@@ -8,7 +8,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
 
-import com.bellota.mascota.voice.auth.SecureTokenStore;
 
 import org.junit.Test;
 import org.junit.FixMethodOrder;
@@ -33,11 +32,9 @@ public class VoiceSessionServiceInstrumentedTest {
 
     @Test(timeout = 90000L) public void test01ForegroundOwnerRestoresAfterUnexpectedServiceTeardown() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        SecureTokenStore tokenStore = new SecureTokenStore(context);
         VoiceSessionConfigStore configStore = new VoiceSessionConfigStore(context);
         try {
             VoiceRecognitionService.stop(context);
-            tokenStore.saveRefreshToken("instrumented-session-token-01234567890123456789");
 
             VoiceSessionService.start(context, "https://127.0.0.1:1",
                     "Sos Bellota. Prueba de ciclo de vida.", "[]", "marin", "es-AR");
@@ -62,18 +59,15 @@ public class VoiceSessionServiceInstrumentedTest {
             VoiceSessionService.stop(context);
             waitFor(() -> !VoiceSessionService.isActive(context), 5000L);
             VoiceRecognitionService.stop(context);
-            tokenStore.clearRefreshToken();
             configStore.clear();
         }
     }
     @Test(timeout = 90000L)
     public void test99CanRecoverPersistedSessionAfterServiceTeardown() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        SecureTokenStore tokenStore = new SecureTokenStore(context);
         VoiceSessionConfigStore configStore = new VoiceSessionConfigStore(context);
         try {
             VoiceRecognitionService.stop(context);
-            tokenStore.saveRefreshToken("instrumented-recovery-token-01234567890123456789");
             VoiceSessionService.start(context, "https://127.0.0.1:1",
                     "Sos Bellota. Prueba de recuperación del proceso.", "[]", "marin", "es-AR");
             assertTrue("El servicio foreground no llegó a iniciarse para la prueba de recuperación.",
@@ -95,7 +89,6 @@ public class VoiceSessionServiceInstrumentedTest {
             VoiceSessionService.stop(context);
             waitFor(() -> !VoiceSessionService.isActive(context), 5000L);
             VoiceRecognitionService.stop(context);
-            tokenStore.clearRefreshToken();
             configStore.clear();
         }
     }
