@@ -7,7 +7,3 @@ enabled = true
 
 [observability.traces]
 enabled = true
-
-# La autenticación con clave fija ya no requiere D1.
-[previews]
-# Preview builds intentionally omit the production D1 database to keep production data isolated.
