@@ -207,8 +207,6 @@ jobs:
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell pm grant com.bellota.mascota android.permission.RECORD_AUDIO
             adb shell pm path com.bellota.mascota | grep -q 'base.apk'
-            adb shell pm resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p com.bellota.mascota | tee /tmp/bellota-resolved-activity.txt
-            grep -q 'com.bellota.mascota/.MainActivity\|com.bellota.mascota/com.bellota.mascota.MainActivity' /tmp/bellota-resolved-activity.txt
             adb shell am force-stop com.bellota.mascota
             adb shell am start -W -n com.bellota.mascota/.MainActivity | tee /tmp/bellota-launch.txt
             grep -q 'Status: ok' /tmp/bellota-launch.txt
@@ -231,8 +229,6 @@ jobs:
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell pm grant com.bellota.mascota android.permission.RECORD_AUDIO
             adb shell pm path com.bellota.mascota | grep -q 'base.apk'
-            adb shell pm resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p com.bellota.mascota | tee /tmp/bellota-resolved-activity.txt
-            grep -q 'com.bellota.mascota/.MainActivity\|com.bellota.mascota/com.bellota.mascota.MainActivity' /tmp/bellota-resolved-activity.txt
             adb shell am force-stop com.bellota.mascota
             adb shell am start -W -n com.bellota.mascota/.MainActivity | tee /tmp/bellota-launch.txt
             grep -q 'Status: ok' /tmp/bellota-launch.txt
@@ -255,8 +251,6 @@ jobs:
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell pm grant com.bellota.mascota android.permission.RECORD_AUDIO
             adb shell pm path com.bellota.mascota | grep -q 'base.apk'
-            adb shell pm resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p com.bellota.mascota | tee /tmp/bellota-resolved-activity.txt
-            grep -q 'com.bellota.mascota/.MainActivity\|com.bellota.mascota/com.bellota.mascota.MainActivity' /tmp/bellota-resolved-activity.txt
             adb shell am force-stop com.bellota.mascota
             adb shell am start -W -n com.bellota.mascota/.MainActivity | tee /tmp/bellota-launch.txt
             grep -q 'Status: ok' /tmp/bellota-launch.txt
