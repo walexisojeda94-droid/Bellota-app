@@ -268,7 +268,7 @@ public final class BellotaBackendClient {
     }
 
     /** Revokes the device remotely first. The refresh credential makes revocation safely retryable. */
-    public void unpair() throws IOException, BackendException {
+    public boolean unpair() throws IOException, BackendException {
         requireWorkerThread();
         final String refresh;
         try {
@@ -294,7 +294,7 @@ public final class BellotaBackendClient {
                 accessToken = null;
                 accessTokenExpiresAtMs = 0L;
             }
-            return;
+            return false;
         }
         if (!tokenStore.clear())
             throw new BackendException("secure_storage_error", 500,
@@ -303,6 +303,7 @@ public final class BellotaBackendClient {
             accessToken = null;
             accessTokenExpiresAtMs = 0L;
         }
+        return true;
     }
 
     private JSONObject request(String method, String path, JSONObject body, String bearer)
