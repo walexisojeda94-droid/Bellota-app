@@ -309,8 +309,10 @@ public class MainActivity extends Activity implements SensorEventListener {
                         try {
                             com.bellota.mascota.voice.auth.BellotaBackendClient client =
                                     new com.bellota.mascota.voice.auth.BellotaBackendClient(backendUrl, tokenStore);
-                            client.unpair();
-                            message = "Dispositivo revocado en el servidor y desvinculado de este teléfono.";
+                            boolean revokedRemotely = client.unpair();
+                            message = revokedRemotely
+                                    ? "Dispositivo revocado en el servidor y desvinculado de este teléfono."
+                                    : "La credencial local era inválida y fue eliminada. Ya podés vincular el dispositivo nuevamente.";
                             success = true;
                         } catch (com.bellota.mascota.voice.auth.BellotaBackendClient.BackendException error) {
                             message = error.getMessage();
