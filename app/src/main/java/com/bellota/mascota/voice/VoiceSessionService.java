@@ -1,5 +1,7 @@
 package com.bellota.mascota.voice;
 
+import com.bellota.mascota.core.DebugLog;
+
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -303,6 +305,8 @@ public final class VoiceSessionService extends Service {
                         }, 25000L);
                     }
                     @Override public void onLocalFallbackRequested(VoiceProvider.Failure reason, String detail) {
+                        DebugLog.e("BellotaVoice", "Fallback solicitado por " + provider.getProviderId()
+                                + "; motivo=" + reason + (detail == null ? "" : "; detalle=" + detail));
                         emit("state", VoiceProvider.State.RECONNECTING.name(),
                                 "Conexión interrumpida. Se reintentará automáticamente.", provider.getProviderId());
                         if (reason == VoiceProvider.Failure.AUTHENTICATION
@@ -498,6 +502,9 @@ public final class VoiceSessionService extends Service {
     }
 
     private void emit(String event, String state, String detail, String provider) {
+        if ("state".equals(event)) DebugLog.i("BellotaVoice", "provider="
+                + (provider == null ? "n/a" : provider) + "; state="
+                + (state == null ? "n/a" : state) + (detail == null ? "" : "; detail=" + detail));
         Intent intent = baseEvent(event);
         if (state != null) intent.putExtra(EXTRA_STATE, state);
         if (detail != null) intent.putExtra(EXTRA_DETAIL, detail);
