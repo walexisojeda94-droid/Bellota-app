@@ -9,7 +9,7 @@ Aplicación Android nativa de mascota virtual. Bellota mantiene su interfaz, com
 - Conversación local, memoria conversacional y respuestas de respaldo.
 - Voz local mediante Android TextToSpeech y reconocimiento mediante SpeechRecognizer.
 - Consulta del clima mediante Open-Meteo y ubicación bajo demanda.
-- OpenAI Realtime integrado en Android mediante WebRTC, credenciales efímeras emitidas por el Worker, renovación de la vinculación y fallback local.
+- OpenAI Realtime integrado en Android mediante WebRTC, credenciales efímeras emitidas por el Worker, clave fija del propietario sin vencimiento automático y fallback local.
 - Memoria compartida entre conversación local y Realtime; diario cifrado de ambos lados de la conversación.
 - Las llamadas de herramientas quedan asociadas a su sesión de origen, se serializan y descartan si llegan tarde.
 - OpenAI Realtime es el proveedor online principal y Gemini Live es el segundo proveedor implementado mediante WebSocket y token efímero. La voz local es el último respaldo.
@@ -25,9 +25,9 @@ Aplicación Android nativa de mascota virtual. Bellota mantiene su interfaz, com
 
 ## Backend OpenAI
 
-El Worker `bellota-openai-realtime` está desplegado en Cloudflare. El binding D1 `DB` apunta a la base existente `bellota-devices`; las migraciones de recuperación de refresh y los índices de retención se aplicaron. Los secretos `ADMIN_TOKEN`, `JWT_SECRET` y `OPENAI_API_KEY` y el binding D1 fueron verificados. El Worker también publica `/v1/gemini/live-token`; el binding secreto `GEMINI_API_KEY` está presente en Cloudflare. La emisión real de tokens y la sesión de audio todavía requieren prueba de extremo a extremo. La observabilidad de logs y traces está habilitada.
+El Worker `bellota-openai-realtime` está desplegado en Cloudflare. El nuevo flujo utiliza el secreto `BELLOTA_ACCESS_KEY` como clave fija compartida por los dispositivos; `OPENAI_API_KEY` y `GEMINI_API_KEY` permanecen en Cloudflare. El flujo nuevo ya no depende de D1 ni de tokens de renovación de dispositivos. La emisión real de credenciales y la sesión de audio requieren prueba de extremo a extremo. La observabilidad de logs y traces está habilitada.
 
-El endpoint `GET /health` comprueba configuración y esquema D1. El código y la infraestructura fueron revisados, pero no se registra en esta certificación una respuesta HTTP externa del endpoint. La emisión y selección real de TURN en una red restrictiva tampoco se considera probada; depende de las credenciales TURN correspondientes.
+El endpoint `GET /health` comprueba la presencia de `BELLOTA_ACCESS_KEY` y de al menos un proveedor configurado. El código y la infraestructura fueron revisados, pero no se registra en esta certificación una respuesta HTTP externa del endpoint. La emisión y selección real de TURN en una red restrictiva tampoco se considera probada; depende de las credenciales TURN correspondientes.
 
 No subir claves API, tokens, contraseñas ni archivos de firma al repositorio.
 

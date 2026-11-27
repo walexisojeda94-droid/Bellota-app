@@ -6,18 +6,19 @@ import { createHmac } from "node:crypto";
 function envWithDatabase(database = { prepare: () => ({ first: async () => ({ table_count: 2 }) }) }) {
   return {
     DB: database,
-    ADMIN_TOKEN: "test-admin-token",
-    JWT_SECRET: "test-jwt-secret",
+    BELLOTA_ACCESS_KEY: "test-bellota-key",
+    ADMIN_TOKEN: "legacy-admin-token",
+    JWT_SECRET: "legacy-jwt-secret",
     OPENAI_API_KEY: "test-openai-key"
   };
 }
 
-test("health reports ready only when configuration and D1 are available", async () => {
+test("health reports ready when the fixed key and a provider are configured", async () => {
   const response = await worker.fetch(new Request("https://worker.test/health"), envWithDatabase());
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.ok, true);
-  assert.deepEqual(body.checks, { database: true, configuration: true, gemini: false });
+  assert.deepEqual(body.checks, { access_key: true, openai: true, gemini: false });
 });
 
 test("health reports Gemini configured when its secret is present", async () => {
@@ -25,19 +26,18 @@ test("health reports Gemini configured when its secret is present", async () => 
   const response = await worker.fetch(new Request("https://worker.test/health"), env);
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.deepEqual(body.checks, { database: true, configuration: true, gemini: true });
+  assert.deepEqual(body.checks, { access_key: true, openai: true, gemini: true });
 });
 
-test("health returns 503 when D1 cannot be reached without leaking details", async () => {
-  const response = await worker.fetch(
-    new Request("https://worker.test/health"),
-    envWithDatabase({ prepare: () => ({ first: async () => { throw new Error("private database detail"); } }) })
-  );
+test("health reports missing fixed key without exposing configuration values", async () => {
+  const env = envWithDatabase();
+  delete env.BELLOTA_ACCESS_KEY;
+  const response = await worker.fetch(new Request("https://worker.test/health"), env);
   assert.equal(response.status, 503);
   const body = await response.json();
   assert.equal(body.ok, false);
-  assert.deepEqual(body.checks, { database: false, configuration: true, gemini: false });
-  assert.equal(JSON.stringify(body).includes("private database detail"), false);
+  assert.deepEqual(body.checks, { access_key: false, openai: true, gemini: false });
+  assert.equal(JSON.stringify(body).includes("test-bellota-key"), false);
 });
 
 test("known routes reject unsupported HTTP methods with 405", async () => {
@@ -46,10 +46,26 @@ test("known routes reject unsupported HTTP methods with 405", async () => {
   assert.equal(response.headers.get("allow"), "POST");
 });
 
+test("pair accepts the permanent key and rejects an incorrect one", async () => {
+  const denied = await worker.fetch(new Request("https://worker.test/v1/pair", {
+    method: "POST",
+    headers: { authorization: "Bearer wrong-key" }
+  }), envWithDatabase());
+  assert.equal(denied.status, 401);
+  assert.equal((await denied.json()).error, "invalid_access_key");
+
+  const accepted = await worker.fetch(new Request("https://worker.test/v1/pair", {
+    method: "POST",
+    headers: { authorization: "Bearer test-bellota-key" }
+  }), envWithDatabase());
+  assert.equal(accepted.status, 200);
+  assert.deepEqual(await accepted.json(), { ok: true, paired: true });
+});
+
 test("JSON endpoints reject unsupported content types", async () => {
   const response = await worker.fetch(new Request("https://worker.test/v1/pair", {
     method: "POST",
-    headers: { "content-type": "text/plain" },
+    headers: { "content-type": "text/plain", authorization: "Bearer test-bellota-key" },
     body: "code=12345678"
   }), envWithDatabase());
   assert.equal(response.status, 415);
@@ -59,7 +75,7 @@ test("JSON endpoints reject unsupported content types", async () => {
 test("JSON endpoints reject declared oversized bodies before parsing", async () => {
   const response = await worker.fetch(new Request("https://worker.test/v1/pair", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", authorization: "Bearer test-bellota-key" },
     body: JSON.stringify({ code: "x".repeat(17000) })
   }), envWithDatabase());
   assert.equal(response.status, 413);
@@ -69,7 +85,7 @@ test("JSON endpoints reject declared oversized bodies before parsing", async () 
 test("malformed JSON is rejected instead of silently using defaults", async () => {
   const response = await worker.fetch(new Request("https://worker.test/v1/pair", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", authorization: "Bearer test-bellota-key" },
     body: "{"
   }), envWithDatabase());
   assert.equal(response.status, 400);
@@ -79,7 +95,7 @@ test("malformed JSON is rejected instead of silently using defaults", async () =
 test("Gemini token endpoint reports a missing server secret without exposing details", async () => {
   const response = await worker.fetch(new Request("https://worker.test/v1/gemini/live-token", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", authorization: "Bearer test-bellota-key" },
     body: JSON.stringify({})
   }), envWithDatabase());
   assert.equal(response.status, 503);
@@ -89,14 +105,8 @@ test("Gemini token endpoint reports a missing server secret without exposing det
 });
 
 
-test("Gemini ephemeral credentials use the v1alpha constrained Live API", async () => {
-  const secret = "test-jwt-secret";
-  const now = Math.floor(Date.now() / 1000);
-  const encode = value => Buffer.from(JSON.stringify(value)).toString("base64url");
-  const header = encode({ alg: "HS256", typ: "JWT" });
-  const payload = encode({ sub: "device-test", iat: now, exp: now + 300, iss: "bellota-backend", aud: "bellota-app" });
-  const unsigned = header + "." + payload;
-  const token = unsigned + "." + createHmac("sha256", secret).update(unsigned).digest("base64url");
+test("Gemini ephemeral credentials use the v1beta constrained Live API", async () => {
+  const token = "test-bellota-key";
   const calls = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {

@@ -174,7 +174,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         final String backendUrl = getString(R.string.backend_base_url).trim();
         final boolean configured = backendUrl.startsWith("https://");
         final SecureTokenStore tokenStore = new SecureTokenStore(getApplicationContext());
-        final boolean paired = tokenStore.hasRefreshToken();
+        final boolean paired = tokenStore.hasAccessKey();
 
         android.widget.LinearLayout panel = new android.widget.LinearLayout(this);
         panel.setOrientation(android.widget.LinearLayout.VERTICAL);
@@ -182,8 +182,8 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         android.widget.TextView explanation = new android.widget.TextView(this);
         explanation.setText(paired
-                ? "Este dispositivo ya tiene una vinculación segura. Podés iniciar o detener la conversación online."
-                : "Vinculá Bellota con un código de un solo uso. El código vence a los 10 minutos.");
+                ? "Este teléfono ya tiene guardada la clave fija de Bellota."
+                : "Ingresá la clave fija que configuraste en Cloudflare. Se guarda en este teléfono y no vence automáticamente.");
         explanation.setTextColor(0xFFE7EEEE);
         explanation.setTextSize(14f);
         panel.addView(explanation);
@@ -247,11 +247,11 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         android.widget.EditText codeInput = new android.widget.EditText(this);
         codeInput.setSingleLine(true);
-        codeInput.setHint("Código de vinculación");
+        codeInput.setHint("Clave fija de Bellota");
         codeInput.setTextColor(0xFFFFFFFF);
         codeInput.setHintTextColor(0xFF9BAEAE);
         codeInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
-                | android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+                | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
                 | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         codeInput.setLetterSpacing(0.12f);
         codeInput.setVisibility(paired ? View.GONE : View.VISIBLE);
@@ -262,9 +262,9 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         android.widget.TextView status = new android.widget.TextView(this);
         status.setText(!configured
-                ? "El backend todavía no está desplegado/configurado. La voz local sigue disponible."
-                : paired ? "Dispositivo vinculado. La conexión online todavía no está iniciada."
-                : "Servicio configurado. La vinculación no modifica la voz local.");
+                ? "Falta configurar BELLOTA_ACCESS_KEY y al menos un proveedor en Cloudflare. La voz local sigue disponible."
+                : paired ? "Clave guardada en este teléfono. La conexión online todavía no está iniciada."
+                : "Servicio configurado. Ingresá tu clave fija para vincular este teléfono.");
         status.setTextColor(configured ? 0xFF9ED8C8 : 0xFFFFD18A);
         status.setTextSize(12f);
         android.widget.LinearLayout.LayoutParams statusParams = new android.widget.LinearLayout.LayoutParams(
@@ -301,7 +301,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                     if (onlineVoiceConnecting || VoiceSessionService.isActive(this)) disconnectOnlineVoice();
                     primary.setEnabled(false);
                     online.setEnabled(false);
-                    status.setText("Revocando este dispositivo en el servidor...");
+                    status.setText("Quitando la clave guardada en este teléfono...");
                     status.setTextColor(0xFF9ED8C8);
                     new Thread(() -> {
                         String message;
@@ -309,15 +309,13 @@ public class MainActivity extends Activity implements SensorEventListener {
                         try {
                             com.bellota.mascota.voice.auth.BellotaBackendClient client =
                                     new com.bellota.mascota.voice.auth.BellotaBackendClient(backendUrl, tokenStore);
-                            boolean revokedRemotely = client.unpair();
-                            message = revokedRemotely
-                                    ? "Dispositivo revocado en el servidor y desvinculado de este teléfono."
-                                    : "La credencial local era inválida y fue eliminada. Ya podés vincular el dispositivo nuevamente.";
+                            client.unpair();
+                            message = "Clave eliminada de este teléfono. Los demás dispositivos siguen vinculados.";
                             success = true;
                         } catch (com.bellota.mascota.voice.auth.BellotaBackendClient.BackendException error) {
                             message = error.getMessage();
                         } catch (Exception error) {
-                            message = "No se pudo confirmar la revocación. La credencial local se conservó para reintentar.";
+                            message = "No se pudo borrar la clave guardada en este teléfono.";
                         }
                         final String result = message;
                         final boolean revoked = success;
@@ -330,10 +328,10 @@ public class MainActivity extends Activity implements SensorEventListener {
                                 dialog.dismiss();
                                 android.widget.Toast.makeText(MainActivity.this,
                                         "Dispositivo revocado correctamente.", android.widget.Toast.LENGTH_LONG).show();
-                            } else if (!tokenStore.hasRefreshToken()) {
+                            } else if (!tokenStore.hasAccessKey()) {
                                 dialog.dismiss();
                                 android.widget.Toast.makeText(MainActivity.this,
-                                        "La clave segura dejó de ser válida. Abrí nuevamente la opción online para vincular el dispositivo otra vez.",
+                                        "Abrí nuevamente la opción online para ingresar la clave fija.",
                                         android.widget.Toast.LENGTH_LONG).show();
                             } else {
                                 primary.setText("Reintentar revocación");
@@ -344,8 +342,8 @@ public class MainActivity extends Activity implements SensorEventListener {
                     return;
                 }
                 String code = codeInput.getText().toString().trim();
-                if (!code.matches("[A-Za-z0-9_-]{6,32}")) {
-                    codeInput.setError("Ingresá el código recibido.");
+                if (code.length() < 8 || code.length() > 256) {
+                    codeInput.setError("Ingresá la clave fija (mínimo 8 caracteres).");
                     return;
                 }
                 primary.setEnabled(false);
@@ -358,7 +356,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                         com.bellota.mascota.voice.auth.BellotaBackendClient client =
                                 new com.bellota.mascota.voice.auth.BellotaBackendClient(backendUrl, tokenStore);
                         client.pair(code, android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
-                        result = "Dispositivo vinculado. Ya podés iniciar la voz online.";
+                        result = "Clave validada y guardada. Bellota queda vinculada en este teléfono sin vencimiento automático.";
                         success = true;
                     } catch (com.bellota.mascota.voice.auth.BellotaBackendClient.BackendException error) {
                         result = error.getMessage();
@@ -372,8 +370,9 @@ public class MainActivity extends Activity implements SensorEventListener {
                         status.setText(message);
                         status.setTextColor(successResult ? 0xFF9ED8C8 : 0xFFFFA6A6);
                         if (successResult) {
+                            codeInput.setText("");
                             codeInput.setVisibility(View.GONE);
-                            explanation.setText("Este dispositivo ya tiene una vinculación segura.");
+                            explanation.setText("Este teléfono ya tiene guardada la clave fija de Bellota.");
                             primary.setText("Vinculado");
                             primary.setEnabled(false);
                             online.setEnabled(true);
@@ -466,7 +465,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                             && VoiceSessionService.isActive(MainActivity.this);
                     control.setText(active ? "Desconectar" : "Conectar");
                     control.setEnabled(getString(R.string.backend_base_url).trim().startsWith("https://")
-                            && new SecureTokenStore(getApplicationContext()).hasRefreshToken());
+                            && new SecureTokenStore(getApplicationContext()).hasAccessKey());
                 }
             });
             return;
@@ -681,7 +680,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         String backend = getString(R.string.backend_base_url).trim();
         out.append("Backend URL: ").append(backend.startsWith("https://") ? "CONFIGURADA (HTTPS)" : "NO CONFIGURADA").append('\n');
         SecureTokenStore tokenStore = new SecureTokenStore(getApplicationContext());
-        out.append("Dispositivo vinculado localmente: ").append(tokenStore.hasRefreshToken() ? "SÍ (credencial guardada)" : "NO").append('\n');
+        out.append("Dispositivo vinculado localmente: ").append(tokenStore.hasAccessKey() ? "SÍ (credencial guardada)" : "NO").append('\n');
         out.append("Voz local TTS: ").append(localVoice == null ? "NO INICIALIZADA"
                 : localVoice.isReady() ? "LISTA" : "NO LISTA").append('\n');
         out.append("Reconocimiento local: ").append(localRecognitionPaused ? "PAUSADO" : "NO PAUSADO").append('\n');

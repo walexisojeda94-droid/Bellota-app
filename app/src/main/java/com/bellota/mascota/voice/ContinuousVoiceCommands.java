@@ -1,5 +1,7 @@
 package com.bellota.mascota.voice;
 
+import android.app.Activity;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
@@ -7,12 +9,15 @@ import android.os.Handler;
 import android.os.Looper;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
+import android.speech.RecognitionSupport;
+import android.speech.RecognitionSupportCallback;
 import android.speech.SpeechRecognizer;
 
 import com.bellota.mascota.core.DebugLog;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * Reconocimiento continuo de comandos en español.
@@ -87,7 +92,13 @@ public class ContinuousVoiceCommands {
                     ? "Usando el servicio de reconocimiento configurado en Android; se prioriza el modelo descargado y se solicita funcionamiento sin conexión. Idioma inicial: " + languageTag() + "."
                     : VoiceRecognitionPolicy.descriptionForApi(android.os.Build.VERSION.SDK_INT)
                             + " Idioma inicial: " + languageTag() + ".");
-            listenAgain(session, 250L);
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                discoverRecognitionSupport(session);
+            } else if (android.os.Build.VERSION.SDK_INT < 31) {
+                queryLegacySupportedLanguages(session);
+            } else {
+                listenAgain(session, 250L);
+            }
         } catch (Exception error) {
             running = false;
             generation++;
@@ -162,6 +173,137 @@ public class ContinuousVoiceCommands {
         }, delay);
     }
 
+    /**
+     * Android 13+ exposes the locales installed for the selected recognition service.
+     * Select an installed Spanish model instead of guessing locale tags.
+     */
+    private void discoverRecognitionSupport(final long session) {
+        if (android.os.Build.VERSION.SDK_INT < 33 || !running
+                || generation != session || recognizer == null) return;
+        Intent supportIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        supportIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        supportIntent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+        try {
+            recognizer.checkRecognitionSupport(supportIntent, context.getMainExecutor(),
+                    new RecognitionSupportCallback() {
+                        @Override public void onSupportResult(RecognitionSupport support) {
+                            if (!running || generation != session || recognizer == null) return;
+                            List<String> installed = support == null ? null
+                                    : support.getInstalledOnDeviceLanguages();
+                            String selected = VoiceRecognitionPolicy.selectSpanishLanguage(installed);
+                            if (selected != null) {
+                                languageCandidates.clear();
+                                languageCandidates.add(selected);
+                                languageCandidateIndex = 0;
+                                status("Modelo español local detectado en el motor de Android: " + selected + ".");
+                                listenAgain(session, 250L);
+                                return;
+                            }
+
+                            if (!usingDefaultProvider && SpeechRecognizer.isRecognitionAvailable(context)) {
+                                switchToDefaultProvider(session);
+                                return;
+                            }
+
+                            List<String> downloadable = support == null ? null
+                                    : support.getSupportedOnDeviceLanguages();
+                            String available = VoiceRecognitionPolicy.selectSpanishLanguage(downloadable);
+                            if (available != null) {
+                                Intent downloadIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                                downloadIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                                downloadIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, available);
+                                downloadIntent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+                                try {
+                                    recognizer.triggerModelDownload(downloadIntent);
+                                    status("Android admite español (" + available + "), pero el modelo local no figura instalado. Se solicitó su descarga; Bellota volverá a comprobarlo.");
+                                    handler.postDelayed(() -> discoverRecognitionSupport(session),
+                                            LANGUAGE_RETRY_DELAY_MS);
+                                    return;
+                                } catch (RuntimeException downloadError) {
+                                    DebugLog.w(TAG, "No se pudo solicitar descarga del modelo español: "
+                                            + downloadError.getClass().getSimpleName());
+                                }
+                            }
+                            status("El servicio de reconocimiento instalado no informa un modelo español local disponible. Revisá los idiomas sin conexión del servicio de voz de Android.");
+                            handler.postDelayed(() -> discoverRecognitionSupport(session),
+                                    LANGUAGE_RETRY_DELAY_MS);
+                        }
+
+                        @Override public void onError(int error) {
+                            if (!running || generation != session) return;
+                            DebugLog.w(TAG, "checkRecognitionSupport falló: " + error
+                                    + "; se probará el proveedor alternativo si está disponible.");
+                            if (!usingDefaultProvider && SpeechRecognizer.isRecognitionAvailable(context)) {
+                                switchToDefaultProvider(session);
+                            } else {
+                                listenAgain(session, LANGUAGE_RETRY_DELAY_MS);
+                            }
+                        }
+                    });
+        } catch (RuntimeException error) {
+            DebugLog.w(TAG, "No se pudo consultar compatibilidad de idiomas: "
+                    + error.getClass().getSimpleName());
+            if (!usingDefaultProvider && SpeechRecognizer.isRecognitionAvailable(context))
+                switchToDefaultProvider(session);
+            else
+                listenAgain(session, LANGUAGE_RETRY_DELAY_MS);
+        }
+    }
+
+    private void switchToDefaultProvider(final long session) {
+        if (!running || generation != session || usingDefaultProvider || restarting) return;
+        restarting = true;
+        status("El motor local dedicado no anuncia español. Consultando los idiomas instalados en el servicio de voz de Android.");
+        handler.postDelayed(() -> {
+            if (!running || generation != session) return;
+            releaseRecognizer();
+            try {
+                usingDefaultProvider = true;
+                createRecognizer(session, true);
+                restarting = false;
+                discoverRecognitionSupport(session);
+            } catch (RuntimeException error) {
+                restarting = false;
+                status("No se pudo iniciar el servicio de voz configurado en Android.");
+                handler.postDelayed(() -> discoverRecognitionSupport(session),
+                        LANGUAGE_RETRY_DELAY_MS);
+            }
+        }, 500L);
+    }
+
+    /**
+     * Android 7-11 has no on-device support query. Ask the installed provider
+     * which locales it recognizes and choose a Spanish locale from that list.
+     */
+    private void queryLegacySupportedLanguages(final long session) {
+        Intent detailsIntent = new Intent(RecognizerIntent.ACTION_GET_LANGUAGE_DETAILS);
+        try {
+            context.sendOrderedBroadcast(detailsIntent, null, new BroadcastReceiver() {
+                @Override public void onReceive(Context ignored, Intent intent) {
+                    if (!running || generation != session) return;
+                    Bundle extras = getResultExtras(true);
+                    ArrayList<String> supported = extras == null ? null
+                            : extras.getStringArrayList(RecognizerIntent.EXTRA_SUPPORTED_LANGUAGES);
+                    String selected = VoiceRecognitionPolicy.selectSpanishLanguage(supported);
+                    if (selected != null) {
+                        languageCandidates.clear();
+                        languageCandidates.add(selected);
+                        languageCandidateIndex = 0;
+                        status("El servicio de Android anuncia español (" + selected + "). Se solicitará reconocimiento sin conexión cuando el proveedor lo permita.");
+                    } else {
+                        status("Android no informó sus idiomas compatibles. Se probarán las variantes españolas habituales sin usar el idioma del teléfono.");
+                    }
+                    listenAgain(session, 250L);
+                }
+            }, null, Activity.RESULT_OK, null, null);
+        } catch (RuntimeException error) {
+            status("No se pudieron consultar los idiomas del servicio Android. Se probarán las variantes españolas habituales.");
+            listenAgain(session, 250L);
+        }
+    }
+
     private String languageTag() {
         return languageCandidates.get(languageCandidateIndex);
     }
@@ -207,7 +349,8 @@ public class ContinuousVoiceCommands {
                     usingDefaultProvider = true;
                     createRecognizer(session, true);
                     restarting = false;
-                    listenAgain(session, 500L);
+                    if (android.os.Build.VERSION.SDK_INT >= 33) discoverRecognitionSupport(session);
+                    else listenAgain(session, 500L);
                 } catch (Exception error) {
                     restarting = false;
                     status("No se pudo iniciar el servicio de voz configurado en Android.");

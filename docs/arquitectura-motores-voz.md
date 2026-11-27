@@ -12,7 +12,7 @@
 
 1. Ninguna clave API permanente de OpenAI o Google se almacena en el APK, recursos, preferencias ni código fuente.
 2. Las credenciales temporales se solicitan al backend controlado por Bellota y se mantienen el tiempo mínimo necesario en memoria.
-3. La app no solicita renovaciones manuales de tokens al usuario.
+3. La app no solicita códigos temporales ni renovaciones de autorización al usuario.
 4. Los errores de autenticación, red, cuota, proveedor y audio se distinguen.
 5. La reconexión debe tener límites, evitar bucles y no duplicar mensajes ni acciones.
 6. El contexto se reconstruye desde la memoria local y un conjunto acotado de turnos.
@@ -23,7 +23,7 @@
 
 - Contrato común `VoiceProvider` y coordinador `VoiceProviderManager`, con pruebas JVM.
 - Adaptadores `OpenAIRealtimeWebRtcProvider` (WebRTC) y `GeminiLiveProvider` (WebSocket) coordinados por `VoiceProviderManager` desde `VoiceSessionService`.
-- Worker Cloudflare para pairing, refresh token rotatorio, revocación y credenciales efímeras de OpenAI y Gemini.
+- Worker Cloudflare con clave fija del propietario y credenciales efímeras de OpenAI y Gemini.
 - D1 y secretos principales configurados; migraciones de retención aplicadas.
 - Memoria, personalidad y herramientas propias de Bellota separadas de la implementación del proveedor.
 - Reconocimiento local en un Foreground Service.
@@ -53,7 +53,7 @@ El reconocimiento local funciona como Foreground Service independiente. OpenAI y
 ## Criterios de aceptación del conjunto
 
 - No hay claves permanentes en APK, repositorio, logs ni preferencias.
-- El backend emite credenciales temporales y el cliente las renueva sin intervención manual.
+- La clave fija del propietario no vence ni rota. El backend emite credenciales temporales de proveedor sin exponer las claves API permanentes.
 - Los errores permanentes no se reintentan indefinidamente.
 - No hay respuestas ni herramientas duplicadas al reconectar o cambiar de proveedor.
 - La memoria y personalidad sobreviven a sesiones y cambios de proveedor.

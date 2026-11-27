@@ -31,11 +31,6 @@ public final class BellotaBackendClient {
 
     private final String baseUrl;
     private final SecureTokenStore tokenStore;
-    private final Object authLock = new Object();
-
-    private String accessToken;
-    private long accessTokenExpiresAtMs;
-
     public BellotaBackendClient(String backendBaseUrl, SecureTokenStore tokenStore) {
         if (backendBaseUrl == null || backendBaseUrl.trim().isEmpty())
             throw new IllegalArgumentException("Falta configurar la URL del backend de Bellota.");
@@ -47,84 +42,43 @@ public final class BellotaBackendClient {
         this.tokenStore = tokenStore;
     }
 
-    /** Exchanges the administrator's one-time code for a device refresh token. */
-    public void pair(String oneTimeCode, String deviceName) throws IOException, BackendException {
+    /** Valida y guarda la clave fija del propietario en este teléfono. */
+    public void pair(String fixedKey, String deviceName) throws IOException, BackendException {
         requireWorkerThread();
-        if (oneTimeCode == null || !oneTimeCode.trim().matches("[A-Za-z0-9_-]{6,32}"))
-            throw new IllegalArgumentException("Ingresá un código de vinculación válido.");
+        if (fixedKey == null || fixedKey.trim().length() < 8 || fixedKey.trim().length() > 256)
+            throw new IllegalArgumentException("Ingresá la clave fija de Bellota (mínimo 8 caracteres).");
         JSONObject body = new JSONObject();
         try {
-            body.put("code", oneTimeCode.trim());
             body.put("device_name", deviceName == null ? "Bellota Android" : deviceName.trim());
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
         }
-        JSONObject response = request("POST", "/v1/pair", body, null);
-        String refresh = response.optString("refresh_token", "");
-        String access = response.optString("access_token", "");
-        int ttl = response.optInt("access_expires_in", 0);
-        if (refresh.length() < 32 || access.isEmpty() || ttl <= 0)
-            throw new BackendException("invalid_response", 502, "El backend devolvió una vinculación incompleta.");
+        String key = fixedKey.trim();
+        JSONObject response = request("POST", "/v1/pair", body, key);
+        if (!response.optBoolean("ok", false) || !response.optBoolean("paired", false))
+            throw new BackendException("invalid_response", 502, "El backend no confirmó la vinculación.");
         try {
-            tokenStore.saveRefreshToken(refresh);
+            tokenStore.saveAccessKey(key);
         } catch (Exception error) {
-            // Do not leave an unmanageable device registered if secure storage failed.
-            try {
-                JSONObject revokeBody = new JSONObject();
-                revokeBody.put("refresh_token", refresh);
-                request("POST", "/v1/device/revoke", revokeBody, null);
-            } catch (Exception ignored) { }
             throw new BackendException("secure_storage_error", 500,
-                    "No se pudo guardar la vinculación segura. El servidor intentó revocar el dispositivo.");
-        }
-        synchronized (authLock) {
-            accessToken = access;
-            accessTokenExpiresAtMs = System.currentTimeMillis() + ttl * 1000L;
+                    "No se pudo guardar la clave de Bellota en el almacenamiento seguro del teléfono.");
         }
     }
 
-    /** Renews and rotates the stored refresh token. Access tokens remain memory-only. */
-    public void refresh() throws IOException, BackendException {
-        requireWorkerThread();
-        synchronized (authLock) {
-            String refresh;
-            try {
-                refresh = tokenStore.readRefreshToken();
-            } catch (Exception error) {
-                throw new BackendException("secure_storage_error", 500,
-                        "La credencial segura no se pudo descifrar. Volvé a vincular el dispositivo.");
-            }
-            if (refresh == null || refresh.isEmpty())
-                throw new BackendException("not_paired", 401, "Bellota todavía no está vinculada.");
-            JSONObject body = new JSONObject();
-            try { body.put("refresh_token", refresh); }
-            catch (JSONException impossible) { throw new IllegalStateException(impossible); }
-            JSONObject response = request("POST", "/v1/auth/refresh", body, null);
-            String nextRefresh = response.optString("refresh_token", "");
-            String nextAccess = response.optString("access_token", "");
-            int ttl = response.optInt("access_expires_in", 0);
-            if (nextRefresh.length() < 32 || nextAccess.isEmpty() || ttl <= 0)
-                throw new BackendException("invalid_response", 502, "El backend devolvió una renovación incompleta.");
-            try {
-                tokenStore.saveRefreshToken(nextRefresh);
-            } catch (Exception error) {
-                throw new BackendException("secure_storage_error", 500,
-                        "No se pudo guardar la renovación segura. Bellota puede reintentar la misma rotación durante 120 segundos.");
-            }
-            accessToken = nextAccess;
-            accessTokenExpiresAtMs = System.currentTimeMillis() + ttl * 1000L;
-        }
-    }
-
-    /** Returns a valid in-memory access token, refreshing the device credential if needed. */
+    /** La clave fija se conserva hasta que el usuario la quite o la cambie. */
     public String getAccessToken() throws IOException, BackendException {
         requireWorkerThread();
-        synchronized (authLock) {
-            if (accessToken != null && System.currentTimeMillis() < accessTokenExpiresAtMs - 30000L)
-                return accessToken;
+        try {
+            String key = tokenStore.readAccessKey();
+            if (key == null || key.isEmpty())
+                throw new BackendException("not_paired", 401, "Ingresá la clave fija para vincular Bellota.");
+            return key;
+        } catch (BackendException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new BackendException("secure_storage_error", 500,
+                    "No se pudo leer la clave guardada. Volvé a ingresarla.");
         }
-        refresh();
-        synchronized (authLock) { return accessToken; }
     }
 
     /** Requests a short-lived OpenAI Realtime client secret from the authenticated Worker. */
@@ -140,16 +94,7 @@ public final class BellotaBackendClient {
             throw new IllegalStateException(impossible);
         }
 
-        String token = getAccessToken();
-        JSONObject response;
-        try {
-            response = request("POST", "/v1/realtime/client-secret", body, token);
-        } catch (BackendException unauthorized) {
-            if (unauthorized.httpStatus != 401) throw unauthorized;
-            refresh();
-            synchronized (authLock) { token = accessToken; }
-            response = request("POST", "/v1/realtime/client-secret", body, token);
-        }
+        JSONObject response = request("POST", "/v1/realtime/client-secret", body, getAccessToken());
         String value = response.optString("value", "");
         long expiresAt = response.optLong("expires_at", 0L);
         if (value.isEmpty() || expiresAt <= 0L)
@@ -177,16 +122,7 @@ public final class BellotaBackendClient {
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
         }
-        String token = getAccessToken();
-        JSONObject response;
-        try {
-            response = request("POST", "/v1/gemini/live-token", body, token);
-        } catch (BackendException unauthorized) {
-            if (unauthorized.httpStatus != 401) throw unauthorized;
-            refresh();
-            synchronized (authLock) { token = accessToken; }
-            response = request("POST", "/v1/gemini/live-token", body, token);
-        }
+        JSONObject response = request("POST", "/v1/gemini/live-token", body, getAccessToken());
         String value = response.optString("token", "");
         String model = response.optString("model", "");
         String websocketUrl = response.optString("websocket_url", "");
@@ -267,42 +203,12 @@ public final class BellotaBackendClient {
         }
     }
 
-    /** Revokes the device remotely first. The refresh credential makes revocation safely retryable. */
+    /** Quita la clave guardada localmente. No afecta a los demás teléfonos. */
     public boolean unpair() throws IOException, BackendException {
         requireWorkerThread();
-        final String refresh;
-        try {
-            refresh = tokenStore.readRefreshToken();
-        } catch (Exception error) {
-            throw new BackendException("secure_storage_error", 500,
-                    "La clave segura se invalidó; este dispositivo necesita vincularse otra vez.");
-        }
-        if (refresh == null || refresh.isEmpty())
-            throw new BackendException("not_paired", 401, "Este dispositivo no tiene una vinculación local.");
-        JSONObject body = new JSONObject();
-        try { body.put("refresh_token", refresh); }
-        catch (JSONException impossible) { throw new IllegalStateException(impossible); }
-        try {
-            request("POST", "/v1/device/revoke", body, null);
-        } catch (BackendException error) {
-            if (error.httpStatus != 401) throw error;
-            DebugLog.w("BellotaAuth", "Revocación remota respondió 401; se elimina la credencial local inválida.");
-            if (!tokenStore.clear())
-                throw new BackendException("secure_storage_error", 500,
-                        "El servidor rechazó la credencial y Android no pudo borrarla localmente.");
-            synchronized (authLock) {
-                accessToken = null;
-                accessTokenExpiresAtMs = 0L;
-            }
-            return false;
-        }
         if (!tokenStore.clear())
             throw new BackendException("secure_storage_error", 500,
-                    "El servidor revocó el dispositivo, pero no se pudo borrar la credencial local. Podés reintentar.");
-        synchronized (authLock) {
-            accessToken = null;
-            accessTokenExpiresAtMs = 0L;
-        }
+                    "No se pudo borrar la clave guardada en este teléfono.");
         return true;
     }
 

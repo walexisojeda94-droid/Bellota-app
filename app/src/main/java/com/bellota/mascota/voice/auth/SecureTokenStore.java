@@ -15,13 +15,14 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 
 /**
- * Stores only the long-lived device refresh token, encrypted with an Android
+ * Stores only the permanent Bellota access key, encrypted with an Android
  * Keystore AES-GCM key. Access tokens and OpenAI client secrets stay in memory.
  */
 public final class SecureTokenStore {
     private static final String PREFS = "bellota_secure_auth";
-    private static final String TOKEN_KEY = "refresh_token";
-    private static final String KEY_ALIAS = "bellota_device_refresh_v1";
+    private static final String TOKEN_KEY = "access_key";
+    private static final String LEGACY_TOKEN_KEY = "refresh_token";
+    private static final String KEY_ALIAS = "bellota_master_access_key_v1";
     private static final String ANDROID_KEY_STORE = "AndroidKeyStore";
     private static final int GCM_TAG_BITS = 128;
     private static final int GCM_IV_BYTES = 12;
@@ -35,9 +36,9 @@ public final class SecureTokenStore {
                 .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
-    public void saveRefreshToken(String token) throws Exception {
-        if (token == null || token.trim().length() < 32)
-            throw new IllegalArgumentException("El token de renovación no es válido.");
+    public void saveAccessKey(String token) throws Exception {
+        if (token == null || token.trim().length() < 8 || token.trim().length() > 256)
+            throw new IllegalArgumentException("La clave fija de Bellota no es válida.");
         synchronized (lock) {
             byte[] plain = token.getBytes(StandardCharsets.UTF_8);
             for (int attempt = 0; attempt < 2; attempt++) {
@@ -67,6 +68,7 @@ public final class SecureTokenStore {
                 }
                 boolean saved = preferences.edit()
                         .putString(TOKEN_KEY, Base64.encodeToString(payload, Base64.NO_WRAP))
+                        .remove(LEGACY_TOKEN_KEY)
                         .commit();
                 if (!saved) throw new IllegalStateException("No se pudo guardar la vinculación.");
                 return;
@@ -75,7 +77,7 @@ public final class SecureTokenStore {
         }
     }
 
-    public String readRefreshToken() throws Exception {
+    public String readAccessKey() throws Exception {
         synchronized (lock) {
             String encoded = preferences.getString(TOKEN_KEY, null);
             if (encoded == null || encoded.isEmpty()) return null;
@@ -98,7 +100,7 @@ public final class SecureTokenStore {
                 Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
                 cipher.init(Cipher.DECRYPT_MODE, getExistingKey(), new GCMParameterSpec(GCM_TAG_BITS, iv));
                 String token = new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
-                if (token.length() < 32) throw new GeneralSecurityException("Token descifrado inválido.");
+                if (token.length() < 8 || token.length() > 256) throw new GeneralSecurityException("Clave descifrada inválida.");
                 return token;
             } catch (Exception invalidatedOrTampered) {
                 resetKeyAndToken();
@@ -111,24 +113,18 @@ public final class SecureTokenStore {
 
     public boolean clear() {
         synchronized (lock) {
-            return preferences.edit().remove(TOKEN_KEY).commit();
+            return preferences.edit().remove(TOKEN_KEY).remove(LEGACY_TOKEN_KEY).commit();
         }
     }
 
-    public boolean hasRefreshToken() {
+    public boolean hasAccessKey() {
         synchronized (lock) {
             return preferences.contains(TOKEN_KEY);
         }
     }
 
-    public void clearRefreshToken() {
-        synchronized (lock) {
-            preferences.edit().remove(TOKEN_KEY).commit();
-        }
-    }
-
     private void resetKeyAndToken() {
-        preferences.edit().remove(TOKEN_KEY).commit();
+        preferences.edit().remove(TOKEN_KEY).remove(LEGACY_TOKEN_KEY).commit();
         try {
             KeyStore keyStore = KeyStore.getInstance(ANDROID_KEY_STORE);
             keyStore.load(null);
