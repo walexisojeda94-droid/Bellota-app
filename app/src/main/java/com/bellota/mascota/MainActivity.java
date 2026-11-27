@@ -679,17 +679,31 @@ public class MainActivity extends Activity implements SensorEventListener {
         String backend = getString(R.string.backend_base_url).trim();
         out.append("Backend URL: ").append(backend.startsWith("https://") ? "CONFIGURADA (HTTPS)" : "NO CONFIGURADA").append('\n');
         SecureTokenStore tokenStore = new SecureTokenStore(getApplicationContext());
-        out.append("Dispositivo vinculado: ").append(tokenStore.hasRefreshToken() ? "SÍ" : "NO").append('\n');
+        out.append("Dispositivo vinculado localmente: ").append(tokenStore.hasRefreshToken() ? "SÍ (credencial guardada)" : "NO").append('\n');
         out.append("Voz local TTS: ").append(localVoice == null ? "NO INICIALIZADA"
                 : localVoice.isReady() ? "LISTA" : "NO LISTA").append('\n');
         out.append("Reconocimiento local: ").append(localRecognitionPaused ? "PAUSADO" : "NO PAUSADO").append('\n');
         out.append("Servicio voz online activo: ").append(VoiceSessionService.isActive(this) ? "SÍ" : "NO").append('\n');
         out.append("Servicio foreground en ejecución: ").append(VoiceSessionService.isServiceRunning() ? "SÍ" : "NO").append('\n');
-        out.append("Gemini Live: la configuración del secreto del servidor no puede verificarse desde el teléfono. Revisar eventos del backend.\n");
-        out.append("\n--- ÚLTIMOS EVENTOS (máx. 120) ---\n");
+        out.append("Proceso: ").append(android.os.Process.myPid()).append('\n');
+        out.append("App en modo debug: ").append(BuildConfig.DEBUG ? "SÍ" : "NO").append('\n');
+        android.app.ActivityManager activityManager = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+        if (activityManager != null) {
+            android.app.ActivityManager.MemoryInfo memoryInfo = new android.app.ActivityManager.MemoryInfo();
+            activityManager.getMemoryInfo(memoryInfo);
+            out.append("Memoria disponible: ").append(memoryInfo.availMem / (1024 * 1024)).append(" MB\n");
+        }
+        out.append("\n--- ESTADO DE CONEXIÓN ---\n");
+        out.append("Transporte: ").append(capabilities == null ? "DESCONOCIDO"
+                : capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) ? "WIFI"
+                : capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) ? "DATOS MÓVILES"
+                : capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) ? "ETHERNET" : "OTRO").append('\n');
+        out.append("Red validada por Android: ").append(capabilities != null && capabilities.hasCapability(
+                android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) ? "SÍ" : "NO").append('\n');
+        out.append("\n--- ÚLTIMOS EVENTOS DE LA APP (máx. 300) ---\n");
         String logs = DebugLog.dump();
-        out.append(logs.isEmpty() ? "Todavía no hay eventos registrados en esta sesión.\n" : logs);
-        out.append("\nNota: el panel no muestra claves, tokens ni conversaciones. Compartí el texto copiado para analizar el fallo.\n");
+        out.append(logs.isEmpty() ? "No hay eventos registrados. Los próximos intentos quedarán registrados aquí.\n" : logs);
+        out.append("\nPrivacidad: no se incluyen claves, tokens, cuerpos de solicitudes ni conversaciones. Se registran endpoints, códigos HTTP y excepciones técnicas.\n");
         return out.toString();
     }
 
