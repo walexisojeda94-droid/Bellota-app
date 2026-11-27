@@ -31,17 +31,17 @@ public class SecureStorageInstrumentedTest {
         return InstrumentationRegistry.getInstrumentation().getTargetContext();
     }
 
-    @Test public void refreshTokenIsEncryptedAndCanBeRecovered() throws Exception {
+    @Test public void fixedAccessKeyIsEncryptedAndCanBeRecovered() throws Exception {
         SecureTokenStore store = new SecureTokenStore(context());
         assertTrue(store.clear());
-        String token = "bellota-test-" + UUID.randomUUID().toString().replace("-", "") + "-refresh-token";
-        store.saveRefreshToken(token);
-        assertEquals(token, store.readRefreshToken());
+        String token = "bellota-test-" + UUID.randomUUID().toString().replace("-", "") + "-permanent-key";
+        store.saveAccessKey(token);
+        assertEquals(token, store.readAccessKey());
         String encrypted = context().getSharedPreferences("bellota_secure_auth", Context.MODE_PRIVATE)
-                .getString("refresh_token", null);
+                .getString("access_key", null);
         assertTrue(encrypted != null && !encrypted.contains(token));
         assertTrue(store.clear());
-        assertFalse(store.hasRefreshToken());
+        assertFalse(store.hasAccessKey());
     }
 
     @Test public void missingConversationKeyDoesNotClearOrReplaceEncryptedPreferences() throws Exception {
