@@ -38,7 +38,6 @@ import com.bellota.mascota.voice.VoiceSessionService;
 import com.bellota.mascota.voice.LocalVoice;
 import com.bellota.mascota.voice.provider.VoiceProvider;
 import com.bellota.mascota.voice.provider.VoiceProviderManager;
-import com.bellota.mascota.voice.provider.OpenAIRealtimeWebRtcProvider;
 import com.bellota.mascota.voice.auth.SecureTokenStore;
 import com.bellota.mascota.weather.WeatherService;
 import com.bellota.mascota.voice.tools.BellotaToolCatalog;
@@ -69,7 +68,6 @@ public class MainActivity extends Activity implements SensorEventListener {
     private EyePetView eyes;
     private FrameLayout petRoot;
     private LocalVoice localVoice;
-    private volatile VoiceProviderManager onlineVoiceManager;
     private boolean onlineVoiceConnecting;
     private volatile android.widget.TextView onlineVoiceStatusView;
     private volatile android.widget.Button onlineVoiceControlButton;
@@ -217,7 +215,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Borrar", (confirm, which) -> {
                     clearMemoryButton.setEnabled(false);
-                    disconnectOnlineVoice(false);
+                    disconnectOnlineVoice();
                     VoiceRecognitionService.stop(MainActivity.this);
                     new Thread(() -> {
                         boolean semanticCleared = conversationEngine == null
@@ -300,7 +298,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
             primary.setOnClickListener(v -> {
                 if (paired) {
-                    if (onlineVoiceManager != null || onlineVoiceConnecting) disconnectOnlineVoice(true);
+                    if (onlineVoiceConnecting || VoiceSessionService.isActive(this)) disconnectOnlineVoice();
                     primary.setEnabled(false);
                     online.setEnabled(false);
                     status.setText("Revocando este dispositivo en el servidor...");
@@ -386,7 +384,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
             online.setOnClickListener(v -> {
                 if (onlineVoiceConnecting || VoiceSessionService.isActive(this)) {
-                    disconnectOnlineVoice(true);
+                    disconnectOnlineVoice();
                     status.setText("Voz online desconectada. Se reanudó la escucha local.");
                     online.setText("Conectar");
                     return;
@@ -418,7 +416,6 @@ public class MainActivity extends Activity implements SensorEventListener {
                     + "Hablá en español rioplatense natural, con respuestas conversacionales y concisas. "
                     + "Conservá continuidad y contexto. No describas acciones que no realizaste."
                     + (conversationEngine == null ? "" : conversationEngine.memoryContextForOnline());
-            onlineVoiceManager = null;
             onlineVoiceConnecting = true;
             VoiceRecognitionService.stop(this);
             VoiceSessionService.start(getApplicationContext(), backendUrl, instructions,
@@ -434,9 +431,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
     }
 
-    private void disconnectOnlineVoice(boolean resumeLocal) {
+    private void disconnectOnlineVoice() {
         onlineVoiceConnecting = false;
-        onlineVoiceManager = null;
         VoiceSessionService.stop(getApplicationContext());
         // VoiceSessionService resumes the local recognizer after releasing WebRTC audio.
     }
@@ -689,8 +685,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         out.append("Reconocimiento local: ").append(localRecognitionPaused ? "PAUSADO" : "NO PAUSADO").append('\n');
         out.append("Servicio voz online activo: ").append(VoiceSessionService.isActive(this) ? "SÍ" : "NO").append('\n');
         out.append("Servicio foreground en ejecución: ").append(VoiceSessionService.isServiceRunning() ? "SÍ" : "NO").append('\n');
-        out.append("Proveedor online conectado: ").append(onlineVoiceManager != null && onlineVoiceManager.isConnected()
-                ? String.valueOf(onlineVoiceManager.getActiveProviderId()) : "NINGUNO DESDE ACTIVITY").append('\n');
         out.append("Gemini Live: la configuración del secreto del servidor no puede verificarse desde el teléfono. Revisar eventos del backend.\n");
         out.append("\n--- ÚLTIMOS EVENTOS (máx. 120) ---\n");
         String logs = DebugLog.dump();
@@ -1192,7 +1186,6 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     private void resumeLocalRecognition() {
         if (onlineVoiceConnecting || VoiceSessionService.isActive(this)
-                || (onlineVoiceManager != null && onlineVoiceManager.isConnected())
                 || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         if (!localRecognitionPaused) return;
         localRecognitionPaused = false;
@@ -1200,14 +1193,12 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void startVoiceCommands() {
-        if (onlineVoiceConnecting || VoiceSessionService.isActive(this)
-                || (onlineVoiceManager != null && onlineVoiceManager.isConnected())) return;
+        if (onlineVoiceConnecting || VoiceSessionService.isActive(this)) return;
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startLocalRecognizer();
     }
 
     private void startLocalRecognizer() {
         if (isFinishing() || onlineVoiceConnecting || VoiceSessionService.isActive(this)
-                || (onlineVoiceManager != null && onlineVoiceManager.isConnected())
                 || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         localRecognitionPaused = false;
         VoiceRecognitionService.start(this);
@@ -1401,8 +1392,6 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (!soundEnabled) return "La voz está desactivada.";
             if (VoiceSessionService.isActive(this))
                 return "Decí en voz alta exactamente esta frase, sin agregar comentarios: " + phrase;
-            if (onlineVoiceManager != null && onlineVoiceManager.isConnected())
-                return "Decí en voz alta exactamente esta frase, sin agregar comentarios: " + phrase;
             if (localVoice == null || !localVoice.isReady()) return "La voz local todavía no está lista.";
             speakIfEnabled(phrase);
             return "Estoy diciendo la frase.";
@@ -1464,7 +1453,6 @@ public class MainActivity extends Activity implements SensorEventListener {
     private void speakIfEnabled(String text) {
         if (!soundEnabled || text == null || text.isEmpty()) return;
         // Mientras Realtime está activo, no mezclar la salida TTS local con el audio remoto.
-        if (onlineVoiceManager != null && onlineVoiceManager.isConnected()) return;
         if (VoiceSessionService.isActive(this)) return;
         if (localVoice == null) return;
         if (petMemory != null) petMemory.remember("voz_bellota", text);
@@ -1509,7 +1497,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         cancelActivities();
 
-        if (localRecognitionPaused && onlineVoiceManager == null && !onlineVoiceConnecting
+        if (localRecognitionPaused && !onlineVoiceConnecting
                 && !VoiceSessionService.isActive(this)
                 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             localRecognitionPaused = false;

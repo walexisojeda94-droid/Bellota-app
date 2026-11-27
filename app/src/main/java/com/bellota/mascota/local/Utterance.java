@@ -36,14 +36,6 @@ public final class Utterance {
         return false;
     }
 
-    /** Alguna palabra empieza con la raíz dada ("content" matchea "contenta"). */
-    public boolean hasStem(String stem) {
-        String normalized = TextUtil.normalize(stem);
-        if (normalized.isEmpty()) return false;
-        for (String t : tokens) if (t.startsWith(normalized)) return true;
-        return false;
-    }
-
     public boolean startsWith(String phrase) {
         String normalized = TextUtil.normalize(phrase);
         return !normalized.isEmpty() && (text.equals(normalized) || text.startsWith(normalized + " "));

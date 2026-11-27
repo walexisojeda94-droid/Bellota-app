@@ -43,6 +43,5 @@ La capa de juego (`ui/PlayfieldView.java`) solo dibuja mientras hay un juego act
 - "Me llamo X" / "mi nombre es X": guarda el nombre.
 - "Decime X", "llamame X", "me dicen X", "mi apodo es X": guarda un apodo (hasta 5).
 - "Me gusta/encanta X": guarda un gusto. "Ya no me gusta X": lo borra.
-- Sin conexión a XiaoZhi, a veces pregunta "¿Seguís con ganas de X?" y entiende sí o no.
-  Con XiaoZhi conectado solo hace comentarios (no deja preguntas pendientes que XiaoZhi no puede contestar).
-- Mientras habla con su voz local, el micrófono de XiaoZhi se silencia para que no se escuche a sí misma.
+- En modo local, a veces pregunta "¿Seguís con ganas de X?" y entiende sí o no. Durante una sesión online, limita esos intercambios a comentarios para no dejar preguntas pendientes que el proveedor no pueda responder.
+- Mientras Bellota habla con TTS local, `VoiceRecognitionService` pausa el reconocimiento para evitar que se escuche a sí misma.

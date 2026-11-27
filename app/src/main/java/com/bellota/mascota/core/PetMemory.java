@@ -165,9 +165,6 @@ public final class PetMemory {
         return barrier.await(timeoutMs, TimeUnit.MILLISECONDS);
     }
 
-    public static int getPendingWriteCount() { return PENDING_WRITES.get(); }
-    public static int getFailedWriteCount() { return FAILED_WRITES.get(); }
-    public static int getRejectedWriteCount() { return REJECTED_WRITES.get(); }
     public static boolean wasLastClearSuccessful() { return LAST_CLEAR_SUCCESS.get(); }
 
     /** Deletes active and quarantined diary files before removing its encryption keys. */

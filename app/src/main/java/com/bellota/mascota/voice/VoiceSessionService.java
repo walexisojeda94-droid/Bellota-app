@@ -24,7 +24,6 @@ import com.bellota.mascota.voice.provider.GeminiLiveProvider;
 import com.bellota.mascota.voice.provider.VoiceProvider;
 import com.bellota.mascota.voice.provider.VoiceProviderManager;
 
-import org.json.JSONObject;
 
 import java.util.HashSet;
 import java.util.Set;

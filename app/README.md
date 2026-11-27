@@ -30,8 +30,8 @@ Módulo Android nativo de Bellota. Paquete: `com.bellota.mascota`.
 - La voz local usa el motor TextToSpeech instalado en Android.
 - El reconocimiento local se ejecuta en `VoiceRecognitionService`, un Foreground Service con notificación persistente.
 - OpenAI Realtime está implementado con WebRTC y credenciales efímeras obtenidas desde el backend.
-- La sesión OpenAI sigue administrada por `MainActivity`; el servicio foreground actual no mantiene esa sesión online si la Activity se destruye.
-- Gemini Live no tiene todavía una implementación Android. Los tests con proveedores simulados verifican el orquestador, no la conexión real a Gemini.
+- `VoiceSessionService` administra la sesión online como Foreground Service, incluyendo OpenAI Realtime y Gemini Live. `MainActivity` inicia, consulta y detiene el servicio, pero no es propietaria de la sesión.
+- Gemini Live cuenta con el adaptador Android `GeminiLiveProvider`, registrado en `VoiceSessionService` como segundo proveedor. La conexión y el audio bidireccional reales todavía requieren validación con credenciales y dispositivo físico.
 - El clima se consulta bajo demanda y requiere permiso de ubicación.
 
 ## Compilación y pruebas

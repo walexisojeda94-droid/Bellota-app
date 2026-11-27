@@ -28,7 +28,7 @@ El tope acumulado es una protección del cliente, no un límite de facturación 
 
 ## Fallback actual
 
-`MainActivity` registra OpenAI Realtime como único proveedor online. Si OpenAI falla después del reintento, `VoiceProviderManager` solicita el motor local. Gemini Live todavía no tiene adaptador Android ni está registrado como segundo proveedor. Las pruebas del manager con `FakeProvider("gemini")` verifican solamente la lógica de failover simulada.
+`VoiceSessionService` registra OpenAI Realtime como proveedor principal y `GeminiLiveProvider` como segundo proveedor online. Si ambos fallan según la política de recuperación, `VoiceProviderManager` solicita el motor local. La presencia del adaptador Android no certifica por sí sola la conexión real ni el audio bidireccional con Gemini.
 
 ## Estado operativo del backend
 

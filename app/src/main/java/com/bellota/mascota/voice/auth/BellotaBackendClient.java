@@ -290,10 +290,6 @@ public final class BellotaBackendClient {
         }
     }
 
-    public boolean isPaired() {
-        return tokenStore.hasRefreshToken();
-    }
-
     private JSONObject request(String method, String path, JSONObject body, String bearer)
             throws IOException, BackendException {
         HttpURLConnection connection = null;

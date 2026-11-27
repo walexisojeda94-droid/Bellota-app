@@ -1,7 +1,7 @@
 name: Build Bellota APK
 on:
   push:
-    branches: [main, 'fix/xiaozhi-voice-pipeline', 'fix/revision-6-backend-persistence', 'fix/revision-7-build-dependencies-tests']
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: '23 8 * * 1'
@@ -262,7 +262,6 @@ jobs:
             grep -q 'Status: ok' /tmp/bellota-launch.txt
             sleep 8
             adb shell pidof com.bellota.mascota | grep -Eq '[0-9]+'
-            ! adb logcat -d -t 2000 | grep -A 8 -F "FATAL EXCEPTION" | grep -F "com.bellota.mascota"
             ! adb logcat -d -t 2000 | grep -A 8 -F "FATAL EXCEPTION" | grep -F "com.bellota.mascota"
       - name: Build signed release APK
         if: steps.signing.outputs.enabled == 'true'

@@ -22,8 +22,6 @@ public class VoiceRecognitionService extends Service {
     public static final String ACTION_STOP = "com.bellota.mascota.voice.STOP";
     public static final String ACTION_PAUSE = "com.bellota.mascota.voice.PAUSE";
     public static final String ACTION_RESUME = "com.bellota.mascota.voice.RESUME";
-    public static final String ACTION_EXTERNAL_MIC = "com.bellota.mascota.voice.EXTERNAL_MIC";
-    public static final String EXTRA_ACTIVE = "active";
     public static final String ACTION_RECOGNIZED = "com.bellota.mascota.voice.RECOGNIZED";
     public static final String ACTION_STATUS = "com.bellota.mascota.voice.STATUS";
     public static final String ACTION_STOPPED = "com.bellota.mascota.voice.STOPPED";
@@ -35,7 +33,6 @@ public class VoiceRecognitionService extends Service {
     private static volatile boolean startRequested;
     private boolean foregroundStarted;
     private boolean paused;
-    private boolean externalMicActive;
 
     public static void start(Context context) {
         startServiceAction(context, ACTION_START);
@@ -57,14 +54,6 @@ public class VoiceRecognitionService extends Service {
         Intent intent = new Intent(context, VoiceRecognitionService.class);
         intent.setAction(ACTION_STOP);
         context.startService(intent);
-    }
-
-    public static void setExternalMicActive(Context context, boolean active) {
-        Intent intent = new Intent(context, VoiceRecognitionService.class);
-        intent.setAction(ACTION_EXTERNAL_MIC);
-        intent.putExtra(EXTRA_ACTIVE, active);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent);
-        else context.startService(intent);
     }
 
     private static void startServiceAction(Context context, String action) {
@@ -114,25 +103,16 @@ public class VoiceRecognitionService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
-        if (ACTION_EXTERNAL_MIC.equals(action)) {
-            externalMicActive = intent != null && intent.getBooleanExtra(EXTRA_ACTIVE, false);
-            paused = externalMicActive;
-            if (externalMicActive) stopRecognition();
-            else startRecognition();
-            updateNotification();
-        } else if (ACTION_PAUSE.equals(action)) {
+        if (ACTION_PAUSE.equals(action)) {
             paused = true;
-            externalMicActive = false;
             stopRecognition();
             updateNotification();
         } else if (ACTION_RESUME.equals(action)) {
             paused = false;
-            externalMicActive = false;
             updateNotification();
             startRecognition();
         } else {
             paused = false;
-            externalMicActive = false;
             updateNotification();
             startRecognition();
         }
@@ -165,8 +145,8 @@ public class VoiceRecognitionService extends Service {
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
         builder.setSmallIcon(android.R.drawable.ic_btn_speak_now)
-                .setContentTitle(externalMicActive ? "Bellota en conversación online" : paused ? "Micrófono de Bellota en pausa" : "Bellota está escuchando")
-                .setContentText(externalMicActive ? "Micrófono activo para OpenAI Realtime." : paused ? "El reconocimiento local está temporalmente pausado."
+                 .setContentTitle(paused ? "Micrófono de Bellota en pausa" : "Bellota está escuchando")
+                .setContentText(paused ? "El reconocimiento local está temporalmente pausado."
                         : Build.VERSION.SDK_INT >= 31
                         ? "Audio procesado por el reconocedor del dispositivo."
                         : "Android 7-11: sin conexión preferido, pero el proveedor puede requerir Internet.")

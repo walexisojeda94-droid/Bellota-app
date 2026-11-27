@@ -2,7 +2,6 @@ package com.bellota.mascota.local;
 
 import com.bellota.mascota.core.PetLife;
 import java.text.SimpleDateFormat;
-import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Locale;
@@ -39,25 +38,6 @@ public final class ChatContext {
         if (s.contains("CURIOUS") || s.contains("THINKING")) return "curious";
         if (s.contains("SAD")) return "sad";
         return "neutral";
-    }
-
-    /** sleepy, happy, curious, angry, offended, sad o neutral. */
-    public String moodTag() { return mood; }
-
-    /** madrugada, manana, tarde o noche. */
-    public String timeOfDay() {
-        Calendar c = Calendar.getInstance();
-        c.setTimeInMillis(now);
-        int h = c.get(Calendar.HOUR_OF_DAY);
-        if (h < 6) return "madrugada";
-        if (h < 12) return "manana";
-        if (h < 20) return "tarde";
-        return "noche";
-    }
-
-    /** "long" si pasaron 6 horas o más desde el mensaje anterior. */
-    public String gapTag() {
-        return memory.silenceMs() >= ConversationMemory.LONG_SILENCE_MS ? "long" : "short";
     }
 
     /** Qué respuesta esperaba Bellota del usuario en este turno (o null). */

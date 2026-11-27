@@ -14,7 +14,6 @@ public class PetLife {
  }
  public long getAgeDays(){ long elapsed=Math.max(0L,System.currentTimeMillis()-preferences.getLong(KEY_BIRTH,System.currentTimeMillis())); return TimeUnit.MILLISECONDS.toDays(elapsed); }
  public long getAgeYears(){ return getAgeDays()/30L; }
- public int getDaysToNextBirthday(){ return 30-(int)(getAgeDays()%30L); }
  public int getEnergy(){ return preferences.getInt(KEY_ENERGY,85); }
  public int getFun(){ return preferences.getInt(KEY_FUN,70); }
  public void setNeeds(int energy,int fun){ preferences.edit().putInt(KEY_ENERGY,clamp(energy)).putInt(KEY_FUN,clamp(fun)).apply(); }

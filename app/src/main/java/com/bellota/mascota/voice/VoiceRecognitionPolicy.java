@@ -10,12 +10,8 @@ package com.bellota.mascota.voice;
  */
 public final class VoiceRecognitionPolicy {
     public enum Mode {
-        OFFLINE_PREFERRED_PROVIDER(24),
-        ON_DEVICE_REQUIRED(31);
-
-        private final int minimumApi;
-        Mode(int minimumApi) { this.minimumApi = minimumApi; }
-        public int getMinimumApi() { return minimumApi; }
+        OFFLINE_PREFERRED_PROVIDER,
+        ON_DEVICE_REQUIRED;
     }
 
     public static final int ON_DEVICE_API = 31;

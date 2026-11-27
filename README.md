@@ -63,10 +63,16 @@ Comandos locales:
 
 - `docs/arquitectura-motores-voz.md`
 - `docs/backend-seguro-dispositivos.md`
+- `docs/comportamiento-autonomo.md`
+- `docs/plan-de-trabajo.md`
 - `docs/revision-4-realtime-webrtc.md`
 - `docs/revision-5-memory-conversation-tools.md`
 - `docs/revision-6-backend-persistence.md`
 - `docs/revision-8-certificacion.md`
-- `backend/openai-realtime/README.md`
-
+- `docs/revision-9-gemini-live.md`
+- `docs/revision-10-bellota-tools.md`
+- `docs/revision-11-private-memory.md`
+- `docs/revision-12-android-local-voice.md`
+- `docs/revision-13-performance-stability.md`
 - `docs/revision-14-code-dependencies-ci.md`
+- `backend/openai-realtime/README.md`

@@ -319,13 +319,5 @@ public final class AutonomousBehavior {
 
     public int getTrait(String name) { return prefs.getInt(name, 50); }
 
-    public String getEmotionalState() {
-        int irritation = getTrait("irritation"), affection = getTrait("affection"), humor = getTrait("humor");
-        if (irritation >= 65) return "molesta";
-        if (affection >= 75) return "cariñosa";
-        if (humor < 30) return "aburrida";
-        return "curiosa";
-    }
-
     private int clamp(int value) { return Math.max(0, Math.min(100, value)); }
 }
