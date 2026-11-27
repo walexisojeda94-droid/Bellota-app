@@ -23,9 +23,19 @@ public class VoiceRecognitionPolicyTest {
         assertTrue(VoiceRecognitionPolicy.descriptionForApi(31).contains("motor on-device"));
     }
 
+    @Test public void api33QueriesInstalledSpanishModelsInsteadOfGuessingLocales() {
+        assertTrue(VoiceRecognitionPolicy.descriptionForApi(33).contains("consulta los modelos españoles locales"));
+    }
+
     @Test public void selectsOnlyAdvertisedSpanishLanguageAndPrefersArgentinian() {
         assertEquals("es-AR", VoiceRecognitionPolicy.selectSpanishLanguage(
                 java.util.Arrays.asList("en-US", "es-ES", "es-AR", "pt-BR")));
+    }
+
+    @Test public void keepsAllInstalledSpanishVariantsAsFallbacks() {
+        assertEquals(java.util.Arrays.asList("es-AR", "es-ES", "es-MX"),
+                VoiceRecognitionPolicy.orderedSpanishLanguages(
+                        java.util.Arrays.asList("es-MX", "en-US", "es-ES", "es-AR")));
     }
 
     @Test public void selectsAnAvailableSpanishVariantWithoutUsingPhoneLocale() {

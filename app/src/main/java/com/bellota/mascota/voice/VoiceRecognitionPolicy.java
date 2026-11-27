@@ -38,33 +38,49 @@ public final class VoiceRecognitionPolicy {
      * Selects a Spanish locale actually advertised by the installed recognizer.
      * The phone's UI locale is deliberately never consulted.
      */
-    public static String selectSpanishLanguage(List<String> supportedLanguages) {
-        if (supportedLanguages == null || supportedLanguages.isEmpty()) return null;
+    public static List<String> orderedSpanishLanguages(List<String> supportedLanguages) {
         java.util.ArrayList<String> spanish = new java.util.ArrayList<>();
+        if (supportedLanguages == null) return spanish;
         for (String value : supportedLanguages) {
             if (value == null) continue;
             String tag = value.trim().replace('_', '-');
-            if (tag.equalsIgnoreCase("es") || tag.toLowerCase(java.util.Locale.ROOT).startsWith("es-")) {
-                boolean duplicate = false;
-                for (String existing : spanish) {
-                    if (existing.equalsIgnoreCase(tag)) { duplicate = true; break; }
-                }
-                if (!duplicate) spanish.add(tag);
+            if (!tag.equalsIgnoreCase("es")
+                    && !tag.toLowerCase(java.util.Locale.ROOT).startsWith("es-")) continue;
+            boolean duplicate = false;
+            for (String existing : spanish) {
+                if (existing.equalsIgnoreCase(tag)) { duplicate = true; break; }
             }
+            if (!duplicate) spanish.add(tag);
         }
+        java.util.ArrayList<String> ordered = new java.util.ArrayList<>();
         String[] preferred = {"es-AR", "es-419", "es-ES", "es-MX", "es-US", "es"};
         for (String candidate : preferred) {
             for (String available : spanish) {
-                if (candidate.equalsIgnoreCase(available)) return available;
+                if (candidate.equalsIgnoreCase(available)) ordered.add(available);
             }
         }
-        return spanish.isEmpty() ? null : spanish.get(0);
+        for (String available : spanish) {
+            boolean included = false;
+            for (String existing : ordered) {
+                if (existing.equalsIgnoreCase(available)) { included = true; break; }
+            }
+            if (!included) ordered.add(available);
+        }
+        return ordered;
+    }
+
+    public static String selectSpanishLanguage(List<String> supportedLanguages) {
+        List<String> ordered = orderedSpanishLanguages(supportedLanguages);
+        return ordered.isEmpty() ? null : ordered.get(0);
     }
 
     public static String descriptionForApi(int apiLevel) {
-        if (usesDedicatedOnDeviceRecognizer(apiLevel)) {
-            return "Reconocimiento local estricto: Android 12 o posterior requiere un motor on-device y un modelo español instalado.";
+        if (apiLevel >= 33) {
+            return "Android 13 o posterior consulta los modelos españoles locales instalados y prioriza el idioma que el motor anuncia como disponible.";
         }
-        return "Reconocimiento local preferido: Android 7 a 11 recibe la preferencia sin conexión, pero el proveedor de Android puede requerir Internet.";
+        if (usesDedicatedOnDeviceRecognizer(apiLevel)) {
+            return "Reconocimiento local estricto: Android 12 requiere un motor on-device y un modelo español instalado.";
+        }
+        return "Reconocimiento local preferido: Android 7 a 11 consulta los idiomas anunciados y solicita funcionamiento sin conexión, aunque el proveedor puede requerir Internet.";
     }
 }

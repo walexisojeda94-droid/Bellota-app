@@ -191,12 +191,13 @@ public class ContinuousVoiceCommands {
                             if (!running || generation != session || recognizer == null) return;
                             List<String> installed = support == null ? null
                                     : support.getInstalledOnDeviceLanguages();
-                            String selected = VoiceRecognitionPolicy.selectSpanishLanguage(installed);
-                            if (selected != null) {
+                            List<String> selected = VoiceRecognitionPolicy.orderedSpanishLanguages(installed);
+                            if (!selected.isEmpty()) {
                                 languageCandidates.clear();
-                                languageCandidates.add(selected);
+                                languageCandidates.addAll(selected);
                                 languageCandidateIndex = 0;
-                                status("Modelo español local detectado en el motor de Android: " + selected + ".");
+                                status("Modelos españoles locales detectados en el motor de Android: "
+                                        + selected.size() + ". Primera variante: " + languageTag() + ".");
                                 listenAgain(session, 250L);
                                 return;
                             }
@@ -286,12 +287,14 @@ public class ContinuousVoiceCommands {
                     Bundle extras = getResultExtras(true);
                     ArrayList<String> supported = extras == null ? null
                             : extras.getStringArrayList(RecognizerIntent.EXTRA_SUPPORTED_LANGUAGES);
-                    String selected = VoiceRecognitionPolicy.selectSpanishLanguage(supported);
-                    if (selected != null) {
+                    List<String> selected = VoiceRecognitionPolicy.orderedSpanishLanguages(supported);
+                    if (!selected.isEmpty()) {
                         languageCandidates.clear();
-                        languageCandidates.add(selected);
+                        languageCandidates.addAll(selected);
                         languageCandidateIndex = 0;
-                        status("El servicio de Android anuncia español (" + selected + "). Se solicitará reconocimiento sin conexión cuando el proveedor lo permita.");
+                        status("El servicio de Android anuncia " + selected.size()
+                                + " variantes españolas. Primera opción: " + languageTag()
+                                + ". Se solicitará reconocimiento sin conexión cuando el proveedor lo permita.");
                     } else {
                         status("Android no informó sus idiomas compatibles. Se probarán las variantes españolas habituales sin usar el idioma del teléfono.");
                     }
